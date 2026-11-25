@@ -34,10 +34,12 @@
 ## 安装
 
 1. 浏览器安装 [Tampermonkey](https://www.tampermonkey.net/)（或 Violentmonkey）。
-2. 在油猴里打开安装地址并确认：
-   <https://raw.githubusercontent.com/Billdex/eclesiar-helper/main/eclesiar-helper.user.js>
-   - 也可以把 `eclesiar-helper.user.js` 下载下来拖进浏览器窗口，按提示安装。
+2. 点下面的安装地址，在油猴的安装页里确认：
+   - 推荐（国内可直连）：<https://cdn.jsdelivr.net/gh/Billdex/eclesiar-helper@main/eclesiar-helper.user.js>
+   - 备用（GitHub 直链，能访问 raw 的网络用）：<https://raw.githubusercontent.com/Billdex/eclesiar-helper/main/eclesiar-helper.user.js>
 3. 打开 <https://app.eclesiar.com/> 并刷新，右下角出现金色悬浮球即生效。
+
+两个地址装的是同一份脚本，点得开哪个用哪个。`raw.githubusercontent.com` 在国内经常被拦截，点开只会一直转圈或空白，这种情况用 jsDelivr 那个链接；也可以把 `eclesiar-helper.user.js` 下载下来拖进浏览器窗口安装。
 
 脚本只匹配 `https://app.eclesiar.com/*`，不会在官网、Wiki 或其它站点运行。
 
@@ -48,7 +50,19 @@
 - 脚本头部的 `@updateURL` 指向仓库里的 `eclesiar-helper.meta.js`（只有元数据），`@downloadURL` 指向 `.user.js` 本体。Tampermonkey 定期检查更新时只拉那份元数据并比对 `@version`，**只有版本号变大才下载完整脚本**。
 - 面板「关于」页打开时会自动检查一次最新版本，同样只读元数据；失败可以点「重新检查」。
 - 发现新版本时「关于」页会出现「安装更新」按钮，点击后由 Tampermonkey 提示覆盖安装，本地的界面设置（悬浮球位置、上次所在标签页）会保留。
-- 检查先走 `raw.githubusercontent.com`，失败退到 `cdn.jsdelivr.net`。两者都被网络或站点安全策略拦截时，页面会提示到 GitHub 手动查看最新版本。
+- 检查先走 `raw.githubusercontent.com`，失败退到 `cdn.jsdelivr.net`（每源单独限时，主源挂住不会拖死备源）。两者都被网络或站点安全策略拦截时，页面会提示到 GitHub 手动查看最新版本。
+- 国内网络访问不了 raw 时，油猴后台的自动检查会失败，但「关于」页的检查会走 jsDelivr 成功，点那里的「安装更新」一样能升级。
+
+## 分享给朋友
+
+直接发**安装地址**，不要发仓库首页——对方打开仓库只会看到一堆源码，不知道点哪里。可以照抄这段：
+
+> 先装油猴插件：<https://www.tampermonkey.net/>
+> 再点这个安装：<https://cdn.jsdelivr.net/gh/Billdex/eclesiar-helper@main/eclesiar-helper.user.js>
+> 装完刷新 <https://app.eclesiar.com/>，右下角出现金色圆球就是生效了。
+> 社区自制插件，不改游戏数据、不自动操作，只做行情计算。
+
+仓库地址 <https://github.com/Billdex/eclesiar-helper> 只作为「看代码 / 提问题」的补充信息。
 
 ## 汇率总览
 

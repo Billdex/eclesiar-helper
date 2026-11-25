@@ -18,7 +18,7 @@
 5. **不做影响公平性的自动化**：不自动点击、提交表单、循环请求接口、多开或绕过验证；只做展示、计算与用户主动触发的辅助。
 6. **扩展只走功能注册表**：新模块用 `features.register()`，不要改面板外壳或硬编码标签页。
 7. **版本号四处同步**：`eclesiar-helper.user.js` 的 `@version`、`eclesiar-helper.meta.js` 的 `@version`、`const VERSION`、`README.md` 的「当前版本」。
-8. **更新源地址固定**：`@updateURL` / `@downloadURL` / 关于页的版本检查都指向 `https://raw.githubusercontent.com/Billdex/eclesiar-helper/main/…`。改名或迁移仓库时这几处（含 `REPO_URL` / `REPO_RAW` / `UPDATE_META_URLS`）必须一起改，否则老版本收不到更新。
+8. **更新源地址固定**：`@updateURL` / `@downloadURL` / 关于页的版本检查都指向 `https://raw.githubusercontent.com/Billdex/eclesiar-helper/main/…`；对外安装链接用 jsDelivr 镜像（国内可达），见 README「安装 / 分享给朋友」。改名或迁移仓库时这几处（含 `REPO_URL` / `REPO_RAW` / `UPDATE_META_URLS`、README 里的两个安装链接）必须一起改，否则老版本收不到更新。
 
 ## 3. 目录
 
@@ -133,4 +133,5 @@ EclesiarHelper.features.register({
 1. 修改 `eclesiar-helper.user.js` 的 `@version`、`eclesiar-helper.meta.js` 的 `@version`、`const VERSION`，同步 README 的「当前版本」。
 2. 更新 README 的能力表 / 说明。
 3. 提交并推送到 `main`（`updateURL` / `downloadURL` 都指向 `main` 分支，推送后老版本即可检测到更新）。
-4. 发布页 / 群里给的安装地址固定为 `https://raw.githubusercontent.com/Billdex/eclesiar-helper/main/eclesiar-helper.user.js`；本地调试也可以把 `.user.js` 全文粘贴进 Tampermonkey 覆盖。
+4. 对外分享统一发**安装地址**，不要发仓库首页：首选 `https://cdn.jsdelivr.net/gh/Billdex/eclesiar-helper@main/eclesiar-helper.user.js`（`raw.githubusercontent.com` 在国内多被拦截，只作为备用链接）。文案模板见 README 的「分享给朋友」。
+5. 本地调试也可以把 `.user.js` 全文粘贴进 Tampermonkey 覆盖。
