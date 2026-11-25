@@ -2,7 +2,7 @@
 // @name         Eclesiar 助手
 // @name:en      Eclesiar Helper
 // @namespace    https://github.com/Billdex/eclesiar-helper
-// @version      0.1.0
+// @version      0.1.1
 // @description  Eclesiar 经济 / 政治计算辅助插件：悬浮球面板 + 全球汇率总览 + 各国市场商品金价比价。
 // @description:en Eclesiar helper: floating panel + exchange rates + cross-market goods pricing in gold.
 // @author       billdex
@@ -43,7 +43,7 @@
    * 1. 常量与工具
    * ========================================================================= */
 
-  const VERSION = '0.1.0';
+  const VERSION = '0.1.1';
   const REPO_URL = 'https://github.com/Billdex/eclesiar-helper';
   const REPO_RAW = 'https://raw.githubusercontent.com/Billdex/eclesiar-helper/main/';
   /** 版本号只从元数据文件读，检查更新时不需要下载整个脚本。 */
@@ -316,9 +316,9 @@
     position: relative;
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 9px;
     flex: none;
-    padding: 13px 14px 12px;
+    padding: 9px 12px;
     border-bottom: 1px solid var(--eh-line);
     background: linear-gradient(180deg, rgba(255, 255, 255, .035), transparent);
     cursor: grab;
@@ -331,38 +331,29 @@
 
   .eh-mark {
     flex: none;
-    width: 30px;
-    height: 30px;
+    width: 26px;
+    height: 26px;
     display: grid;
     place-items: center;
     border: 1px solid var(--eh-brass-line);
-    border-radius: 9px;
+    border-radius: 8px;
     background: linear-gradient(160deg, #24395a, #152337);
     color: #ecd79f;
     font-family: var(--eh-serif);
-    font-size: 16px;
+    font-size: 14px;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, .1);
   }
 
-  .eh-head__text {
-    flex: 1;
-    min-width: 0;
-  }
-
   .eh-title {
-    font-size: 13.5px;
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 13px;
     font-weight: 600;
     letter-spacing: .04em;
     color: #f6efdf;
     white-space: nowrap;
-  }
-
-  .eh-sub {
-    margin-top: 1px;
-    font-size: 10.5px;
-    letter-spacing: .08em;
-    color: var(--eh-dim);
-    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .eh-head__tools {
@@ -394,9 +385,10 @@
 
   .eh-tabs {
     display: flex;
-    gap: 4px;
+    align-items: center;
+    gap: 2px;
     flex: none;
-    padding: 8px 10px;
+    padding: 4px 8px 5px;
     border-bottom: 1px solid var(--eh-line);
     overflow-x: auto;
     scrollbar-width: none;
@@ -406,14 +398,15 @@
 
   .eh-tab {
     flex: none;
-    padding: 5px 11px;
+    padding: 3px 9px;
     border: 1px solid transparent;
-    border-radius: 999px;
+    border-radius: 7px;
     background: transparent;
     color: var(--eh-muted);
     font-family: inherit;
-    font-size: 12px;
-    line-height: 1.6;
+    font-size: 11.5px;
+    line-height: 1.5;
+    letter-spacing: .02em;
     white-space: nowrap;
     cursor: pointer;
     transition: color .15s, background .15s, border-color .15s;
@@ -849,48 +842,146 @@
 
   /* ---------- 商品比价 ---------- */
 
+  /* 商品选择：两行紧凑按钮（成品 / 原材料）＋ 成品才出现的品质行 */
+  .eh-gd-picker {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .eh-gd-picks {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 5px;
+  }
+
+  .eh-gd-pick {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 4px 2px;
+    border: 1px solid var(--eh-line);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, .03);
+    color: var(--eh-muted);
+    font-family: var(--eh-font);
+    font-size: 10.5px;
+    line-height: 1.15;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: border-color .16s, background .16s, color .16s;
+  }
+
+  .eh-gd-pick:hover {
+    border-color: rgba(201, 165, 74, .38);
+    background: rgba(255, 255, 255, .06);
+    color: #e7dfcd;
+  }
+
+  .eh-gd-pick.is-on {
+    border-color: rgba(232, 205, 143, .6);
+    background: rgba(201, 165, 74, .14);
+    color: #f4e6c4;
+  }
+
+  .eh-gd-pick-icon {
+    display: grid;
+    place-items: center;
+    width: 14px;
+    height: 14px;
+    flex: none;
+    overflow: hidden;
+    font-size: 13px;
+    line-height: 1;
+  }
+
+  .eh-gd-pick-icon img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+
+  .eh-gd-quals {
+    display: grid;
+    grid-template-columns: auto repeat(5, minmax(0, 1fr));
+    align-items: center;
+    gap: 5px;
+  }
+
+  .eh-gd-quals[hidden] { display: none; }
+
+  .eh-gd-quals > span {
+    font-size: 10px;
+    color: var(--eh-dim);
+  }
+
+  .eh-gd-q {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 3px 0 2px;
+    border: 1px solid var(--eh-line);
+    border-radius: 7px;
+    background: rgba(8, 14, 24, .5);
+    color: #cbd5e1;
+    font-family: var(--eh-mono);
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1;
+    cursor: pointer;
+    transition: border-color .16s, background .16s, color .16s;
+  }
+
+  .eh-gd-q i {
+    display: block;
+    width: 14px;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--q, #cbd5e1);
+    opacity: .85;
+  }
+
+  .eh-gd-q:hover { border-color: rgba(255, 255, 255, .22); }
+
+  .eh-gd-q.is-on {
+    border-color: var(--q, #cbd5e1);
+    background: rgba(255, 255, 255, .1);
+    color: #fff;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06);
+  }
+
+  .eh-gd-q.is-on i { opacity: 1; }
+
+  .eh-gd-q[data-q="1"] { --q: #d7dee8; }
+  .eh-gd-q[data-q="2"] { --q: #6fdc9b; }
+  .eh-gd-q[data-q="3"] { --q: #7ab6f5; }
+  .eh-gd-q[data-q="4"] { --q: #a98cf0; }
+  .eh-gd-q[data-q="5"] { --q: #e8c069; }
+
+  .eh-gd-pick:focus-visible,
+  .eh-gd-q:focus-visible {
+    outline: 1px solid rgba(232, 205, 143, .75);
+    outline-offset: 1px;
+  }
+
   .eh-gd-bar {
     display: flex;
-    flex-wrap: wrap;
-    align-items: center;
+    align-items: flex-start;
+    justify-content: space-between;
     gap: 8px;
+    margin-top: 8px;
   }
 
-  .eh-gd-field {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 8px 4px 10px;
-    border: 1px solid var(--eh-line);
-    border-radius: 9px;
-    background: rgba(255, 255, 255, .03);
-    font-size: 11.5px;
-    color: var(--eh-muted);
+  .eh-gd-bar .eh-fx-status {
+    margin: 0;
+    flex: 1 1 auto;
+    min-width: 0;
   }
 
-  .eh-gd-field select {
-    max-width: 138px;
-    padding: 1px 2px;
-    border: 0;
-    border-bottom: 1px dashed rgba(201, 165, 74, .45);
-    border-radius: 0;
-    background: transparent;
-    color: #f0d9a4;
-    font-family: var(--eh-font);
-    font-size: 12px;
-    outline: none;
-    cursor: pointer;
-  }
-
-  .eh-gd-field select:focus-visible {
-    border-bottom-color: rgba(232, 205, 143, .9);
-    outline: none;
-  }
-
-  .eh-gd-field select option {
-    background: #16253b;
-    color: #f4eddd;
-  }
+  .eh-gd-bar .eh-btn { flex: none; }
 
   .eh-gd-list {
     display: flex;
@@ -1066,7 +1157,8 @@
   }
 
   @media (max-width: 480px) {
-    .eh-head { padding: 11px 12px 10px; }
+    .eh-head { padding: 8px 10px; }
+    .eh-tabs { padding: 4px 6px 5px; }
     .eh-body { padding: 12px; }
   }
   `;
@@ -1124,10 +1216,7 @@
     panel.innerHTML = `
       <header class="eh-head" data-role="head" title="拖动可移动面板，双击恢复自动跟随">
         <span class="eh-mark" aria-hidden="true">E</span>
-        <div class="eh-head__text">
-          <div class="eh-title">Eclesiar 助手</div>
-          <div class="eh-sub">经济 · 政治 · 计算辅助</div>
-        </div>
+        <div class="eh-title">Eclesiar 助手</div>
         <div class="eh-head__tools">
           <button class="eh-icon-btn" type="button" data-action="collapse"
             aria-label="收起面板" title="收起面板（Esc）">
@@ -2849,31 +2938,63 @@
 
   /* -------- 9.3 商品比价：各国市场挂单折算成黄金 -------- */
 
-  /** 商品目录：原材料无品质，成品 Q1–Q5 各自独立挂单。 */
+  /**
+   * 商品目录：第一行是四种成品（Q1–Q5 各自独立挂单），第二行是四种原材料（无品质）。
+   * icon 是接口没给商品图时的兜底，真实图片见 GOODS_AVATARS。
+   */
+  const GOODS_GROUPS = [
+    {
+      id: 'product',
+      items: [
+        { api: 'Food', zh: '食物', icon: '🍞' },
+        { api: 'Weapon', zh: '武器', icon: '⚔️' },
+        { api: 'Aircraft', zh: '飞机', icon: '✈️' },
+        { api: 'Airplane ticket', zh: '机票', icon: '🎫' }
+      ]
+    },
+    {
+      id: 'material',
+      items: [
+        { api: 'Grain', zh: '谷物', icon: '🌾' },
+        { api: 'Iron', zh: '铁', icon: '⛏️' },
+        { api: 'Fuel', zh: '燃料', icon: '🛢️' },
+        { api: 'Titanium', zh: '钛', icon: '💠' }
+      ]
+    }
+  ];
+
+  const GOODS_META = new Map();
+  GOODS_GROUPS.forEach((group) => {
+    group.items.forEach((item) => GOODS_META.set(item.api, item));
+  });
+
+  const GOODS_QUALITIES = [1, 2, 3, 4, 5];
+
+  /** 按键索引：原材料 quality=0，成品 Q1–Q5。 */
   const GOODS_ITEMS = (() => {
     const list = [];
-    [
-      ['Grain', '谷物'],
-      ['Iron', '铁'],
-      ['Fuel', '燃料'],
-      ['Titanium', '钛']
-    ].forEach(([api, zh]) => {
-      list.push({ key: api + '#0', api, zh, quality: 0, label: zh, group: '原材料' });
-    });
-    [
-      ['Food', '食物'],
-      ['Weapon', '武器'],
-      ['Aircraft', '飞机'],
-      ['Airplane ticket', '机票']
-    ].forEach(([api, zh]) => {
-      for (let q = 1; q <= 5; q += 1) {
-        list.push({ key: api + '#' + q, api, zh, quality: q, label: zh + ' Q' + q, group: zh });
-      }
+    GOODS_GROUPS.forEach((group) => {
+      group.items.forEach((item) => {
+        const qualities = group.id === 'product' ? GOODS_QUALITIES : [0];
+        qualities.forEach((quality) => {
+          list.push({
+            key: item.api + '#' + quality,
+            api: item.api,
+            zh: item.zh,
+            icon: item.icon,
+            quality,
+            label: quality ? item.zh + ' Q' + quality : item.zh
+          });
+        });
+      });
     });
     return list;
   })();
 
   const GOODS_BY_KEY = new Map(GOODS_ITEMS.map((item) => [item.key, item]));
+
+  /** api 名 → 商品图地址：从挂单里顺手收集，同一件商品各国各品质共用一个图标。 */
+  const GOODS_AVATARS = new Map();
 
   /**
    * 一个市场里同一件商品可能有多档挂单，只留最便宜的一档。
@@ -2885,6 +3006,13 @@
     (Array.isArray(offers) ? offers : []).forEach((offer) => {
       if (!offer) return;
       const key = String(offer.name) + '#' + Number(offer.quality || 0);
+
+      // 顺手记下商品图（放在价格过滤之前：即使这条挂单被跳过，图也有用）
+      if (offer.avatar && !GOODS_AVATARS.has(String(offer.name))) {
+        const src = fxAvatarUrl(offer.avatar);
+        if (src) GOODS_AVATARS.set(String(offer.name), src);
+      }
+
       const price = Number(offer.value);
       const supply = Number(offer.supply);
       if (!(price > 0) || !(supply > 0)) return;
@@ -2911,13 +3039,17 @@
       pane.innerHTML = `
         <div class="eh-section">
           <div class="eh-h3">商品与市场</div>
+          <div class="eh-gd-picker">
+            <div class="eh-gd-picks" data-role="products"></div>
+            <div class="eh-gd-picks" data-role="materials"></div>
+            <div class="eh-gd-quals" data-role="quals" hidden>
+              <span>品质</span>
+            </div>
+          </div>
           <div class="eh-gd-bar">
-            <label class="eh-gd-field">商品
-              <select data-role="item"></select>
-            </label>
+            <p class="eh-fx-status" data-role="status">…</p>
             <button class="eh-btn" type="button" data-role="refresh">刷新行情</button>
           </div>
-          <p class="eh-fx-status" data-role="status">…</p>
         </div>
         <div class="eh-section">
           <div class="eh-h3">各国市场 · 黄金单价</div>
@@ -2932,10 +3064,12 @@
         </p>
       `;
 
-      const itemSelect = pane.querySelector('[data-role="item"]');
       const listEl = pane.querySelector('[data-role="list"]');
       const statusEl = pane.querySelector('[data-role="status"]');
       const refreshBtn = pane.querySelector('[data-role="refresh"]');
+      const productBox = pane.querySelector('[data-role="products"]');
+      const materialBox = pane.querySelector('[data-role="materials"]');
+      const qualsEl = pane.querySelector('[data-role="quals"]');
 
       const emptyEl = document.createElement('p');
       emptyEl.className = 'eh-empty';
@@ -2943,30 +3077,116 @@
       emptyEl.hidden = true;
       listEl.appendChild(emptyEl);
 
-      const groups = [];
-      GOODS_ITEMS.forEach((item) => {
-        let group = groups.find((entry) => entry.label === item.group);
-        if (!group) {
-          group = { label: item.group, items: [] };
-          groups.push(group);
-        }
-        group.items.push(item);
-      });
-      groups.forEach((group) => {
-        const optgroup = document.createElement('optgroup');
-        optgroup.label = group.label;
-        group.items.forEach((item) => {
-          const option = document.createElement('option');
-          option.value = item.key;
-          option.textContent = item.label;
-          optgroup.appendChild(option);
-        });
-        itemSelect.appendChild(optgroup);
+      const PRODUCT_APIS = GOODS_GROUPS[0].items.map((meta) => meta.api);
+      const isProductApi = (api) => PRODUCT_APIS.indexOf(api) !== -1;
+
+      // 键形如 Food#1（成品）/ Grain#0（原材料），沿用旧的本地存储键名，老设置照样能用
+      const savedKey = String(ctx.storage.get('item', 'Grain#0'));
+      const initial = GOODS_BY_KEY.get(savedKey) || GOODS_BY_KEY.get('Grain#0');
+      let pickedApi = initial.api;
+      let pickedQuality = initial.quality || 1; // 记住成品的品质，切来切去不用重选
+      let item = initial;
+
+      const pickBtns = new Map(); // api → 商品按钮
+      const qualBtns = new Map(); // 品质 → 按钮
+
+      /** 商品图只在接口给过之后才换成图片，其余情况用内置 emoji。 */
+      const paintIcon = (btn, meta) => {
+        const slot = btn.querySelector('.eh-gd-pick-icon');
+        const src = GOODS_AVATARS.get(meta.api);
+        if (!slot || !src || slot.querySelector('img')) return;
+        const img = document.createElement('img');
+        img.alt = '';
+        img.decoding = 'async';
+        img.loading = 'lazy';
+        img.addEventListener(
+          'error',
+          () => {
+            // 图挂了就退回 emoji，别留一个空框
+            img.remove();
+            slot.textContent = meta.icon;
+          },
+          { once: true }
+        );
+        img.src = src;
+        slot.textContent = '';
+        slot.appendChild(img);
+      };
+
+      const buildPick = (meta, host) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'eh-gd-pick';
+        btn.dataset.api = meta.api;
+        btn.title = meta.zh;
+        const icon = document.createElement('span');
+        icon.className = 'eh-gd-pick-icon';
+        icon.textContent = meta.icon;
+        const name = document.createElement('span');
+        name.textContent = meta.zh;
+        btn.appendChild(icon);
+        btn.appendChild(name);
+        host.appendChild(btn);
+        pickBtns.set(meta.api, btn);
+        on(btn, 'click', () => selectItem(meta.api, pickedQuality));
+      };
+
+      GOODS_GROUPS[0].items.forEach((meta) => buildPick(meta, productBox));
+      GOODS_GROUPS[1].items.forEach((meta) => buildPick(meta, materialBox));
+
+      GOODS_QUALITIES.forEach((quality) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'eh-gd-q';
+        btn.dataset.q = String(quality);
+        btn.title = 'Q' + quality;
+        const bar = document.createElement('i');
+        const text = document.createElement('span');
+        text.textContent = 'Q' + quality;
+        btn.appendChild(bar);
+        btn.appendChild(text);
+        qualsEl.appendChild(btn);
+        qualBtns.set(quality, btn);
+        on(btn, 'click', () => selectItem(pickedApi, quality));
       });
 
-      let selected = String(ctx.storage.get('item', 'Grain#0'));
-      if (!GOODS_BY_KEY.has(selected)) selected = 'Grain#0';
-      itemSelect.value = selected;
+      /** 商品图是边拉边到的：每拉完一个市场就补一次，谁先到就先换谁。 */
+      const paintIcons = () => {
+        if (!alive) return;
+        pickBtns.forEach((btn, api) => {
+          paintIcon(btn, GOODS_META.get(api) || { api, icon: '' });
+        });
+      };
+
+      /** 选中态、品质行的显隐都从这里统一刷新。 */
+      const syncPicker = () => {
+        pickBtns.forEach((btn, api) => {
+          const active = api === pickedApi;
+          btn.classList.toggle('is-on', active);
+          btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+        });
+        paintIcons();
+        const product = isProductApi(pickedApi);
+        qualsEl.hidden = !product;
+        qualBtns.forEach((btn, quality) => {
+          const active = product && quality === pickedQuality;
+          btn.classList.toggle('is-on', active);
+          btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+        });
+      };
+
+      const selectItem = (api, quality) => {
+        const key = api + '#' + (isProductApi(api) ? quality : 0);
+        const next = GOODS_BY_KEY.get(key);
+        if (!next) return;
+        item = next;
+        pickedApi = next.api;
+        if (next.quality) pickedQuality = next.quality;
+        ctx.storage.set('item', next.key);
+        syncPicker();
+        render();
+        ctx.ui.reposition();
+      };
 
       let markets = [];  // 只保留拉取成功的市场：[{ id, name, avatar, currency, items }]
       let snapshotAt = 0;
@@ -3088,7 +3308,6 @@
       /** 用当前选中的商品重排列表：黄金单价升序，缺汇率的排最后。 */
       const render = () => {
         if (!alive) return;
-        const item = GOODS_BY_KEY.get(selected) || GOODS_ITEMS[0];
         const entries = [];
 
         markets.forEach((entry) => {
@@ -3190,6 +3409,8 @@
                 });
                 entry.items = goodsIndex(data && data.offers);
                 entry.status = 'ok';
+                // 逐市场补商品图：第一个市场回来就能把按钮上的 emoji 换掉，不用等全部拉完
+                paintIcons();
               } catch (err) {
                 if (err && err.name === 'AbortError') return;
                 if (err && err.code === 'UNAUTHORIZED') throw err;
@@ -3233,25 +3454,12 @@
             loading = false;
             refreshBtn.disabled = false;
             paintStatus();
+            paintIcons(); // 收尾再补一次，兜住最后一批市场的图
             render();
             ctx.ui.reposition();
           }
         }
       };
-
-      on(itemSelect, 'change', () => {
-        const next = String(itemSelect.value);
-        if (!GOODS_BY_KEY.has(next)) return;
-        selected = next;
-        ctx.storage.set('item', selected);
-        render();
-        ctx.ui.reposition();
-      });
-
-      // 下拉框在 Shadow DOM 内，按键别漏给游戏当快捷键
-      ['keydown', 'keypress', 'keyup'].forEach((type) => {
-        on(itemSelect, type, (event) => event.stopPropagation());
-      });
 
       on(refreshBtn, 'click', () => {
         load();
@@ -3269,6 +3477,7 @@
         }
       });
 
+      syncPicker();
       paintStatus();
       render();
       load();
