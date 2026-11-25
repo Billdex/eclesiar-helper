@@ -3289,7 +3289,7 @@
 
   /* -------- 9.4 关于与版本检查 -------- */
 
-  const UPDATE_CHECK_TIMEOUT = 8000;
+  const UPDATE_CHECK_TIMEOUT = 4000;
 
   /** 语义化版本比较：a 比 b 新返回 1，相同返回 0，更旧返回 -1。 */
   function compareVersions(a, b) {
@@ -3308,18 +3308,30 @@
     return 0;
   }
 
+  /** 给单个请求拼一个「外部取消 + 自身超时」的信号；不支持时退回外部信号。 */
+  function withTimeout(signal) {
+    const canTimeout =
+      typeof AbortSignal !== 'undefined' &&
+      typeof AbortSignal.timeout === 'function' &&
+      typeof AbortSignal.any === 'function';
+    if (!canTimeout) return signal;
+    return signal ? AbortSignal.any([signal, AbortSignal.timeout(UPDATE_CHECK_TIMEOUT)]) : AbortSignal.timeout(UPDATE_CHECK_TIMEOUT);
+  }
+
   /**
    * 只读取元数据文件里的 @version（几行注释而已），
    * 检查更新的流量与脚本体积无关，确认有新版本再让玩家手动安装。
+   * 每个源单独限时：raw 在某些网络下会一直挂着，不能让它吃掉备用源的时间。
    */
   async function fetchLatestVersion(signal) {
     let lastError = null;
     for (let i = 0; i < UPDATE_META_URLS.length; i += 1) {
+      if (signal && signal.aborted) break;
       try {
         const response = await window.fetch(UPDATE_META_URLS[i], {
           cache: 'no-cache',
           credentials: 'omit',
-          signal
+          signal: withTimeout(signal)
         });
         if (!response.ok) throw new Error('HTTP_' + response.status);
         const text = await response.text();
@@ -3327,7 +3339,8 @@
         if (!match) throw new Error('BAD_META');
         return match[1];
       } catch (err) {
-        if (err && err.name === 'AbortError') throw err;
+        // 外部主动取消（重新检查 / 关闭面板）要立刻停，单源超时则换下一个源
+        if (signal && signal.aborted) throw err;
         lastError = err;
       }
     }
@@ -3399,11 +3412,8 @@
 
       let alive = true;
       let controller = null;
-      let timer = 0;
 
       const stopCheck = () => {
-        clearTimeout(timer);
-        timer = 0;
         if (!controller) return;
         const current = controller;
         controller = null;
@@ -3420,13 +3430,6 @@
 
         const current = new AbortController();
         controller = current;
-        timer = window.setTimeout(() => {
-          try {
-            current.abort();
-          } catch (err) {
-            /* ignore */
-          }
-        }, UPDATE_CHECK_TIMEOUT);
 
         checkBtn.disabled = true;
         installLink.hidden = true;
@@ -3446,7 +3449,8 @@
             : '已是最新版本。';
         } catch (err) {
           if (!alive || controller !== current) return;
-          const timeout = Boolean(err && err.name === 'AbortError');
+          const name = err && err.name;
+          const timeout = name === 'AbortError' || name === 'TimeoutError';
           latestEl.textContent = '检查失败';
           noteEl.className = 'eh-note is-warn';
           noteEl.textContent = timeout
@@ -3455,8 +3459,6 @@
         } finally {
           if (controller === current) {
             controller = null;
-            clearTimeout(timer);
-            timer = 0;
             if (alive) {
               checkBtn.disabled = false;
               ctx.ui.reposition();
