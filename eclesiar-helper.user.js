@@ -2,7 +2,7 @@
 // @name         Eclesiar 助手
 // @name:en      Eclesiar Helper
 // @namespace    https://github.com/Billdex/eclesiar-helper
-// @version      0.1.1
+// @version      0.1.2
 // @description  Eclesiar 经济 / 政治计算辅助插件：悬浮球面板 + 全球汇率总览 + 各国市场商品金价比价。
 // @description:en Eclesiar helper: floating panel + exchange rates + cross-market goods pricing in gold.
 // @author       billdex
@@ -14,8 +14,8 @@
 // @homepageURL  https://github.com/Billdex/eclesiar-helper
 // @supportURL   https://github.com/Billdex/eclesiar-helper/issues
 // @source       https://github.com/Billdex/eclesiar-helper
-// @updateURL    https://raw.githubusercontent.com/Billdex/eclesiar-helper/main/eclesiar-helper.meta.js
-// @downloadURL  https://raw.githubusercontent.com/Billdex/eclesiar-helper/main/eclesiar-helper.user.js
+// @updateURL    https://cdn.jsdelivr.net/gh/Billdex/eclesiar-helper@main/eclesiar-helper.meta.js
+// @downloadURL  https://cdn.jsdelivr.net/gh/Billdex/eclesiar-helper@main/eclesiar-helper.user.js
 // ==/UserScript==
 
 /**
@@ -43,16 +43,16 @@
    * 1. 常量与工具
    * ========================================================================= */
 
-  const VERSION = '0.1.1';
+  const VERSION = '0.1.2';
   const REPO_URL = 'https://github.com/Billdex/eclesiar-helper';
+  /** jsDelivr 的 GitHub 镜像：国内可达，更新检查与安装都以它为主。 */
+  const CDN_RAW = 'https://cdn.jsdelivr.net/gh/Billdex/eclesiar-helper@main/';
+  /** GitHub raw 在国内常被拦，只作为备用。 */
   const REPO_RAW = 'https://raw.githubusercontent.com/Billdex/eclesiar-helper/main/';
   /** 版本号只从元数据文件读，检查更新时不需要下载整个脚本。 */
-  const UPDATE_META_URLS = [
-    REPO_RAW + 'eclesiar-helper.meta.js',
-    // 备用源：GitHub 被墙或 raw 被拦截时，jsDelivr 一般还能通
-    'https://cdn.jsdelivr.net/gh/Billdex/eclesiar-helper@main/eclesiar-helper.meta.js'
-  ];
-  const UPDATE_INSTALL_URL = REPO_RAW + 'eclesiar-helper.user.js';
+  const UPDATE_META_URLS = [CDN_RAW + 'eclesiar-helper.meta.js', REPO_RAW + 'eclesiar-helper.meta.js'];
+  const UPDATE_INSTALL_URL = CDN_RAW + 'eclesiar-helper.user.js';
+  const UPDATE_INSTALL_FALLBACK = REPO_RAW + 'eclesiar-helper.user.js';
   const NS = 'eclesiar-helper';
   const ROOT_ID = NS + '-root';
   const Z_INDEX = '2147483000';
@@ -3581,6 +3581,10 @@
             <a class="eh-btn" href="${UPDATE_INSTALL_URL}" target="_blank" rel="noopener noreferrer" data-role="install" hidden>安装更新</a>
           </div>
           <p class="eh-note" data-role="update-note">打开本页时自动检查一次版本号；只有确认有新版本，才需要你手动安装。</p>
+          <p class="eh-links">
+            <a href="${UPDATE_INSTALL_URL}" target="_blank" rel="noopener noreferrer">手动安装最新版（jsDelivr）</a>
+            <a href="${UPDATE_INSTALL_FALLBACK}" target="_blank" rel="noopener noreferrer">备用地址（GitHub）</a>
+          </p>
         </div>
         <div class="eh-section">
           <div class="eh-h3">操作</div>
@@ -3663,8 +3667,8 @@
           latestEl.textContent = '检查失败';
           noteEl.className = 'eh-note is-warn';
           noteEl.textContent = timeout
-            ? '检查超时，请稍后重试，或直接到 GitHub 仓库查看最新版本。'
-            : '无法读取版本信息（可能被站点安全策略或网络拦截），可到 GitHub 仓库查看最新版本。';
+            ? '检查超时（网络不通或 CDN 太慢），可点下面的「手动安装最新版」直接装。'
+            : '无法读取版本信息（可能被站点安全策略或网络拦截），可点下面的「手动安装最新版」直接装。';
         } finally {
           if (controller === current) {
             controller = null;
