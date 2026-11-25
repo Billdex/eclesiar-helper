@@ -5,7 +5,7 @@
 ## 1. 项目定位
 
 - 目标：为多人在线经济 / 政治模拟游戏 Eclesiar（<https://app.eclesiar.com/>）提供 Tampermonkey 用户脚本。
-- 现状：**v0.1.1**（走 GitHub 仓库分发）——外壳（悬浮球 + 面板 + 功能注册表 + SPA 路由钩子）+ 业务模块「汇率总览」（拉取全球法币挂单、算最优价与目标额度加权均价，内置中文国名 / 国旗，逐行加载进度）与「商品比价」（两行图标按钮点选成品 / 原材料、成品再选 Q1–Q5，各国市场挂单折算成黄金单价并按低到高排序）。两者共用 `fxFeed` 这一份汇率缓存。「关于」页负责版本检查与更新入口。
+- 现状：**v0.1.2**（走 GitHub 仓库分发，下载与更新走 jsDelivr 镜像）——外壳（悬浮球 + 面板 + 功能注册表 + SPA 路由钩子）+ 业务模块「汇率总览」（拉取全球法币挂单、算最优价与目标额度加权均价，内置中文国名 / 国旗，逐行加载进度）与「商品比价」（两行图标按钮点选成品 / 原材料、成品再选 Q1–Q5，各国市场挂单折算成黄金单价并按低到高排序）。两者共用 `fxFeed` 这一份汇率缓存。「关于」页负责版本检查与更新入口。
 - 非官方工具：不修改游戏数据、不自动操作，遵守游戏规则。
 - 文档：`README.md` 面向玩家（安装 / 扩展），官方 Wiki 为 <https://wiki.eclesiar.com/>。
 
@@ -26,7 +26,6 @@
 eclesiar-helper/
 ├── eclesiar-helper.user.js   # 脚本本体（唯一安装产物）
 ├── eclesiar-helper.meta.js   # 只有元数据，供油猴检查更新（@updateURL 指向它）
-├── dev/                      # 本地开发目录，已被 git 忽略（预览页 / 汇率假数据演示 / 截图）
 ├── README.md                 # 给玩家看的安装 / 扩展文档
 └── AGENTS.md
 ```
@@ -36,34 +35,11 @@ eclesiar-helper/
 ```bash
 node --check eclesiar-helper.user.js   # 语法检查
 node --check eclesiar-helper.meta.js   # 元数据文件语法检查
-open dev/preview.html                  # 本地预览（仅本机存在，dev/ 不入库）
-open "dev/preview.html#closed"         # 只看收起状态
-open dev/fx-demo.html                  # 汇率总览：假数据演示（不联网）
-open dev/fx-demo.html#slow             # 汇率总览：拖慢请求，看逐行填充与转圈
-open "dev/fx-demo.html#notoken"        # 汇率总览：未捕获凭据的提示态
-open "dev/fx-demo.html#target=1000"    # 汇率总览：大额目标 / 深度不足
-open dev/market-demo.html              # 商品比价：各国市场假数据（默认打开「商品」标签）
-open "dev/market-demo.html#fx"         # 商品比价：打开「汇率」标签，核对共用缓存
-open "dev/market-demo.html#item=Food%231"   # 商品比价：切到指定商品（这里是食物 Q1）
-open "dev/market-demo.html#notoken"    # 商品比价：未捕获凭据的提示态
-open dev/about-demo.html               # 关于页：真实请求一次 jsDelivr 上的版本号
 ```
 
-`dev/fx-demo.html` 在加载脚本前替换了 `window.fetch`，用真实接口的返回形状回放假数据（USD 用真实样本），用于核对渲染、逐档吃单与异常态。GBP / USD / CNY 的 `avatar` 用内联 SVG 当国旗图，JPY 故意指向 404 用于核对 emoji 兜底；加 `#slow` 可拖慢每次请求，观察逐行填充与右侧转圈。
+调试日志：游戏页地址后加 `?eh-debug=1`，控制台会输出插件日志。
 
-`dev/market-demo.html` 同样替换了 `window.fetch`：8 个国家市场，中国最便宜、墨西哥货币没有换汇挂单、巴西没有谷物、巴基斯坦的市场里只有境外卖家（带 `import_tax`，买价不受影响），用于核对黄金折算与排序。抓图时要带 `--run-all-compositor-stages-before-draw`，否则面板的入场动画可能停在 `opacity: 0`，截出来是空白。
-
-截图（无头 Chrome；入场动画未结束时，用 CDP 等渲染稳定再截）：
-
-```bash
-"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
-  --headless=new --no-sandbox --disable-gpu --disable-breakpad \
-  --user-data-dir="$(mktemp -d)" --window-size=1440,900 \
-  --force-device-scale-factor=2 --virtual-time-budget=4000 \
-  --screenshot="$PWD/dev/shot-open.png" "file://$PWD/dev/preview.html"
-```
-
-调试日志：游戏页地址后加 `?eh-debug=1`。
+仓库里不提供测试页。需要假数据时，自己在 `dev/`（已被 git 忽略）里写一个替换 `window.fetch` 的本地页面，验证完即弃，不入库。
 
 ## 5. 代码组织
 
@@ -111,24 +87,19 @@ EclesiarHelper.features.register({
 
 提交前至少：
 
-1. `node --check`
-2. 打开 `dev/preview.html`：悬浮球可拖、点击开合、`Alt+E`、`Esc`（焦点在面板内）、方向键切标签。
-3. 改过定位 / 尺寸逻辑时，用 CDP 或 DevTools 把视口切到 360×600，确认球与面板都在视口内。
-4. 改过生命周期时，控制台执行 `EclesiarHelper.destroy()`，确认宿主与 API 都消失。
-5. 改过「汇率」时，打开 `dev/fx-demo.html` 核对：均价与手算一致、吃不满时显示实际成交金数、`#notoken` 会给出提示、`#target=1000` 会标注深度不足；`#slow` 下确认每行右侧转圈随数据到达消失、无挂单的行被移除。
-6. 改过「商品」时，打开 `dev/market-demo.html` 核对：黄金单价与手算一致（挂单价 × 汇率，不叠加进口税）、没有换汇挂单的货币排最后、切商品不触发新请求、`#notoken` 给出提示；商品选择是两行图标按钮（成品 / 原材料），选中成品才出现 Q1–Q5 品质行，切到原材料时品质行隐藏，`#item=Food%234` 能直接点中对应按钮。
-
-   商品图标来自挂单的 `avatar`（缺图或加载失败退回内置 emoji），`dev/market-demo.html` 给 Food / Iron 塞了内联 SVG 用于核对这一步。
-7. 改过「关于」或版本检查时，在临时页面里把 `window.fetch` 的 meta 请求替换成假响应，核对三种态：同版本显示「已是最新」、`@version` 更大时出现「安装更新」且链接指向 `.user.js`、两次请求都失败时显示「检查失败」提示；顺手确认 `eclesiar-helper.meta.js` 的 `@version` 与主脚本一致。
-8. 真实环境：Tampermonkey 从 `@downloadURL` 安装后刷新 `app.eclesiar.com`，确认悬浮球出现、面板正常，且「关于」页能读到仓库里的版本号。
-
-注意：无头 Chrome 长时间运行可能把页面标记为 `hidden`，此时不会派发 `resize`、`ResizeObserver` 和 `rAF` 回调，定时器也会被节流。测试尺寸逻辑时可手动 `window.dispatchEvent(new Event('resize'))`，或先把页面切到前台；这不是插件缺陷。
+1. 两个文件都过 `node --check`。
+2. 装到 Tampermonkey 后进 `app.eclesiar.com`：悬浮球可拖、点击开合、`Alt+E`、`Esc`（焦点在面板内）、方向键切标签；视口缩到 360 宽时球与面板都不出屏。
+3. 改过生命周期时，控制台执行 `EclesiarHelper.destroy()`，确认宿主与 API 都消失。
+4. 改过「汇率」：最优价与均价和手算一致；目标额度吃不满时显示实际成交金数并标注深度不足；逐行转圈随数据到达消失，无挂单的行被移除；没捕获到凭据时给出提示。
+5. 改过「商品」：黄金单价 = 挂单价 × 汇率（不叠加进口税）；缺换汇挂单的货币排最后并标注；切商品不重新请求；选择区是两行图标按钮（成品 / 原材料），品质行只在选中成品时出现；商品图标缺图时退回内置 emoji。
+6. 改过「关于」或版本检查：同版本显示「已是最新」、`@version` 更大时出现「安装更新」且链接指向 jsDelivr 上的 `.user.js`、两个源都失败时显示提示并保留手动安装链接；顺手确认 `eclesiar-helper.meta.js` 的 `@version` 与主脚本一致。
+7. 真实环境：从 `@downloadURL` 安装后刷新游戏，确认悬浮球出现、面板正常，「关于」页能读到仓库里的版本号。
 
 ## 8. Git 约定
 
 - 默认分支 `main`；提交信息用中文 + 类型前缀：`feat:` / `fix:` / `docs:` / `chore:`。
 - 一次提交只做一件事；提交前 `git status` 确认没有 `.DS_Store`、临时脚本或无关杂物。
-- `dev/` 已被 git 忽略；预览页与截图只在本机使用，不要强制加入版本库。
+- `dev/` 已被 git 忽略（本地调试页）；提交前确认没有混入截图、临时页面等杂物，也不要强制把它们加进版本库。
 - 不提交任何账号信息、Cookie、Token 或游戏内隐私数据。
 
 ## 9. 发布
