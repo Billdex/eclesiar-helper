@@ -5,25 +5,27 @@
 ## 1. 项目定位
 
 - 目标：为多人在线经济 / 政治模拟游戏 Eclesiar（<https://app.eclesiar.com/>）提供 Tampermonkey 用户脚本。
-- 现状：**v0.4.0**——外壳（悬浮球 + 面板 + 功能注册表 + SPA 路由钩子）+ 业务模块「汇率总览」（拉取全球法币挂单、算最优价与目标额度加权均价，内置中文国名 / 国旗，逐行加载进度）与「商品比价」（各国市场挂单折算成黄金单价并按低到高排序）。两者共用 `fxFeed` 这一份汇率缓存。
+- 现状：**v0.1.0**（首个公开版本，走 GitHub 仓库分发）——外壳（悬浮球 + 面板 + 功能注册表 + SPA 路由钩子）+ 业务模块「汇率总览」（拉取全球法币挂单、算最优价与目标额度加权均价，内置中文国名 / 国旗，逐行加载进度）与「商品比价」（各国市场挂单折算成黄金单价并按低到高排序）。两者共用 `fxFeed` 这一份汇率缓存。「关于」页负责版本检查与更新入口。
 - 非官方工具：不修改游戏数据、不自动操作，遵守游戏规则。
 - 文档：`README.md` 面向玩家（安装 / 扩展），官方 Wiki 为 <https://wiki.eclesiar.com/>。
 
 ## 2. 硬约束
 
-1. **单文件交付**：唯一安装产物是 `eclesiar-helper.user.js`。不要引入构建链、包管理器或运行时依赖；确有需要先征得用户同意。
+1. **单文件交付**：唯一安装产物是 `eclesiar-helper.user.js`。不要引入构建链、包管理器或运行时依赖；确有需要先征得用户同意。仓库里另有一个 `eclesiar-helper.meta.js`，只放元数据（供油猴 `@updateURL` 只拉版本号），它不是安装产物，内容必须与主脚本头部保持一致。
 2. **UI 全在 Shadow DOM**：新增界面挂在 `dom.shadow` 内，样式写进 `STYLES`（`eh-` 前缀）。不要直接往游戏页面插 DOM / CSS。
 3. **资源必须可回收**：监听器用 `on(...)` 注册；功能内的定时器、订阅用 `ctx.onDestroy(...)` 登记。新增资源时同步检查 `destroy()` 是否覆盖。
 4. **不碰账号与隐私**：不读取或上报 Cookie、Token、账号信息；日志不打印玩家数据。计算只在本地进行。唯一例外是「汇率」功能需要 `Authorization: Bearer`——只从游戏自己发往 `api.eclesiar.com` 的请求头里捕获，仅存内存，不写 `localStorage`、不打印、不上报；不要扩展到读取 Cookie 或任何其它凭据。
 5. **不做影响公平性的自动化**：不自动点击、提交表单、循环请求接口、多开或绕过验证；只做展示、计算与用户主动触发的辅助。
 6. **扩展只走功能注册表**：新模块用 `features.register()`，不要改面板外壳或硬编码标签页。
-7. **版本号三处同步**：metadata 的 `@version`、`const VERSION`、`README.md` 的「当前版本」。
+7. **版本号四处同步**：`eclesiar-helper.user.js` 的 `@version`、`eclesiar-helper.meta.js` 的 `@version`、`const VERSION`、`README.md` 的「当前版本」。
+8. **更新源地址固定**：`@updateURL` / `@downloadURL` / 关于页的版本检查都指向 `https://raw.githubusercontent.com/Billdex/eclesiar-helper/main/…`。改名或迁移仓库时这几处（含 `REPO_URL` / `REPO_RAW` / `UPDATE_META_URLS`）必须一起改，否则老版本收不到更新。
 
 ## 3. 目录
 
 ```
 eclesiar-helper/
 ├── eclesiar-helper.user.js   # 脚本本体（唯一安装产物）
+├── eclesiar-helper.meta.js   # 只有元数据，供油猴检查更新（@updateURL 指向它）
 ├── dev/                      # 本地开发目录，已被 git 忽略（预览页 / 汇率假数据演示 / 截图）
 ├── README.md                 # 给玩家看的安装 / 扩展文档
 └── AGENTS.md
@@ -33,6 +35,7 @@ eclesiar-helper/
 
 ```bash
 node --check eclesiar-helper.user.js   # 语法检查
+node --check eclesiar-helper.meta.js   # 元数据文件语法检查
 open dev/preview.html                  # 本地预览（仅本机存在，dev/ 不入库）
 open "dev/preview.html#closed"         # 只看收起状态
 open dev/fx-demo.html                  # 汇率总览：假数据演示（不联网）
@@ -73,7 +76,7 @@ open "dev/market-demo.html#notoken"    # 商品比价：未捕获凭据的提示
 6. 面板（定位 / 开合 / 标签页）
 7. 路由钩子
 8. 对外 UI 控制（`publicUi`）
-9. 内置功能（`overview` / `fx` / `about`）
+9. 内置功能（`fx` / `goods` / `about`，版本检查也在这里）
 10. 启动与销毁
 11. 公开 API
 
@@ -113,7 +116,8 @@ EclesiarHelper.features.register({
 4. 改过生命周期时，控制台执行 `EclesiarHelper.destroy()`，确认宿主与 API 都消失。
 5. 改过「汇率」时，打开 `dev/fx-demo.html` 核对：均价与手算一致、吃不满时显示实际成交金数、`#notoken` 会给出提示、`#target=1000` 会标注深度不足；`#slow` 下确认每行右侧转圈随数据到达消失、无挂单的行被移除。
 6. 改过「商品」时，打开 `dev/market-demo.html` 核对：黄金单价与手算一致（挂单价 × 汇率，不叠加进口税）、没有换汇挂单的货币排最后、切商品不触发新请求、`#notoken` 给出提示。
-7. 真实环境：Tampermonkey 安装后刷新 `app.eclesiar.com`，确认悬浮球出现、面板正常。
+7. 改过「关于」或版本检查时，在临时页面里把 `window.fetch` 的 meta 请求替换成假响应，核对三种态：同版本显示「已是最新」、`@version` 更大时出现「安装更新」且链接指向 `.user.js`、两次请求都失败时显示「检查失败」提示；顺手确认 `eclesiar-helper.meta.js` 的 `@version` 与主脚本一致。
+8. 真实环境：Tampermonkey 从 `@downloadURL` 安装后刷新 `app.eclesiar.com`，确认悬浮球出现、面板正常，且「关于」页能读到仓库里的版本号。
 
 注意：无头 Chrome 长时间运行可能把页面标记为 `hidden`，此时不会派发 `resize`、`ResizeObserver` 和 `rAF` 回调，定时器也会被节流。测试尺寸逻辑时可手动 `window.dispatchEvent(new Event('resize'))`，或先把页面切到前台；这不是插件缺陷。
 
@@ -126,6 +130,7 @@ EclesiarHelper.features.register({
 
 ## 9. 发布
 
-1. 修改 `@version` 与 `const VERSION`，同步 README 的「当前版本」。
+1. 修改 `eclesiar-helper.user.js` 的 `@version`、`eclesiar-helper.meta.js` 的 `@version`、`const VERSION`，同步 README 的「当前版本」。
 2. 更新 README 的能力表 / 说明。
-3. 把 `.user.js` 全文粘贴进 Tampermonkey（或拖入浏览器）覆盖旧版本。
+3. 提交并推送到 `main`（`updateURL` / `downloadURL` 都指向 `main` 分支，推送后老版本即可检测到更新）。
+4. 发布页 / 群里给的安装地址固定为 `https://raw.githubusercontent.com/Billdex/eclesiar-helper/main/eclesiar-helper.user.js`；本地调试也可以把 `.user.js` 全文粘贴进 Tampermonkey 覆盖。

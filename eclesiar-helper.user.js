@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Eclesiar 助手
 // @name:en      Eclesiar Helper
-// @namespace    https://app.eclesiar.com/
-// @version      0.4.0
+// @namespace    https://github.com/Billdex/eclesiar-helper
+// @version      0.1.0
 // @description  Eclesiar 经济 / 政治计算辅助插件：悬浮球面板 + 全球汇率总览 + 各国市场商品金价比价。
 // @description:en Eclesiar helper: floating panel + exchange rates + cross-market goods pricing in gold.
 // @author       billdex
@@ -11,6 +11,11 @@
 // @grant        none
 // @noframes
 // @license      MIT
+// @homepageURL  https://github.com/Billdex/eclesiar-helper
+// @supportURL   https://github.com/Billdex/eclesiar-helper/issues
+// @source       https://github.com/Billdex/eclesiar-helper
+// @updateURL    https://raw.githubusercontent.com/Billdex/eclesiar-helper/main/eclesiar-helper.meta.js
+// @downloadURL  https://raw.githubusercontent.com/Billdex/eclesiar-helper/main/eclesiar-helper.user.js
 // ==/UserScript==
 
 /**
@@ -22,7 +27,7 @@
  * 结构：
  *   1. 外壳 —— Shadow DOM 隔离样式，宿主挂在 document.body 上（0×0，不挡页面）
  *   2. 悬浮球 —— 可拖拽、位置记忆、点击开合面板
- *   3. 面板 —— 标签页容器 + 内置「概览 / 关于」
+ *   3. 面板 —— 标签页容器 + 内置「汇率 / 商品 / 关于」
  *   4. 功能注册表 —— window.EclesiarHelper.features.register({ ... })
  *   5. SPA 路由钩子 —— 包装 history.pushState / replaceState，供功能订阅
  *
@@ -38,7 +43,16 @@
    * 1. 常量与工具
    * ========================================================================= */
 
-  const VERSION = '0.4.0';
+  const VERSION = '0.1.0';
+  const REPO_URL = 'https://github.com/Billdex/eclesiar-helper';
+  const REPO_RAW = 'https://raw.githubusercontent.com/Billdex/eclesiar-helper/main/';
+  /** 版本号只从元数据文件读，检查更新时不需要下载整个脚本。 */
+  const UPDATE_META_URLS = [
+    REPO_RAW + 'eclesiar-helper.meta.js',
+    // 备用源：GitHub 被墙或 raw 被拦截时，jsDelivr 一般还能通
+    'https://cdn.jsdelivr.net/gh/Billdex/eclesiar-helper@main/eclesiar-helper.meta.js'
+  ];
+  const UPDATE_INSTALL_URL = REPO_RAW + 'eclesiar-helper.user.js';
   const NS = 'eclesiar-helper';
   const ROOT_ID = NS + '-root';
   const Z_INDEX = '2147483000';
@@ -576,11 +590,21 @@
     color: var(--eh-ivory);
   }
 
+  /* 更新按钮是 <a>，样式与 eh-btn 对齐 */
+  a.eh-btn {
+    display: inline-block;
+    line-height: 1.5;
+    text-decoration: none;
+  }
+
   .eh-flash {
     margin: 10px 0 0;
     font-size: 11.5px;
     color: #8fd6a8;
   }
+
+  .eh-note.is-ok { color: #8fd6a8; }
+  .eh-note.is-warn { color: #d9a35e; }
 
   .eh-disclaimer {
     margin: 16px 0 0;
@@ -1791,74 +1815,6 @@
   /* =========================================================================
    * 9. 内置功能
    * ========================================================================= */
-
-  registerFeature({
-    id: 'overview',
-    title: '概览',
-    order: 10,
-    mount(pane, ctx) {
-      pane.innerHTML = `
-        <div class="eh-section">
-          <div class="eh-h3">当前页面</div>
-          <div class="eh-kv">
-            <span>路由</span><b class="eh-mono" data-role="route">—</b>
-            <span>标题</span><b data-role="title">—</b>
-          </div>
-        </div>
-        <div class="eh-section">
-          <div class="eh-h3">运行环境</div>
-          <div class="eh-kv">
-            <span>视口</span><b data-role="viewport">—</b>
-            <span>语言</span><b data-role="lang">—</b>
-            <span>本地时间</span><b class="eh-mono" data-role="clock">—</b>
-          </div>
-        </div>
-        <div class="eh-callout">
-          插件基座已就绪。这里是后续「行情 / 税率 / 生产 / 选举」等模块的接入位置，
-          新功能只需注册一个标签页，外壳无需改动。
-        </div>
-      `;
-
-      const routeEl = pane.querySelector('[data-role="route"]');
-      const titleEl = pane.querySelector('[data-role="title"]');
-      const viewportEl = pane.querySelector('[data-role="viewport"]');
-      const langEl = pane.querySelector('[data-role="lang"]');
-      const clockEl = pane.querySelector('[data-role="clock"]');
-
-      const refreshPage = () => {
-        routeEl.textContent = ctx.route.current || '/';
-        titleEl.textContent = document.title || '—';
-      };
-
-      const refreshClock = () => {
-        clockEl.textContent = formatClock();
-      };
-
-      const refreshViewport = () => {
-        viewportEl.textContent = window.innerWidth + ' × ' + window.innerHeight;
-      };
-
-      refreshPage();
-      refreshClock();
-      refreshViewport();
-      langEl.textContent = document.documentElement.lang || navigator.language || '—';
-
-      const offRoute = ctx.route.onChange(() => {
-        refreshPage();
-        refreshClock();
-      });
-      const timer = window.setInterval(() => {
-        refreshClock();
-        if (document.title !== titleEl.textContent) refreshPage();
-      }, 1000);
-      on(window, 'resize', refreshViewport);
-
-      ctx.onDestroy(() => {
-        offRoute();
-        clearInterval(timer);
-      });
-    }
-  });
 
   /* -------- 9.1 汇率总览：接口、凭据与计算 -------- */
 
@@ -3331,6 +3287,53 @@
     }
   });
 
+  /* -------- 9.4 关于与版本检查 -------- */
+
+  const UPDATE_CHECK_TIMEOUT = 8000;
+
+  /** 语义化版本比较：a 比 b 新返回 1，相同返回 0，更旧返回 -1。 */
+  function compareVersions(a, b) {
+    const parse = (value) =>
+      String(value == null ? '' : value)
+        .trim()
+        .split('.')
+        .map((part) => parseInt(part, 10) || 0);
+    const left = parse(a);
+    const right = parse(b);
+    const size = Math.max(left.length, right.length);
+    for (let i = 0; i < size; i += 1) {
+      const diff = (left[i] || 0) - (right[i] || 0);
+      if (diff !== 0) return diff > 0 ? 1 : -1;
+    }
+    return 0;
+  }
+
+  /**
+   * 只读取元数据文件里的 @version（几行注释而已），
+   * 检查更新的流量与脚本体积无关，确认有新版本再让玩家手动安装。
+   */
+  async function fetchLatestVersion(signal) {
+    let lastError = null;
+    for (let i = 0; i < UPDATE_META_URLS.length; i += 1) {
+      try {
+        const response = await window.fetch(UPDATE_META_URLS[i], {
+          cache: 'no-cache',
+          credentials: 'omit',
+          signal
+        });
+        if (!response.ok) throw new Error('HTTP_' + response.status);
+        const text = await response.text();
+        const match = /^\s*\/\/\s*@version\s+(\S+)/m.exec(text);
+        if (!match) throw new Error('BAD_META');
+        return match[1];
+      } catch (err) {
+        if (err && err.name === 'AbortError') throw err;
+        lastError = err;
+      }
+    }
+    throw lastError || new Error('NO_SOURCE');
+  }
+
   registerFeature({
     id: 'about',
     title: '关于',
@@ -3347,6 +3350,17 @@
           <p class="eh-note">社区自制工具，与 Eclesiar 官方无关。</p>
         </div>
         <div class="eh-section">
+          <div class="eh-h3">版本更新</div>
+          <div class="eh-kv">
+            <span>最新版本</span><b data-role="latest">自动检查中…</b>
+          </div>
+          <div class="eh-row">
+            <button class="eh-btn" type="button" data-role="check">重新检查</button>
+            <a class="eh-btn" href="${UPDATE_INSTALL_URL}" target="_blank" rel="noopener noreferrer" data-role="install" hidden>安装更新</a>
+          </div>
+          <p class="eh-note" data-role="update-note">打开本页时自动检查一次版本号；只有确认有新版本，才需要你手动安装。</p>
+        </div>
+        <div class="eh-section">
           <div class="eh-h3">操作</div>
           <div class="eh-kv">
             <span>Alt + E</span><b>打开 / 收起面板</b>
@@ -3360,6 +3374,8 @@
           <p class="eh-links">
             <a href="https://app.eclesiar.com/" target="_blank" rel="noopener noreferrer">游戏入口</a>
             <a href="https://wiki.eclesiar.com/" target="_blank" rel="noopener noreferrer">官方 Wiki</a>
+            <a href="${REPO_URL}" target="_blank" rel="noopener noreferrer">GitHub 仓库</a>
+            <a href="${REPO_URL}/issues" target="_blank" rel="noopener noreferrer">问题反馈</a>
           </p>
         </div>
         <div class="eh-section">
@@ -3376,6 +3392,81 @@
         </p>
       `;
 
+      const latestEl = pane.querySelector('[data-role="latest"]');
+      const noteEl = pane.querySelector('[data-role="update-note"]');
+      const checkBtn = pane.querySelector('[data-role="check"]');
+      const installLink = pane.querySelector('[data-role="install"]');
+
+      let alive = true;
+      let controller = null;
+      let timer = 0;
+
+      const stopCheck = () => {
+        clearTimeout(timer);
+        timer = 0;
+        if (!controller) return;
+        const current = controller;
+        controller = null;
+        try {
+          current.abort();
+        } catch (err) {
+          /* ignore */
+        }
+      };
+
+      const check = async () => {
+        if (!alive) return;
+        stopCheck();
+
+        const current = new AbortController();
+        controller = current;
+        timer = window.setTimeout(() => {
+          try {
+            current.abort();
+          } catch (err) {
+            /* ignore */
+          }
+        }, UPDATE_CHECK_TIMEOUT);
+
+        checkBtn.disabled = true;
+        installLink.hidden = true;
+        latestEl.textContent = '检查中…';
+        noteEl.className = 'eh-note';
+        noteEl.textContent = '正在读取仓库中的版本号（只拉元数据，不下载脚本）。';
+
+        try {
+          const latest = await fetchLatestVersion(current.signal);
+          if (!alive || controller !== current) return;
+          const newer = compareVersions(latest, VERSION) > 0;
+          latestEl.textContent = 'v' + latest;
+          installLink.hidden = !newer;
+          noteEl.className = 'eh-note is-ok';
+          noteEl.textContent = newer
+            ? '发现新版本（当前 v' + VERSION + '）。点「安装更新」会打开脚本地址，由 Tampermonkey 提示覆盖安装，本地界面设置会保留。'
+            : '已是最新版本。';
+        } catch (err) {
+          if (!alive || controller !== current) return;
+          const timeout = Boolean(err && err.name === 'AbortError');
+          latestEl.textContent = '检查失败';
+          noteEl.className = 'eh-note is-warn';
+          noteEl.textContent = timeout
+            ? '检查超时，请稍后重试，或直接到 GitHub 仓库查看最新版本。'
+            : '无法读取版本信息（可能被站点安全策略或网络拦截），可到 GitHub 仓库查看最新版本。';
+        } finally {
+          if (controller === current) {
+            controller = null;
+            clearTimeout(timer);
+            timer = 0;
+            if (alive) {
+              checkBtn.disabled = false;
+              ctx.ui.reposition();
+            }
+          }
+        }
+      };
+
+      on(checkBtn, 'click', check);
+
       const flash = pane.querySelector('[data-role="flash"]');
       let flashTimer = 0;
       const say = (text) => {
@@ -3387,17 +3478,24 @@
         }, 2400);
       };
 
-      pane.querySelector('[data-role="reset-ball"]').addEventListener('click', () => {
+      on(pane.querySelector('[data-role="reset-ball"]'), 'click', () => {
         ctx.ui.resetBall();
         say('悬浮球位置已重置');
       });
 
-      pane.querySelector('[data-role="reset-all"]').addEventListener('click', () => {
+      on(pane.querySelector('[data-role="reset-all"]'), 'click', () => {
         ctx.ui.resetAll();
         say('已清除本地设置，界面恢复默认');
       });
 
-      ctx.onDestroy(() => clearTimeout(flashTimer));
+      ctx.onDestroy(() => {
+        alive = false;
+        stopCheck();
+        clearTimeout(flashTimer);
+      });
+
+      // 打开「关于」即自动检查一次
+      check();
     }
   });
 
