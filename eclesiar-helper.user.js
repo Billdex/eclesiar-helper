@@ -2,9 +2,9 @@
 // @name         Eclesiar 助手
 // @name:en      Eclesiar Helper
 // @namespace    https://app.eclesiar.com/
-// @version      0.1.0
-// @description  Eclesiar 经济 / 政治计算辅助插件：悬浮球 + 可展开面板的基础框架。
-// @description:en A floating assistant skeleton for Eclesiar (economy & politics helper).
+// @version      0.2.0
+// @description  Eclesiar 经济 / 政治计算辅助插件：悬浮球面板 + 全球汇率总览。
+// @description:en Eclesiar helper: floating panel + global exchange-rate overview.
 // @author       billdex
 // @match        https://app.eclesiar.com/*
 // @run-at       document-idle
@@ -38,7 +38,7 @@
    * 1. 常量与工具
    * ========================================================================= */
 
-  const VERSION = '0.1.0';
+  const VERSION = '0.2.0';
   const NS = 'eclesiar-helper';
   const ROOT_ID = NS + '-root';
   const Z_INDEX = '2147483000';
@@ -557,6 +557,13 @@
 
   .eh-btn:hover { background: rgba(201, 165, 74, .2); }
 
+  .eh-btn:disabled,
+  .eh-btn:disabled:hover {
+    opacity: .55;
+    background: rgba(255, 255, 255, .04);
+    cursor: default;
+  }
+
   .eh-btn--ghost {
     border-color: rgba(255, 255, 255, .12);
     background: transparent;
@@ -582,6 +589,173 @@
     font-size: 10.5px;
     line-height: 1.6;
     color: #64738a;
+  }
+
+  /* ---------- 汇率总览 ---------- */
+
+  .eh-fx-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .eh-fx-field {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px 4px 10px;
+    border: 1px solid var(--eh-line);
+    border-radius: 9px;
+    background: rgba(255, 255, 255, .03);
+    font-size: 11.5px;
+    color: var(--eh-muted);
+  }
+
+  .eh-fx-field input {
+    width: 54px;
+    padding: 1px 2px;
+    border: 0;
+    border-bottom: 1px dashed rgba(201, 165, 74, .45);
+    background: transparent;
+    color: #f0d9a4;
+    font-family: var(--eh-mono);
+    font-size: 12px;
+    text-align: right;
+    outline: none;
+  }
+
+  .eh-fx-field input:focus-visible {
+    border-bottom-color: rgba(232, 205, 143, .9);
+    outline: none;
+  }
+
+  .eh-fx-field input::-webkit-outer-spin-button,
+  .eh-fx-field input::-webkit-inner-spin-button {
+    margin: 0;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  .eh-fx-field input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+
+  .eh-fx-status {
+    margin: 6px 0 0;
+    font-size: 11px;
+    line-height: 1.6;
+    color: var(--eh-dim);
+  }
+
+  .eh-fx-status[data-tone="warn"] { color: #e0b071; }
+  .eh-fx-status[data-tone="error"] { color: #e39a9a; }
+
+  .eh-fx-legend {
+    margin: 0 0 9px;
+    font-size: 10.5px;
+    line-height: 1.65;
+    color: #7d8ba0;
+  }
+
+  .eh-fx-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .eh-fx-row {
+    padding: 7px 9px;
+    border: 1px solid rgba(255, 255, 255, .06);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, .022);
+  }
+
+  .eh-fx-head {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    min-width: 0;
+  }
+
+  .eh-fx-code {
+    flex: none;
+    font-family: var(--eh-mono);
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: .05em;
+    color: #f0d9a4;
+  }
+
+  .eh-fx-country {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    font-size: 10.5px;
+    color: #74839a;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .eh-fx-prices {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 5px;
+  }
+
+  .eh-fx-tag {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 4px;
+    padding: 1px 6px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    font-size: 10px;
+    line-height: 1.7;
+  }
+
+  .eh-fx-tag b {
+    font-family: var(--eh-mono);
+    font-size: 11.5px;
+    font-weight: 600;
+  }
+
+  .eh-fx-tag--buy {
+    border-color: rgba(124, 178, 232, .22);
+    background: rgba(124, 178, 232, .1);
+    color: #8fb6de;
+  }
+
+  .eh-fx-tag--sell {
+    border-color: rgba(143, 214, 168, .2);
+    background: rgba(143, 214, 168, .09);
+    color: #86c79c;
+  }
+
+  .eh-fx-tag--idle {
+    border-color: rgba(255, 255, 255, .08);
+    background: rgba(255, 255, 255, .03);
+    color: #6d7a8f;
+  }
+
+  .eh-fx-cost {
+    margin-top: 4px;
+    font-size: 10.5px;
+    line-height: 1.7;
+    color: #8d9bb0;
+  }
+
+  .eh-fx-cost b {
+    font-family: var(--eh-mono);
+    font-weight: 600;
+    color: #e7dfcd;
+  }
+
+  .eh-fx-flag {
+    margin-left: 3px;
+    color: #d9a35e;
   }
 
   /* ---------- 底栏 ---------- */
@@ -1464,6 +1638,631 @@
     }
   });
 
+  /* -------- 9.1 汇率总览：接口、凭据与计算 -------- */
+
+  const FX_API = 'https://api.eclesiar.com';
+  const FX_CONCURRENCY = 3;
+  const FX_GAP = 60;
+
+  const escapeHtml = (value) =>
+    String(value == null ? '' : value).replace(
+      /[&<>"']/g,
+      (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]
+    );
+
+  const fxSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  /**
+   * 市场接口凭据。
+   * 只从游戏自己发往 api.eclesiar.com 的请求里读取 Authorization，
+   * 仅保存在内存中：不写 localStorage、不打日志、不上报。
+   */
+  const market = (() => {
+    let token = '';
+    let seenAuth = false;
+    let expired = false;
+    let installed = false;
+    const restores = [];
+
+    /** 兼容裸主机、大写主机、协议相对路径等写法；只看主机名。 */
+    const isApiUrl = (url) => {
+      try {
+        return new URL(String(url), location.href).hostname === 'api.eclesiar.com';
+      } catch (err) {
+        return false;
+      }
+    };
+
+    const remember = (raw) => {
+      if (typeof raw !== 'string') return;
+      const value = raw.trim();
+      if (!value) return;
+      // 见过凭据头就够了：格式不符时也能在界面上说清楚，而不是让用户猜
+      seenAuth = true;
+      if (value.length < 16 || !/^bearer\s+\S+$/i.test(value)) return;
+      if (value === token) return;
+      token = value;
+      expired = false;
+      log('已捕获接口凭据（仅内存）');
+    };
+
+    const scanHeaders = (headers) => {
+      if (!headers) return;
+      try {
+        if (typeof Headers === 'function' && headers instanceof Headers) {
+          remember(headers.get('authorization'));
+          return;
+        }
+        if (Array.isArray(headers)) {
+          headers.forEach((pair) => {
+            if (Array.isArray(pair) && String(pair[0]).toLowerCase() === 'authorization') {
+              remember(pair[1]);
+            }
+          });
+          return;
+        }
+        if (typeof headers === 'object') {
+          Object.keys(headers).forEach((key) => {
+            if (key.toLowerCase() === 'authorization') remember(headers[key]);
+          });
+        }
+      } catch (err) {
+        /* 读不到就算了，绝不因为抓凭据影响页面自己的请求 */
+      }
+    };
+
+    function install() {
+      if (installed) return;
+      installed = true;
+
+      const nativeFetch = window.fetch;
+      if (typeof nativeFetch === 'function') {
+        const wrapped = function (input, init) {
+          try {
+            const url =
+              typeof input === 'string' ? input : input && typeof input.url === 'string' ? input.url : '';
+            if (isApiUrl(url)) {
+              if (init && init.headers) scanHeaders(init.headers);
+              else if (input && input.headers) scanHeaders(input.headers);
+            }
+          } catch (err) {
+            /* ignore */
+          }
+          return nativeFetch.apply(this, arguments);
+        };
+        window.fetch = wrapped;
+        restores.push(() => {
+          if (window.fetch === wrapped) window.fetch = nativeFetch;
+        });
+      }
+
+      const proto = window.XMLHttpRequest && window.XMLHttpRequest.prototype;
+      if (proto && typeof proto.open === 'function' && typeof proto.setRequestHeader === 'function') {
+        const nativeOpen = proto.open;
+        const nativeSet = proto.setRequestHeader;
+
+        const wrappedOpen = function (method, url) {
+          try {
+            this.__ehApiUrl = String(url);
+          } catch (err) {
+            /* ignore */
+          }
+          return nativeOpen.apply(this, arguments);
+        };
+
+        const wrappedSet = function (name, value) {
+          try {
+            if (isApiUrl(this.__ehApiUrl) && String(name).toLowerCase() === 'authorization') {
+              remember(String(value));
+            }
+          } catch (err) {
+            /* ignore */
+          }
+          return nativeSet.apply(this, arguments);
+        };
+
+        proto.open = wrappedOpen;
+        proto.setRequestHeader = wrappedSet;
+        restores.push(() => {
+          if (proto.open === wrappedOpen) proto.open = nativeOpen;
+          if (proto.setRequestHeader === wrappedSet) proto.setRequestHeader = nativeSet;
+        });
+      }
+    }
+
+    function uninstall() {
+      restores.splice(0).forEach((fn) => {
+        try {
+          fn();
+        } catch (err) {
+          /* ignore */
+        }
+      });
+      installed = false;
+      token = '';
+    }
+
+    const normalize = (err) => {
+      if (err && err.name === 'TimeoutError') {
+        const error = new Error('请求超时');
+        error.code = 'TIMEOUT';
+        return error;
+      }
+      return err;
+    };
+
+    async function call(path, options) {
+      const opts = options || {};
+      if (!token) {
+        const error = new Error('NO_TOKEN');
+        error.code = 'NO_TOKEN';
+        throw error;
+      }
+
+      const headers = { accept: 'application/json', authorization: token };
+      const guards = [];
+      if (opts.signal) guards.push(opts.signal);
+      if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function' && typeof AbortSignal.any === 'function') {
+        // 单个请求最多等 10 秒，避免网络挂住时刷新按钮永久不可用
+        guards.push(AbortSignal.timeout(10000));
+      }
+
+      const init = {
+        method: 'GET',
+        headers,
+        credentials: opts.credentials || 'same-origin',
+        signal: guards.length > 1 ? AbortSignal.any(guards) : guards[0]
+      };
+
+      if (opts.form) {
+        headers['content-type'] = 'application/x-www-form-urlencoded;charset=UTF-8';
+        init.method = 'POST';
+        init.body = new URLSearchParams(opts.form).toString();
+      }
+
+      const request = (credentials) =>
+        window.fetch(FX_API + path, Object.assign({}, init, { credentials }));
+      const retryWithCookie = () =>
+        call(path, Object.assign({}, opts, { credentials: 'include', cookieRetry: true }));
+
+      let response;
+      try {
+        response = await request(init.credentials);
+      } catch (err) {
+        // 超时 / 主动中断：直接上报，绝不拿已中止的 signal 再发一次
+        if (err && (err.name === 'AbortError' || err.name === 'TimeoutError')) throw normalize(err);
+        // 网络层失败：补一次带同站 Cookie 的请求（个别环境的 Cloudflare 需要）
+        try {
+          response = await request('include');
+        } catch (again) {
+          throw normalize(again);
+        }
+      }
+
+      if (response.status === 401) {
+        token = '';
+        expired = true;
+        const error = new Error('UNAUTHORIZED');
+        error.code = 'UNAUTHORIZED';
+        throw error;
+      }
+
+      if (!response.ok) {
+        // 列表接口可能只接受 POST：GET 被拒时补一次空表单请求
+        if (init.method === 'GET' && (response.status === 404 || response.status === 405)) {
+          return call(path, Object.assign({}, opts, { form: opts.form || {} }));
+        }
+        // 403 常见于 Cloudflare 挑战：带同站 Cookie 再试一次
+        if (response.status === 403 && !opts.cookieRetry) return retryWithCookie();
+        const error = new Error('HTTP_' + response.status);
+        error.code = 'HTTP';
+        throw error;
+      }
+
+      let payload;
+      try {
+        payload = await response.json();
+      } catch (err) {
+        // 挑战页常见形态是 200 + HTML：解析失败也按 Cookie 兜底重试一次
+        if (!opts.cookieRetry) return retryWithCookie();
+        const error = new Error('BAD_PAYLOAD');
+        error.code = 'BAD_PAYLOAD';
+        throw error;
+      }
+
+      if (!payload || payload.code !== 200 || !Array.isArray(payload.data)) {
+        const error = new Error('BAD_PAYLOAD');
+        error.code = 'BAD_PAYLOAD';
+        throw error;
+      }
+      return payload.data;
+    }
+
+    return {
+      get token() {
+        return token;
+      },
+      /** none：没见过凭据头；unsupported：见过但格式不符；expired：服务端判失效 */
+      get state() {
+        if (token) return 'ok';
+        if (expired) return 'expired';
+        return seenAuth ? 'unsupported' : 'none';
+      },
+      install,
+      uninstall,
+      call
+    };
+  })();
+
+  /** countries/summary → 只保留有独立法币的国家，跳过 Gold 与海盗/世界实体。 */
+  function fxCurrencies(list) {
+    const seen = new Map();
+    (Array.isArray(list) ? list : []).forEach((country) => {
+      const currency = country && country.currency;
+      if (!currency || !currency.id || !currency.name) return;
+      if (String(currency.name).toLowerCase() === 'gold') return;
+      if (seen.has(currency.id)) return;
+      seen.set(currency.id, {
+        id: currency.id,
+        code: String(currency.name),
+        country: String(country.name || '')
+      });
+    });
+    return [...seen.values()];
+  }
+
+  /**
+   * 统一两侧挂单的口径：价格一律换成「黄金 / 1 单位法币」，数量换成可成交黄金量。
+   * SELL 单：amount 是法币数量，rate 本身就是 黄金/法币。
+   * BUY 单：amount 是黄金数量，rate 是 法币/黄金，价格要取倒数。
+   */
+  function fxBook(sellOrders, buyOrders) {
+    const read = (list) =>
+      (Array.isArray(list) ? list : [])
+        .map((order) => ({
+          rate: Number(order && order.rate),
+          amount: Number(order && order.amount)
+        }))
+        .filter(
+          (order) =>
+            Number.isFinite(order.rate) && order.rate > 0 && Number.isFinite(order.amount) && order.amount > 0
+        );
+
+    const asks = read(sellOrders)
+      .map((order) => ({ price: order.rate, qty: order.amount, gold: order.amount * order.rate }))
+      .sort((a, b) => a.price - b.price);
+
+    const bids = read(buyOrders)
+      .map((order) => ({ price: 1 / order.rate, qty: order.amount * order.rate, gold: order.amount }))
+      .sort((a, b) => b.price - a.price);
+
+    return { asks, bids };
+  }
+
+  /** 沿最优档位逐档吃单，凑够 goldBudget 黄金，给出成交量加权成本。 */
+  function fxFill(levels, goldBudget) {
+    let left = goldBudget;
+    let currency = 0;
+    let gold = 0;
+
+    levels.forEach((level) => {
+      if (left <= 1e-9) return;
+      const take = Math.min(left, level.gold);
+      if (!(take > 0)) return;
+      currency += take / level.price;
+      gold += take;
+      left -= take;
+    });
+
+    return {
+      gold,
+      currency,
+      avg: currency > 0 ? gold / currency : null,
+      filled: left <= 1e-9
+    };
+  }
+
+  function fxPrice(value) {
+    if (!Number.isFinite(value) || value <= 0) return '—';
+    if (value >= 1000) return value.toFixed(0);
+    if (value >= 10) return value.toFixed(2);
+    if (value >= 1) return value.toFixed(3);
+    if (value >= 0.001) return value.toFixed(4);
+    return value.toPrecision(3);
+  }
+
+  function fxQty(value) {
+    if (!Number.isFinite(value) || value <= 0) return '—';
+    if (value >= 10000) return value.toFixed(0);
+    if (value >= 100) return value.toFixed(1);
+    if (value >= 1) return value.toFixed(2);
+    return value.toPrecision(3);
+  }
+
+  registerFeature({
+    id: 'fx',
+    title: '汇率',
+    order: 20,
+    mount(pane, ctx) {
+      pane.innerHTML = `
+        <div class="eh-section">
+          <div class="eh-h3">换汇目标</div>
+          <div class="eh-fx-bar">
+            <label class="eh-fx-field">目标黄金
+              <input type="number" min="0.01" step="1" inputmode="decimal" data-role="target" />
+            </label>
+            <button class="eh-btn" type="button" data-role="refresh">刷新行情</button>
+          </div>
+          <p class="eh-fx-status" data-role="status">…</p>
+        </div>
+        <div class="eh-section">
+          <div class="eh-h3">全球汇率</div>
+          <p class="eh-fx-legend">
+            买入 = 花黄金买该国法币（吃卖单，价越低越好）；卖出 = 卖法币换黄金（吃买单，价越高越好）。
+            价格单位：黄金 / 1 单位法币。
+          </p>
+          <div class="eh-fx-list" data-role="list"></div>
+        </div>
+        <p class="eh-disclaimer">
+          数据来自游戏公开挂单接口，仅供参考；实际下单请以游戏内实时行情为准。
+        </p>
+      `;
+
+      const targetInput = pane.querySelector('[data-role="target"]');
+      const listEl = pane.querySelector('[data-role="list"]');
+      const statusEl = pane.querySelector('[data-role="status"]');
+      const refreshBtn = pane.querySelector('[data-role="refresh"]');
+
+      let target = Number(ctx.storage.get('target', 10));
+      if (!Number.isFinite(target) || target <= 0) target = 10;
+      targetInput.value = String(target);
+
+      let quotes = [];
+      let loading = false;
+      let alive = true;
+      let controller = null;
+      let targetTimer = 0;
+
+      const setStatus = (text, tone) => {
+        if (!alive) return;
+        statusEl.textContent = text;
+        if (tone) statusEl.dataset.tone = tone;
+        else delete statusEl.dataset.tone;
+      };
+
+      /** 刷新失败但手里还有旧行情时，必须说清楚下方数据不是本次结果。 */
+      const failStatus = (text, tone) => {
+        setStatus(quotes.length ? text + ' · 下方为上次结果' : text, tone);
+      };
+
+      const tokenHint = () => {
+        const state = market.state;
+        if (state === 'expired') return '登录凭据已失效，请刷新游戏页面后再试。';
+        if (state === 'unsupported') return '抓到接口请求了，但凭据格式不是 Bearer，请刷新游戏页面后再试。';
+        return '尚未拿到登录凭据：先在游戏里打开任意页面（触发一次接口请求），再点「刷新行情」。';
+      };
+
+      const goldLabel = (value) => {
+        const rounded = Math.round(value * 100) / 100;
+        return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2);
+      };
+
+      const rowHtml = (quote) => {
+        const ask = quote.asks.length ? quote.asks[0].price : null;
+        const bid = quote.bids.length ? quote.bids[0].price : null;
+        const buy = fxFill(quote.asks, target);
+        const sell = fxFill(quote.bids, target);
+        const code = escapeHtml(quote.code);
+
+        // 吃不满时如实显示实际成交的黄金量，不能让人误以为按目标额度全部成交
+        const buyText =
+          buy.avg == null
+            ? '买入：暂无卖单'
+            : `买入 <b>${goldLabel(buy.gold)}</b> 金 → <b>${fxQty(buy.currency)}</b> ${code} · 均价 <b>${fxPrice(buy.avg)}</b>` +
+              (buy.filled ? '' : ' <span class="eh-fx-flag">深度不足</span>');
+
+        const sellText =
+          sell.avg == null
+            ? '卖出：暂无买单'
+            : `卖出 <b>${fxQty(sell.currency)}</b> ${code} → <b>${goldLabel(sell.gold)}</b> 金 · 均价 <b>${fxPrice(sell.avg)}</b>` +
+              (sell.filled ? '' : ' <span class="eh-fx-flag">深度不足</span>');
+
+        return `
+          <div class="eh-fx-row">
+            <div class="eh-fx-head">
+              <span class="eh-fx-code">${code}</span>
+              <span class="eh-fx-country">${escapeHtml(quote.country)}</span>
+            </div>
+            <div class="eh-fx-prices">
+              <span class="eh-fx-tag ${ask == null ? 'eh-fx-tag--idle' : 'eh-fx-tag--buy'}">买入<b>${fxPrice(ask)}</b></span>
+              <span class="eh-fx-tag ${bid == null ? 'eh-fx-tag--idle' : 'eh-fx-tag--sell'}">卖出<b>${fxPrice(bid)}</b></span>
+            </div>
+            <div class="eh-fx-cost">${buyText}</div>
+            <div class="eh-fx-cost">${sellText}</div>
+          </div>`;
+      };
+
+      const render = () => {
+        if (!alive) return;
+        if (!quotes.length) {
+          listEl.innerHTML = loading ? '' : '<p class="eh-empty">还没有行情数据，点「刷新行情」抓取一次。</p>';
+          ctx.ui.reposition();
+          return;
+        }
+
+        listEl.innerHTML = quotes
+          .map((quote) => ({ quote, avg: fxFill(quote.asks, target).avg }))
+          .sort((a, b) => {
+            const av = a.avg == null ? Infinity : a.avg;
+            const bv = b.avg == null ? Infinity : b.avg;
+            if (av !== bv) return av - bv;
+            return a.quote.code.localeCompare(b.quote.code);
+          })
+          .map((item) => rowHtml(item.quote))
+          .join('');
+
+        ctx.ui.reposition();
+      };
+
+      const load = async () => {
+        if (loading) return;
+
+        if (market.state !== 'ok') {
+          setStatus(tokenHint(), 'warn');
+          render();
+          return;
+        }
+
+        loading = true;
+        if (controller) controller.abort();
+        controller = new AbortController();
+        const signal = controller.signal;
+        refreshBtn.disabled = true;
+        setStatus('正在读取国家与货币清单…');
+        render();
+
+        try {
+          const countries = await market.call('/countries/summary', { signal });
+          const entries = fxCurrencies(countries);
+          if (!entries.length) {
+            const error = new Error('没有可用的法币清单');
+            error.code = 'EMPTY_CURRENCIES';
+            throw error;
+          }
+
+          const collected = [];
+          const failures = [];
+          const total = entries.length;
+          let cursor = 0;
+          let done = 0;
+
+          setStatus(`正在拉取挂单 0/${total}…`);
+
+          const fetchEntry = async (entry) => {
+            const [sell, buy] = await Promise.all([
+              market.call('/market/coin/get', {
+                form: { currency_id: entry.id, transaction: 'SELL' },
+                signal
+              }),
+              market.call('/market/coin/get', {
+                form: { currency_id: entry.id, transaction: 'BUY' },
+                signal
+              })
+            ]);
+            const book = fxBook(sell, buy);
+            if (book.asks.length || book.bids.length) {
+              collected.push(Object.assign({}, entry, { asks: book.asks, bids: book.bids }));
+            }
+          };
+
+          const worker = async () => {
+            while (cursor < entries.length) {
+              if (signal.aborted) return;
+              const entry = entries[cursor];
+              cursor += 1;
+
+              try {
+                await fetchEntry(entry);
+              } catch (err) {
+                if (err && err.name === 'AbortError') return;
+                if (err && err.code === 'UNAUTHORIZED') throw err;
+                failures.push(entry);
+              }
+
+              done += 1;
+              if (signal.aborted) return;
+              setStatus(`正在拉取挂单 ${done}/${total}…`);
+              await fxSleep(FX_GAP);
+            }
+          };
+
+          await Promise.all(Array.from({ length: Math.min(FX_CONCURRENCY, total) }, () => worker()));
+          if (signal.aborted) return;
+
+          // 失败多半是瞬时 429 / 5xx：串行补一次，仍失败才计入结果
+          const retry = failures.splice(0);
+          for (let i = 0; i < retry.length; i += 1) {
+            if (signal.aborted) return;
+            setStatus(`正在重试 ${i + 1}/${retry.length}…`);
+            try {
+              await fetchEntry(retry[i]);
+            } catch (err) {
+              if (err && err.name === 'AbortError') return;
+              if (err && err.code === 'UNAUTHORIZED') throw err;
+              failures.push(retry[i]);
+            }
+            await fxSleep(FX_GAP * 3);
+          }
+
+          quotes = collected;
+          const suffix = failures.length ? ` · ${failures.length} 个货币拉取失败` : '';
+          setStatus(`${quotes.length} 种货币有挂单 · 更新于 ${formatClock()}${suffix}`);
+        } catch (err) {
+          if (err && err.name === 'AbortError') return;
+          const code = err && err.code;
+
+          if (code === 'NO_TOKEN') {
+            failStatus(tokenHint(), 'warn');
+          } else if (code === 'UNAUTHORIZED') {
+            try {
+              controller.abort();
+            } catch (ignore) {
+              /* ignore */
+            }
+            failStatus(tokenHint(), 'error');
+          } else if (code === 'TIMEOUT') {
+            failStatus('请求超时，请稍后重试。', 'error');
+          } else {
+            failStatus('拉取失败：' + (err && err.message ? err.message : '未知错误'), 'error');
+          }
+        } finally {
+          if (alive) {
+            loading = false;
+            refreshBtn.disabled = false;
+          }
+        }
+        render();
+      };
+
+      const applyTarget = () => {
+        const value = Number(targetInput.value);
+        const valid = Number.isFinite(value) && value > 0;
+        target = valid ? value : 10;
+        if (!valid) targetInput.value = String(target);
+        ctx.storage.set('target', target);
+        render();
+      };
+
+      on(targetInput, 'input', () => {
+        clearTimeout(targetTimer);
+        targetTimer = window.setTimeout(applyTarget, 220);
+      });
+      on(targetInput, 'change', applyTarget);
+
+      // 面板在 Shadow DOM 内，游戏若在 document 上监听按键，拿到的 target 会被重定向成宿主元素，
+      // 很容易被当成「在页面里按键」；这里把输入框的按键拦在组件内部，避免打字误触游戏快捷键。
+      ['keydown', 'keypress', 'keyup'].forEach((type) => {
+        on(targetInput, type, (event) => event.stopPropagation());
+      });
+
+      on(refreshBtn, 'click', () => {
+        load();
+      });
+
+      if (market.state === 'ok') load();
+      else {
+        setStatus(tokenHint(), 'warn');
+        render();
+      }
+
+      ctx.onDestroy(() => {
+        alive = false;
+        clearTimeout(targetTimer);
+        if (controller) controller.abort();
+      });
+    }
+  });
+
   registerFeature({
     id: 'about',
     title: '关于',
@@ -1660,6 +2459,7 @@
 
     try {
       loadState();
+      market.install();
       createShell();
       bindBall();
       bindPanel();
@@ -1693,6 +2493,7 @@
     clearTimeout(suppressClickTimer);
     if (hostObserver) hostObserver.disconnect();
     route.destroy();
+    market.uninstall();
 
     features.forEach((feature) => {
       if (feature.__cleanups) {
