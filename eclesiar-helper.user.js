@@ -2,9 +2,9 @@
 // @name         Eclesiar 助手
 // @name:en      Eclesiar Helper
 // @namespace    https://github.com/Billdex/eclesiar-helper
-// @version      0.1.3
-// @description  Eclesiar 经济 / 政治计算辅助插件：悬浮球面板 + 全球汇率总览 + 各国市场商品金价比价。
-// @description:en Eclesiar helper: floating panel + exchange rates + cross-market goods pricing in gold.
+// @version      0.1.4
+// @description  Eclesiar 经济 / 政治计算辅助插件：悬浮球面板 + 全球汇率总览 + 各国市场商品金价比价与销售税后收益估算。
+// @description:en Eclesiar helper: floating panel + exchange rates + cross-market goods pricing and after-tax sale revenue in gold.
 // @author       billdex
 // @match        https://app.eclesiar.com/*
 // @run-at       document-idle
@@ -43,7 +43,7 @@
    * 1. 常量与工具
    * ========================================================================= */
 
-  const VERSION = '0.1.3';
+  const VERSION = '0.1.4';
   const REPO_URL = 'https://github.com/Billdex/eclesiar-helper';
   /** jsDelivr 的 GitHub 镜像：国内可达，更新检查与安装都以它为主。 */
   const CDN_RAW = 'https://cdn.jsdelivr.net/gh/Billdex/eclesiar-helper@main/';
@@ -1034,6 +1034,79 @@
     outline-offset: 1px;
   }
 
+  /* 采购 / 销售 切换 */
+  .eh-gd-modes {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+    margin-bottom: 7px;
+    padding: 3px;
+    border: 1px solid var(--eh-line);
+    border-radius: 9px;
+    background: rgba(255, 255, 255, .03);
+  }
+
+  .eh-gd-mode {
+    padding: 4px 0;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--eh-muted);
+    font-family: inherit;
+    font-size: 11.5px;
+    line-height: 1.5;
+    letter-spacing: .02em;
+    cursor: pointer;
+    transition: background .16s, color .16s, border-color .16s;
+  }
+
+  .eh-gd-mode:hover {
+    background: rgba(255, 255, 255, .05);
+    color: #e7dfcd;
+  }
+
+  .eh-gd-mode.is-on {
+    border-color: rgba(232, 205, 143, .45);
+    background: rgba(201, 165, 74, .16);
+    color: #f4e6c4;
+  }
+
+  .eh-gd-mode:focus-visible {
+    outline: 1px solid rgba(232, 205, 143, .75);
+    outline-offset: 1px;
+  }
+
+  /* 销售：国籍（决定是否免进口税）与税率提示 */
+  .eh-gd-own {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    margin-top: 7px;
+    padding: 6px 8px;
+    border: 1px solid rgba(255, 255, 255, .06);
+    border-radius: 9px;
+    background: rgba(255, 255, 255, .022);
+  }
+
+  .eh-gd-own[hidden] { display: none; }
+
+  .eh-gd-hint {
+    flex: 1 1 100%;
+    margin: 0;
+    font-size: 10px;
+    line-height: 1.55;
+    color: #7d8ba0;
+  }
+
+  .eh-gd-hint[data-tone="warn"] { color: #e0b071; }
+
+  .eh-gd-meta--sub {
+    padding-top: 1px;
+    font-size: 9.5px;
+    color: #64738a;
+  }
+
   .eh-gd-bar {
     display: flex;
     align-items: flex-start;
@@ -1149,6 +1222,14 @@
     border-radius: 4px;
     background: rgba(217, 163, 94, .1);
     font-size: 9.5px;
+    white-space: nowrap;
+    color: #d9a35e;
+  }
+
+  .eh-gd-tax {
+    margin-left: 4px;
+    font-size: 9.5px;
+    white-space: nowrap;
     color: #d9a35e;
   }
 
@@ -2596,6 +2677,9 @@
     const listeners = new Set();
     let countries = null;
     let countriesPromise = null;
+    /** 国家 id → { vat, importTax }（百分数，10 表示 10%）；只在「销售」视图用得到。 */
+    let taxes = null;
+    let taxesPromise = null;
     let quotes = [];
     let updatedAt = 0;
     let loading = false;
@@ -2630,6 +2714,53 @@
           });
       }
       return countriesPromise;
+    }
+
+    /** 税率字段容错：正常是 10（=10%），个别实现会给 0.1 这种比例。 */
+    const toPercent = (value) => {
+      const num = Number(value);
+      if (!Number.isFinite(num) || num < 0) return null;
+      if (num > 0 && num < 1) return num * 100;
+      return num;
+    };
+
+    /**
+     * 各国税率：/countries 的 laws.vat / laws.import_taxes。
+     * 与 summary 分开请求，只在打开「销售」视图时拉一次，结果在页面内缓存。
+     */
+    function ensureTaxes() {
+      if (taxes) return Promise.resolve(taxes);
+      if (!taxesPromise) {
+        taxesPromise = market
+          .call('/countries')
+          .then((list) => {
+            const map = new Map();
+            (Array.isArray(list) ? list : []).forEach((country) => {
+              if (!country || country.id == null) return;
+              const laws = country.laws || {};
+              const rawImport =
+                laws.import_taxes != null
+                  ? laws.import_taxes
+                  : laws.import_tax != null
+                    ? laws.import_tax
+                    : laws.importTax;
+              const vat = toPercent(laws.vat);
+              const importTax = toPercent(rawImport);
+              if (vat == null && importTax == null) return;
+              map.set(String(country.id), {
+                vat: vat == null ? 0 : vat,
+                importTax: importTax == null ? 0 : importTax
+              });
+            });
+            taxes = map;
+            return taxes;
+          })
+          .catch((err) => {
+            taxesPromise = null;
+            throw err;
+          });
+      }
+      return taxesPromise;
     }
 
     async function load() {
@@ -2786,6 +2917,12 @@
       get quotes() {
         return quotes;
       },
+      get countries() {
+        return countries || [];
+      },
+      get taxesKnown() {
+        return Boolean(taxes);
+      },
       get loading() {
         return loading;
       },
@@ -2804,6 +2941,7 @@
         return () => listeners.delete(fn);
       },
       ensureCountries,
+      ensureTaxes,
       load,
       /** 缓存还在有效期内就直接用，否则拉一次；并发调用共享同一个请求。 */
       async ensure(maxAge) {
@@ -2817,6 +2955,26 @@
         const quote = quotes.find((item) => item.id === currencyId);
         if (!quote || quote.status !== 'ok' || !quote.asks || !quote.asks.length) return null;
         return quote.asks[0].price;
+      },
+      /**
+       * 卖法币换黄金的最优价（黄金 / 1 单位法币）：吃的是别人的买单，
+       * 与「买入价」（rateFor，吃卖单）不是一个方向，销售时必须用这个。
+       */
+      sellRateFor(currencyId) {
+        const quote = quotes.find((item) => item.id === currencyId);
+        if (!quote || quote.status !== 'ok' || !quote.bids || !quote.bids.length) return null;
+        return quote.bids[0].price;
+      },
+      /** 该国货币在当前买单里还能吃下多少（法币数量），用于提示换汇深度不足。 */
+      sellCapacityFor(currencyId) {
+        const quote = quotes.find((item) => item.id === currencyId);
+        if (!quote || quote.status !== 'ok' || !quote.bids) return 0;
+        return quote.bids.reduce((sum, level) => sum + level.qty, 0);
+      },
+      /** 国家 id → 税率（百分数）；还没拉到 / 该国没有 laws 时返回 null。 */
+      taxFor(countryId) {
+        if (!taxes || countryId == null) return null;
+        return taxes.get(String(countryId)) || null;
       },
       cancel() {
         if (!controller) return;
@@ -3229,6 +3387,9 @@
     return String(Number(rounded));
   }
 
+  /** 税率：接口给的是百分数，展示时最多一位小数。 */
+  const goodsPercent = (value) => Number(Number(value).toFixed(1)) + '%';
+
   registerFeature({
     id: 'goods',
     title: '商品',
@@ -3237,6 +3398,10 @@
       pane.innerHTML = `
         <div class="eh-section">
           <div class="eh-h3">商品与市场</div>
+          <div class="eh-gd-modes" data-role="modes">
+            <button class="eh-gd-mode" type="button" data-mode="buy">采购</button>
+            <button class="eh-gd-mode" type="button" data-mode="sell">销售</button>
+          </div>
           <div class="eh-gd-picker">
             <div class="eh-gd-picks" data-role="products"></div>
             <div class="eh-gd-picks" data-role="materials"></div>
@@ -3244,14 +3409,17 @@
               <span>品质</span>
             </div>
           </div>
+          <div class="eh-gd-own" data-role="sellopts" hidden>
+            <p class="eh-gd-hint" data-role="taxhint"></p>
+          </div>
           <div class="eh-gd-bar">
             <p class="eh-fx-status" data-role="status">…</p>
             <button class="eh-btn" type="button" data-role="refresh">刷新行情</button>
           </div>
         </div>
         <div class="eh-section">
-          <div class="eh-h3">各国市场 · 黄金单价</div>
-          <p class="eh-fx-legend">
+          <div class="eh-h3" data-role="listtitle">各国市场 · 黄金单价</div>
+          <p class="eh-fx-legend" data-role="legend">
             按 1 件商品的黄金单价从低到高排列。黄金单价 = 该国最低挂单价
             × 用黄金换该国货币的最优价。
           </p>
@@ -3268,6 +3436,11 @@
       const productBox = pane.querySelector('[data-role="products"]');
       const materialBox = pane.querySelector('[data-role="materials"]');
       const qualsEl = pane.querySelector('[data-role="quals"]');
+      const modesEl = pane.querySelector('[data-role="modes"]');
+      const sellOptsEl = pane.querySelector('[data-role="sellopts"]');
+      const taxHintEl = pane.querySelector('[data-role="taxhint"]');
+      const listTitleEl = pane.querySelector('[data-role="listtitle"]');
+      const legendEl = pane.querySelector('[data-role="legend"]');
 
       const emptyEl = document.createElement('p');
       emptyEl.className = 'eh-empty';
@@ -3284,6 +3457,174 @@
       let pickedApi = initial.api;
       let pickedQuality = initial.quality || 1; // 记住成品的品质，切来切去不用重选
       let item = initial;
+
+      // 采购 = 花黄金买商品；销售 = 在各国市场卖出，扣税后换回黄金
+      let mode = ctx.storage.get('mode', 'buy') === 'sell' ? 'sell' : 'buy';
+      // 玩家国籍：从 /account 的 nationality_id 读，只用于判断本国销售免进口税
+      let myCountryId = 0;
+      let playerLoading = false;
+      let playerFailed = false;
+      let playerError = null;
+      let taxesLoading = false;
+      let taxesFailed = false;
+      let taxesError = null;
+
+      const BUY_TITLE = '各国市场 · 黄金单价';
+      const SELL_TITLE = '各国市场 · 税后黄金收入';
+      const BUY_LEGEND =
+        '黄金单价 = 该国最低挂单价 × 用黄金换该国货币的最优价。';
+      const SELL_LEGEND =
+        '收入 = 该国最低挂单价 ×（100% − 增值税 − 进口税）× 用该国货币换黄金的最优价。';
+
+      /** 国籍对应的中文国名，只用于提示文案。 */
+      const ownCountryLabel = () => {
+        if (!myCountryId) return '';
+        const country = fxFeed.countries.find((row) => Number(row && row.id) === myCountryId);
+        if (!country) return '';
+        const code = country.currency ? String(country.currency.name || '') : '';
+        const locale = code ? fxLocale(code) : null;
+        return locale ? locale[0] : String(country.name || '');
+      };
+
+      const syncTaxHint = () => {
+        if (!alive || !taxHintEl) return;
+        let text = '';
+        let tone = '';
+        if (playerLoading && taxesLoading) {
+          text = '正在读取各国税率与玩家国籍…';
+        } else if (playerLoading) {
+          text = '正在读取玩家国籍…';
+        } else if (taxesLoading) {
+          text = '正在读取各国税率…';
+        } else if (taxesFailed) {
+          const code = taxesError && taxesError.code;
+          text =
+            code === 'NO_TOKEN' || code === 'UNAUTHORIZED'
+              ? authHint()
+              : '税率读取失败，暂按 0 税估算；再点一次「销售」会重试。';
+          tone = 'warn';
+        } else if (!fxFeed.taxesKnown) {
+          text = '税率还没读到，点「销售」再试一次。';
+        } else if (playerFailed) {
+          const code = playerError && playerError.code;
+          if (code === 'NO_TOKEN') {
+            text =
+              '未获取到玩家国籍：该信息只认游戏登录凭据，先在游戏里打开任意页面（触发一次接口请求）再点「销售」重试；暂按外国卖家计税。';
+          } else if (code === 'UNAUTHORIZED') {
+            text = '未获取到玩家国籍：游戏登录凭据已失效，刷新游戏页面后再点「销售」重试；暂按外国卖家计税。';
+          } else {
+            text = '未获取到玩家国籍（接口读取失败），按外国卖家计税：增值税与进口税都扣。';
+          }
+          tone = 'warn';
+        } else if (!myCountryId) {
+          text = '账号没有国籍信息，按外国卖家计税：增值税与进口税都扣。';
+          tone = 'warn';
+        } else {
+          text = '国籍：' + (ownCountryLabel() || '已识别') + ' · 本国销售只扣增值税，免进口税。';
+        }
+        taxHintEl.textContent = text;
+        if (tone) taxHintEl.dataset.tone = tone;
+        else delete taxHintEl.dataset.tone;
+      };
+
+      /** 税率只在进入「销售」时拉一次（/countries 的 laws），失败可重试。 */
+      const loadTaxes = () => {
+        if (!alive || fxFeed.taxesKnown || taxesLoading) return;
+        taxesLoading = true;
+        taxesFailed = false;
+        taxesError = null;
+        syncTaxHint();
+        fxFeed
+          .ensureTaxes()
+          .catch((err) => {
+            if (!alive) return;
+            taxesFailed = true;
+            taxesError = err || null;
+            ctx.log('税率读取失败', err && err.message ? err.message : err);
+          })
+          .then(() => {
+            if (!alive) return;
+            taxesLoading = false;
+            syncTaxHint();
+            render();
+            ctx.ui.reposition();
+          });
+      };
+
+      /**
+       * 玩家国籍：当前登录账号的 nationality.id / nationality_id。
+       * 固定用 POST /account/getuser（/account 是按 account_id 查询指定用户，不适用）。
+       * 该接口只认游戏登录凭据：带专用 API 密钥会 401，所以必须传 login: true。
+       * 只取国籍 id、仅存内存，不展示原始字段、不落盘、不打日志（账号信息仍不外泄）。
+       */
+      const loadPlayer = () => {
+        if (!alive || playerLoading || myCountryId) return;
+        playerLoading = true;
+        playerFailed = false;
+        playerError = null;
+        syncTaxHint();
+        market
+          .call('/account/getuser', { login: true, form: {}, object: true })
+          .then((data) => {
+            if (!alive) return;
+            // 兼容 { nationality: { id } }、{ nationality_id } 与 { user: {...} } 几种包法；
+            // 只取国籍 id，响应里其它账号字段（含 bearer）一律不读、不存
+            const account = data && data.user && typeof data.user === 'object' ? data.user : data;
+            const nationality = account && account.nationality;
+            const raw = nationality && nationality.id != null ? nationality.id : account && account.nationality_id;
+            myCountryId = Number(raw) || 0;
+          })
+          .catch((err) => {
+            if (!alive) return;
+            playerFailed = true;
+            playerError = err || null;
+            ctx.log('玩家国籍读取失败', err && err.message ? err.message : err);
+          })
+          .then(() => {
+            if (!alive) return;
+            playerLoading = false;
+            syncTaxHint();
+            render();
+            ctx.ui.reposition();
+          });
+      };
+
+      const syncMode = () => {
+        modesEl.querySelectorAll('.eh-gd-mode').forEach((btn) => {
+          const active = btn.dataset.mode === mode;
+          btn.classList.toggle('is-on', active);
+          btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+        });
+        sellOptsEl.hidden = mode !== 'sell';
+        listTitleEl.textContent = mode === 'sell' ? SELL_TITLE : BUY_TITLE;
+        legendEl.textContent = mode === 'sell' ? SELL_LEGEND : BUY_LEGEND;
+        if (mode === 'sell') {
+          loadPlayer();
+          loadTaxes();
+        }
+        syncTaxHint();
+      };
+
+      const setMode = (next) => {
+        if (next !== 'sell' && next !== 'buy') return;
+        if (mode === next) {
+          // 再点一次「销售」＝重试失败的税率 / 国籍请求（已拿到时直接返回，不发请求）
+          if (next === 'sell') {
+            loadPlayer();
+            loadTaxes();
+          }
+          return;
+        }
+        mode = next;
+        ctx.storage.set('mode', mode);
+        syncMode();
+        render();
+        ctx.ui.reposition();
+      };
+
+      modesEl.querySelectorAll('.eh-gd-mode').forEach((btn) => {
+        on(btn, 'click', () => setMode(btn.dataset.mode));
+      });
 
       const pickBtns = new Map(); // api → 商品按钮
       const qualBtns = new Map(); // 品质 → 按钮
@@ -3445,7 +3786,7 @@
       const buildRow = (row, index) => {
         const el = document.createElement('div');
         el.className = 'eh-gd-row';
-        if (row.gold == null) el.classList.add('is-idle');
+        if (row.sortGold == null) el.classList.add('is-idle');
         else if (index === 0) el.classList.add('is-best');
 
         const locale = fxLocale(row.entry.currency.code);
@@ -3483,15 +3824,67 @@
         const meta = document.createElement('span');
         meta.className = 'eh-gd-meta';
         const code = escapeHtml(row.entry.currency.code);
+        const priceText = goodsAmount(row.best.price);
+        const supplyText = goodsAmount(row.best.supply);
+
+        if (row.channel === 'sell') {
+          meta.innerHTML =
+            `<b>${priceText}</b> ${code}/件 · 税后 <b>${goodsAmount(row.netPrice)}</b> ${code}` +
+            (row.rate == null
+              ? '<span class="eh-gd-tax">该国货币暂无换汇买单</span>'
+              : !row.taxKnown
+                ? '<span class="eh-gd-tax">税率未知，按 0 税估算</span>'
+                : row.own
+                  ? '<span class="eh-gd-tag">本国</span>'
+                  : '') +
+            (row.depthShort ? '<span class="eh-gd-tax">换汇深度不足</span>' : '');
+          meta.title =
+            row.rate == null
+              ? '缺少该国货币的买单挂单，销售所得无法换回黄金'
+              : priceText +
+                ' ' +
+                row.entry.currency.code +
+                '/件 ×（1 − ' +
+                (row.taxKnown
+                  ? [
+                      '增值税 ' + goodsPercent(row.vat),
+                      row.own ? '进口税 0%（本国免）' : '进口税 ' + goodsPercent(row.importTax)
+                    ].join(' − ')
+                  : '税率未知，按 0%') +
+                '）= ' +
+                goodsAmount(row.netPrice) +
+                ' ' +
+                row.entry.currency.code +
+                ' × ' +
+                fxPrice(row.rate) +
+                ' 金/单位货币 = ' +
+                fxGold(row.gold) +
+                ' 金';
+
+          const sub = document.createElement('span');
+          sub.className = 'eh-gd-meta eh-gd-meta--sub';
+          if (row.rate == null) {
+            sub.textContent = '缺卖出方向的汇率，无法估算实际收入。';
+          } else if (!row.taxKnown) {
+            sub.innerHTML = '税前 <b>' + fxGold(row.goldBefore) + '</b> 金 · 税率未知（暂按 0 税估算）';
+          } else {
+            const parts = ['增值税 ' + goodsPercent(row.vat)];
+            parts.push(row.own ? '进口税 0%（本国免）' : '进口税 ' + goodsPercent(row.importTax));
+            sub.innerHTML = '税前 <b>' + fxGold(row.goldBefore) + '</b> 金 · ' + parts.join(' · ');
+          }
+          el.appendChild(meta);
+          el.appendChild(sub);
+          return el;
+        }
+
         let text =
-          `<b>${goodsAmount(row.best.price)}</b> ${code}/件 · 可买 ` +
-          `<b>${goodsAmount(row.best.supply)}</b>`;
+          `<b>${priceText}</b> ${code}/件 · 可买 ` + `<b>${supplyText}</b>`;
         if (row.rate == null) text += '<span class="eh-gd-tax">该国货币暂无换汇挂单</span>';
         meta.innerHTML = text;
         meta.title =
           row.rate == null
             ? '缺少该国货币的换汇挂单，无法折算成黄金'
-            : goodsAmount(row.best.price) +
+            : priceText +
               ' ' +
               row.entry.currency.code +
               ' × ' +
@@ -3504,22 +3897,63 @@
         return el;
       };
 
-      /** 用当前选中的商品重排列表：黄金单价升序，缺汇率的排最后。 */
+      /** 用当前选中的商品重排列表：采购按黄金单价升序，销售按税后收入降序，缺汇率的排最后。 */
       const render = () => {
         if (!alive) return;
         const entries = [];
+        const selling = mode === 'sell';
 
         markets.forEach((entry) => {
           const best = entry.items && entry.items.get(item.key);
           if (!best) return;
-          const rate = fxFeed.rateFor(entry.currency.id);
-          entries.push({ entry, best, rate, gold: rate ? best.price * rate : null });
+
+          if (!selling) {
+            const rate = fxFeed.rateFor(entry.currency.id);
+            const gold = rate ? best.price * rate : null;
+            entries.push({
+              channel: 'buy',
+              entry,
+              best,
+              rate,
+              gold,
+              sortGold: gold
+            });
+            return;
+          }
+
+          // 销售：先扣增值税 + 进口税（本国免进口税），再按「卖法币换黄金」的最优价折算
+          const tax = fxFeed.taxFor(entry.id);
+          const own = Boolean(myCountryId) && Number(entry.id) === myCountryId;
+          const vat = tax ? tax.vat : 0;
+          const importTax = tax ? (own ? 0 : tax.importTax) : 0;
+          const keep = Math.max(0, 1 - (vat + importTax) / 100);
+          const rate = fxFeed.sellRateFor(entry.currency.id);
+          const netPrice = best.price * keep;
+          const capacity = rate ? fxFeed.sellCapacityFor(entry.currency.id) : 0;
+          entries.push({
+            channel: 'sell',
+            entry,
+            best,
+            rate,
+            vat,
+            importTax,
+            keep,
+            own,
+            taxKnown: Boolean(tax),
+            netPrice,
+            goldBefore: rate ? best.price * rate : null,
+            gold: rate ? netPrice * rate : null,
+            // 税率未知的行只做参考，不参与排名（否则 0 税会让它虚高）
+            sortGold: tax && rate ? netPrice * rate : null,
+            // 商品市场只有卖单：只核对「1 件的换汇所得」买盘吃不吃得下
+            depthShort: Boolean(rate) && capacity > 0 && netPrice > capacity
+          });
         });
 
         entries.sort((a, b) => {
-          const av = a.gold == null ? Infinity : a.gold;
-          const bv = b.gold == null ? Infinity : b.gold;
-          if (av !== bv) return av - bv;
+          const av = a.sortGold == null ? Infinity : a.sortGold;
+          const bv = b.sortGold == null ? Infinity : b.sortGold;
+          if (av !== bv) return selling ? bv - av : av - bv;
           return a.entry.name.localeCompare(b.entry.name);
         });
 
@@ -3591,6 +4025,7 @@
           markets = entries;
           total = entries.length;
           paintStatus();
+          syncTaxHint(); // 国家清单到位后补上国籍中文名
           render();
 
           let cursor = 0;
@@ -3658,6 +4093,7 @@
             refreshBtn.disabled = false;
             paintStatus();
             paintIcons(); // 收尾再补一次，兜住最后一批市场的图
+            syncTaxHint();
             render();
             ctx.ui.reposition();
           }
@@ -3665,6 +4101,10 @@
       };
 
       on(refreshBtn, 'click', () => {
+        if (mode === 'sell') {
+          loadPlayer();
+          loadTaxes();
+        }
         load();
       });
 
@@ -3681,6 +4121,7 @@
       });
 
       syncPicker();
+      syncMode();
       paintStatus();
       render();
       load();
@@ -3911,7 +4352,7 @@
             ? '密钥已失效，请重新生成密钥并粘贴到这里使用。'
             : ''
           : mode === 'login'
-            ? '正在使用游戏登录凭据，查询会和游戏操作共用每日额度，建议生成专用密钥。'
+            ? '正在临时使用用户登录凭据获取数据，建议使用 API 专用密钥。'
             : '未获取到凭据，请先登录游戏或者从 API 管理中生成密钥并粘贴到这里使用。';
         apiNoteEl.hidden = !apiNoteEl.textContent;
         apiClearBtn.hidden = !usingApi;
@@ -4023,7 +4464,7 @@
           await market.generateKey();
           if (!alive) return;
           apiInputEl.value = '';
-          sayApi('已保存密钥 ' + apiKey.masked + '，后续查询都用它。');
+          sayApi('已保存密钥 ' + apiKey.masked);
           resetUsage();
           loadUsage();
         } catch (err) {

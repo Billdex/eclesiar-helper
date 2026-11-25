@@ -2,9 +2,9 @@
 // @name         Eclesiar 助手
 // @name:en      Eclesiar Helper
 // @namespace    https://github.com/Billdex/eclesiar-helper
-// @version      0.1.3
-// @description  Eclesiar 经济 / 政治计算辅助插件：悬浮球面板 + 全球汇率总览 + 各国市场商品金价比价。
-// @description:en Eclesiar helper: floating panel + exchange rates + cross-market goods pricing in gold.
+// @version      0.1.4
+// @description  Eclesiar 经济 / 政治计算辅助插件：悬浮球面板 + 全球汇率总览 + 各国市场商品金价比价与销售税后收益估算。
+// @description:en Eclesiar helper: floating panel + exchange rates + cross-market goods pricing and after-tax sale revenue in gold.
 // @author       billdex
 // @match        https://app.eclesiar.com/*
 // @run-at       document-idle
