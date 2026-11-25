@@ -46,6 +46,7 @@ open dev/market-demo.html              # 商品比价：各国市场假数据（
 open "dev/market-demo.html#fx"         # 商品比价：打开「汇率」标签，核对共用缓存
 open "dev/market-demo.html#item=Food%231"   # 商品比价：切到指定商品（这里是食物 Q1）
 open "dev/market-demo.html#notoken"    # 商品比价：未捕获凭据的提示态
+open dev/about-demo.html               # 关于页：真实请求一次 jsDelivr 上的版本号
 ```
 
 `dev/fx-demo.html` 在加载脚本前替换了 `window.fetch`，用真实接口的返回形状回放假数据（USD 用真实样本），用于核对渲染、逐档吃单与异常态。GBP / USD / CNY 的 `avatar` 用内联 SVG 当国旗图，JPY 故意指向 404 用于核对 emoji 兜底；加 `#slow` 可拖慢每次请求，观察逐行填充与右侧转圈。
