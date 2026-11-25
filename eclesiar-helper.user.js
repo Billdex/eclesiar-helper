@@ -1186,6 +1186,7 @@
     margin: 0;
     flex: 1 1 auto;
     min-width: 0;
+    white-space: pre-line;
   }
 
   .eh-gd-bar .eh-btn { flex: none; }
@@ -4103,7 +4104,7 @@
           ? ` · ${failures} 个市场拉取失败` + (limited ? '（含 429，可到「设置」页生成专用密钥）' : '')
           : '';
         setStatus(
-          `${markets.length} 个市场${exileNote} · 更新于 ${formatClock(snapshotAt)}${fxNote}${suffix}`,
+          `${markets.length} 个市场${exileNote}\n更新于 ${formatClock(snapshotAt)}${fxNote}${suffix}`,
           limited ? 'error' : undefined
         );
       };
