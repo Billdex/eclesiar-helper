@@ -5,7 +5,7 @@
 ## 1. 项目定位
 
 - 目标：为多人在线经济 / 政治模拟游戏 Eclesiar（<https://app.eclesiar.com/>）提供 Tampermonkey 用户脚本。
-- 现状：**v0.2.0**——外壳（悬浮球 + 面板 + 功能注册表 + SPA 路由钩子）+ 首个业务模块「汇率总览」（拉取全球法币挂单、算最优价与目标额度加权均价）。
+- 现状：**v0.3.0**——外壳（悬浮球 + 面板 + 功能注册表 + SPA 路由钩子）+ 首个业务模块「汇率总览」（拉取全球法币挂单、算最优价与目标额度加权均价，内置中文国名 / 国旗，逐行加载进度）。
 - 非官方工具：不修改游戏数据、不自动操作，遵守游戏规则。
 - 文档：`README.md` 面向玩家（安装 / 扩展），官方 Wiki 为 <https://wiki.eclesiar.com/>。
 
@@ -36,11 +36,12 @@ node --check eclesiar-helper.user.js   # 语法检查
 open dev/preview.html                  # 本地预览（仅本机存在，dev/ 不入库）
 open "dev/preview.html#closed"         # 只看收起状态
 open dev/fx-demo.html                  # 汇率总览：假数据演示（不联网）
+open dev/fx-demo.html#slow             # 汇率总览：拖慢请求，看逐行填充与转圈
 open "dev/fx-demo.html#notoken"        # 汇率总览：未捕获凭据的提示态
 open "dev/fx-demo.html#target=1000"    # 汇率总览：大额目标 / 深度不足
 ```
 
-`dev/fx-demo.html` 在加载脚本前替换了 `window.fetch`，用真实接口的返回形状回放假数据（USD 用真实样本），用于核对渲染、逐档吃单与异常态。
+`dev/fx-demo.html` 在加载脚本前替换了 `window.fetch`，用真实接口的返回形状回放假数据（USD 用真实样本），用于核对渲染、逐档吃单与异常态。GBP / USD / CNY 的 `avatar` 用内联 SVG 当国旗图，JPY 故意指向 404 用于核对 emoji 兜底；加 `#slow` 可拖慢每次请求，观察逐行填充与右侧转圈。
 
 截图（无头 Chrome；入场动画未结束时，用 CDP 等渲染稳定再截）：
 
@@ -104,7 +105,7 @@ EclesiarHelper.features.register({
 2. 打开 `dev/preview.html`：悬浮球可拖、点击开合、`Alt+E`、`Esc`（焦点在面板内）、方向键切标签。
 3. 改过定位 / 尺寸逻辑时，用 CDP 或 DevTools 把视口切到 360×600，确认球与面板都在视口内。
 4. 改过生命周期时，控制台执行 `EclesiarHelper.destroy()`，确认宿主与 API 都消失。
-5. 改过「汇率」时，打开 `dev/fx-demo.html` 核对：均价与手算一致、吃不满时显示实际成交金数、`#notoken` 会给出提示、`#target=1000` 会标注深度不足。
+5. 改过「汇率」时，打开 `dev/fx-demo.html` 核对：均价与手算一致、吃不满时显示实际成交金数、`#notoken` 会给出提示、`#target=1000` 会标注深度不足；`#slow` 下确认每行右侧转圈随数据到达消失、无挂单的行被移除。
 6. 真实环境：Tampermonkey 安装后刷新 `app.eclesiar.com`，确认悬浮球出现、面板正常。
 
 注意：无头 Chrome 长时间运行可能把页面标记为 `hidden`，此时不会派发 `resize`、`ResizeObserver` 和 `rAF` 回调，定时器也会被节流。测试尺寸逻辑时可手动 `window.dispatchEvent(new Event('resize'))`，或先把页面切到前台；这不是插件缺陷。

@@ -2,7 +2,7 @@
 // @name         Eclesiar 助手
 // @name:en      Eclesiar Helper
 // @namespace    https://app.eclesiar.com/
-// @version      0.2.0
+// @version      0.3.0
 // @description  Eclesiar 经济 / 政治计算辅助插件：悬浮球面板 + 全球汇率总览。
 // @description:en Eclesiar helper: floating panel + global exchange-rate overview.
 // @author       billdex
@@ -38,7 +38,7 @@
    * 1. 常量与工具
    * ========================================================================= */
 
-  const VERSION = '0.2.0';
+  const VERSION = '0.3.0';
   const NS = 'eclesiar-helper';
   const ROOT_ID = NS + '-root';
   const Z_INDEX = '2147483000';
@@ -674,9 +674,38 @@
 
   .eh-fx-head {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 7px;
     min-width: 0;
+  }
+
+  /* 国旗：优先用接口 avatar 里的图片，图挂了退回国旗 emoji */
+  .eh-fx-flag {
+    flex: none;
+    width: 18px;
+    height: 13px;
+    display: inline-grid;
+    place-items: center;
+    overflow: hidden;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, .06);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .1);
+    font-size: 13px;
+    line-height: 1;
+  }
+
+  .eh-fx-flag img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  /* emoji 兜底：保留同样的占位宽度，图标列才不会参差不齐（emoji 略溢出由居中吸收） */
+  .eh-fx-flag--glyph {
+    overflow: visible;
+    background: none;
+    box-shadow: none;
   }
 
   .eh-fx-code {
@@ -688,14 +717,50 @@
     color: #f0d9a4;
   }
 
-  .eh-fx-country {
+  .eh-fx-name {
     flex: 1 1 auto;
     min-width: 0;
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
     overflow: hidden;
-    font-size: 10.5px;
+  }
+
+  .eh-fx-name__zh {
+    flex: none;
+    font-size: 11px;
+    font-weight: 500;
+    color: #cfc6b2;
+  }
+
+  .eh-fx-name__en {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 10px;
     color: #74839a;
     white-space: nowrap;
     text-overflow: ellipsis;
+  }
+
+  /* 该货币还在拉取：行右侧的小转圈 */
+  .eh-fx-spin {
+    flex: none;
+    width: 11px;
+    height: 11px;
+    margin-left: 2px;
+    border: 1.5px solid rgba(201, 165, 74, .22);
+    border-top-color: #e8cd8f;
+    border-radius: 50%;
+    animation: eh-fx-turn .72s linear infinite;
+  }
+
+  @keyframes eh-fx-turn {
+    to { transform: rotate(1turn); }
+  }
+
+  .eh-fx-row.is-error {
+    border-color: rgba(227, 154, 154, .3);
+    background: rgba(227, 154, 154, .04);
   }
 
   .eh-fx-prices {
@@ -753,7 +818,7 @@
     color: #e7dfcd;
   }
 
-  .eh-fx-flag {
+  .eh-fx-deep {
     margin-left: 3px;
     color: #d9a35e;
   }
@@ -817,6 +882,16 @@
     .eh-ball__dot {
       transition: none !important;
     }
+
+    /* 偏好减少动效时用呼吸代替旋转，仍然看得出「还在读取」 */
+    .eh-fx-spin {
+      border-color: rgba(201, 165, 74, .38);
+      animation: eh-fx-breathe 1.2s ease-in-out infinite;
+    }
+  }
+
+  @keyframes eh-fx-breathe {
+    50% { opacity: .35; }
   }
 
   @media (max-width: 480px) {
@@ -1644,6 +1719,94 @@
   const FX_CONCURRENCY = 3;
   const FX_GAP = 60;
 
+  /**
+   * 内置中文国名 + 国旗 emoji（按法币代码索引）。
+   * 游戏本身没有中文翻译，只给英文国名；这里按代码内置一份，随插件分发。
+   * 中文名直接显示在列表里；emoji 只在 summary 的 avatar 图缺失 / 加载失败时兜底，
+   * 接口以后新增货币导致查不到时，就只显示英文国名，不影响功能。
+   */
+  const FX_LOCALES = {
+    GBP: ['英国', '🇬🇧'],
+    USD: ['美国', '🇺🇸'],
+    MXN: ['墨西哥', '🇲🇽'],
+    COP: ['哥伦比亚', '🇨🇴'],
+    PEN: ['秘鲁', '🇵🇪'],
+    BRL: ['巴西', '🇧🇷'],
+    CLP: ['智利', '🇨🇱'],
+    ARS: ['阿根廷', '🇦🇷'],
+    IEP: ['爱尔兰', '🇮🇪'],
+    FRF: ['法国', '🇫🇷'],
+    PTE: ['葡萄牙', '🇵🇹'],
+    ESP: ['西班牙', '🇪🇸'],
+    DEM: ['德国', '🇩🇪'],
+    SEK: ['瑞典', '🇸🇪'],
+    ITL: ['意大利', '🇮🇹'],
+    PLN: ['波兰', '🇵🇱'],
+    LTL: ['立陶宛', '🇱🇹'],
+    SIT: ['斯洛文尼亚', '🇸🇮'],
+    HRK: ['克罗地亚', '🇭🇷'],
+    BAM: ['波黑', '🇧🇦'],
+    RSD: ['塞尔维亚', '🇷🇸'],
+    MKD: ['北马其顿', '🇲🇰'],
+    ALL: ['阿尔巴尼亚', '🇦🇱'],
+    GRD: ['希腊', '🇬🇷'],
+    HUF: ['匈牙利', '🇭🇺'],
+    RON: ['罗马尼亚', '🇷🇴'],
+    BGN: ['保加利亚', '🇧🇬'],
+    TRY: ['土耳其', '🇹🇷'],
+    UAH: ['乌克兰', '🇺🇦'],
+    RUB: ['俄罗斯', '🇷🇺'],
+    GEL: ['格鲁吉亚', '🇬🇪'],
+    NIS: ['以色列', '🇮🇱'],
+    EGP: ['埃及', '🇪🇬'],
+    ZAR: ['南非', '🇿🇦'],
+    SAR: ['沙特阿拉伯', '🇸🇦'],
+    IQD: ['伊拉克', '🇮🇶'],
+    IRR: ['伊朗', '🇮🇷'],
+    PKR: ['巴基斯坦', '🇵🇰'],
+    INR: ['印度', '🇮🇳'],
+    CNY: ['中国', '🇨🇳'],
+    JPY: ['日本', '🇯🇵'],
+    KRW: ['韩国', '🇰🇷'],
+    IDR: ['印度尼西亚', '🇮🇩'],
+    AUD: ['澳大利亚', '🇦🇺'],
+    PHP: ['菲律宾', '🇵🇭'],
+    // 以下为常见货币的预留条目，接口真用到时无需再改代码
+    CHF: ['瑞士', '🇨🇭'],
+    CAD: ['加拿大', '🇨🇦'],
+    NZD: ['新西兰', '🇳🇿'],
+    NOK: ['挪威', '🇳🇴'],
+    DKK: ['丹麦', '🇩🇰'],
+    CZK: ['捷克', '🇨🇿'],
+    ISK: ['冰岛', '🇮🇸'],
+    THB: ['泰国', '🇹🇭'],
+    VND: ['越南', '🇻🇳'],
+    MYR: ['马来西亚', '🇲🇾'],
+    SGD: ['新加坡', '🇸🇬'],
+    HKD: ['中国香港', '🇭🇰'],
+    MOP: ['中国澳门', '🇲🇴'],
+    TWD: ['中国台湾', '🇹🇼']
+  };
+
+  const fxLocale = (code) => FX_LOCALES[code] || null;
+
+  /** avatar 可能是绝对地址，也可能是以 / 开头的相对路径（相对接口域名）。 */
+  function fxAvatarUrl(raw) {
+    const value = String(raw == null ? '' : raw).trim();
+    if (!value) return '';
+    try {
+      const base = value.charAt(0) === '/' && value.charAt(1) !== '/' ? FX_API : location.href;
+      const url = new URL(value, base);
+      // data: 只是为了本地演示能内联小图标，真实接口返回的是普通图片地址
+      if (url.protocol === 'https:' || url.protocol === 'http:' || url.protocol === 'data:') {
+        return url.href;
+      }
+      return '';
+    } catch (err) {
+      return '';
+    }
+  }
+
   const escapeHtml = (value) =>
     String(value == null ? '' : value).replace(
       /[&<>"']/g,
@@ -1905,7 +2068,8 @@
       seen.set(currency.id, {
         id: currency.id,
         code: String(currency.name),
-        country: String(country.name || '')
+        country: String(country.name || ''),
+        avatar: country.avatar == null ? '' : String(country.avatar)
       });
     });
     return [...seen.values()];
@@ -2017,11 +2181,19 @@
       if (!Number.isFinite(target) || target <= 0) target = 10;
       targetInput.value = String(target);
 
-      let quotes = [];
+      let quotes = [];      // 列表里正在展示的货币（含尚未返回的 pending 行）
+      let rows = new Map(); // 法币 id → 行内节点，用于原地更新而不重建整块列表
       let loading = false;
       let alive = true;
       let controller = null;
       let targetTimer = 0;
+
+      // 常驻的「暂无数据」提示，只在列表没有行时出现
+      const emptyEl = document.createElement('p');
+      emptyEl.className = 'eh-empty';
+      emptyEl.textContent = '还没有行情数据，点「刷新行情」抓取一次。';
+      emptyEl.hidden = true;
+      listEl.appendChild(emptyEl);
 
       const setStatus = (text, tone) => {
         if (!alive) return;
@@ -2047,61 +2219,183 @@
         return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2);
       };
 
-      const rowHtml = (quote) => {
+      const syncEmpty = () => {
+        emptyEl.hidden = quotes.length > 0 || loading;
+      };
+
+      /** 国旗：优先用 summary 里的 avatar 图，加载失败再退回本地 emoji。 */
+      const buildFlag = (quote) => {
+        const wrap = document.createElement('span');
+        wrap.className = 'eh-fx-flag';
+        const locale = fxLocale(quote.code);
+
+        const useGlyph = () => {
+          const glyph = locale ? locale[1] : '';
+          wrap.classList.add('eh-fx-flag--glyph');
+          wrap.textContent = glyph;
+          // 图没有、本地也没有兜底时不占位，免得留一个空框
+          if (!glyph) wrap.hidden = true;
+        };
+
+        const src = fxAvatarUrl(quote.avatar);
+        if (!src) {
+          useGlyph();
+          return wrap;
+        }
+
+        const img = document.createElement('img');
+        img.alt = '';
+        img.decoding = 'async';
+        img.loading = 'lazy';
+        img.addEventListener('error', useGlyph, { once: true });
+        img.src = src;
+        wrap.appendChild(img);
+        return wrap;
+      };
+
+      /** 一行的骨架只建一次，之后数据回来只改内容，转圈动画不会被重建打断。 */
+      const buildRow = (quote) => {
+        const el = document.createElement('div');
+        el.className = 'eh-fx-row';
+
+        const head = document.createElement('div');
+        head.className = 'eh-fx-head';
+        head.appendChild(buildFlag(quote));
+
+        const codeEl = document.createElement('span');
+        codeEl.className = 'eh-fx-code';
+        codeEl.textContent = quote.code;
+        head.appendChild(codeEl);
+
+        const nameEl = document.createElement('span');
+        nameEl.className = 'eh-fx-name';
+        const locale = fxLocale(quote.code);
+        if (locale) {
+          const zhEl = document.createElement('b');
+          zhEl.className = 'eh-fx-name__zh';
+          zhEl.textContent = locale[0];
+          nameEl.appendChild(zhEl);
+        }
+        const enEl = document.createElement('span');
+        enEl.className = 'eh-fx-name__en';
+        enEl.textContent = quote.country;
+        enEl.title = quote.country;
+        nameEl.appendChild(enEl);
+        head.appendChild(nameEl);
+
+        const spin = document.createElement('span');
+        spin.className = 'eh-fx-spin';
+        spin.setAttribute('aria-hidden', 'true');
+        head.appendChild(spin);
+
+        const prices = document.createElement('div');
+        prices.className = 'eh-fx-prices';
+
+        const costs = document.createElement('div');
+        const buyEl = document.createElement('div');
+        buyEl.className = 'eh-fx-cost';
+        const sellEl = document.createElement('div');
+        sellEl.className = 'eh-fx-cost';
+        costs.appendChild(buyEl);
+        costs.appendChild(sellEl);
+
+        el.appendChild(head);
+        el.appendChild(prices);
+        el.appendChild(costs);
+
+        rows.set(quote.id, { el, spin, prices, costs, buyEl, sellEl });
+        listEl.appendChild(el);
+      };
+
+      const paintRow = (quote) => {
+        const view = rows.get(quote.id);
+        if (!view) return;
+
+        const pending = quote.status === 'pending';
+        const failed = quote.status === 'error';
+
+        view.spin.hidden = !pending;
+        view.el.classList.toggle('is-error', failed);
+        view.prices.hidden = pending;
+        view.costs.hidden = pending;
+        if (pending) return;
+
+        if (failed) {
+          view.prices.innerHTML = '<span class="eh-fx-tag eh-fx-tag--idle">挂单拉取失败</span>';
+          view.costs.innerHTML = '<div class="eh-fx-cost">稍后点「刷新行情」会重新拉取</div>';
+          return;
+        }
+
+        const code = escapeHtml(quote.code);
         const ask = quote.asks.length ? quote.asks[0].price : null;
         const bid = quote.bids.length ? quote.bids[0].price : null;
         const buy = fxFill(quote.asks, target);
         const sell = fxFill(quote.bids, target);
-        const code = escapeHtml(quote.code);
+
+        view.prices.innerHTML =
+          `<span class="eh-fx-tag ${ask == null ? 'eh-fx-tag--idle' : 'eh-fx-tag--buy'}">买入<b>${fxPrice(ask)}</b></span>` +
+          `<span class="eh-fx-tag ${bid == null ? 'eh-fx-tag--idle' : 'eh-fx-tag--sell'}">卖出<b>${fxPrice(bid)}</b></span>`;
 
         // 吃不满时如实显示实际成交的黄金量，不能让人误以为按目标额度全部成交
-        const buyText =
+        view.buyEl.innerHTML =
           buy.avg == null
             ? '买入：暂无卖单'
             : `买入 <b>${goldLabel(buy.gold)}</b> 金 → <b>${fxQty(buy.currency)}</b> ${code} · 均价 <b>${fxPrice(buy.avg)}</b>` +
-              (buy.filled ? '' : ' <span class="eh-fx-flag">深度不足</span>');
+              (buy.filled ? '' : ' <span class="eh-fx-deep">深度不足</span>');
 
-        const sellText =
+        view.sellEl.innerHTML =
           sell.avg == null
             ? '卖出：暂无买单'
             : `卖出 <b>${fxQty(sell.currency)}</b> ${code} → <b>${goldLabel(sell.gold)}</b> 金 · 均价 <b>${fxPrice(sell.avg)}</b>` +
-              (sell.filled ? '' : ' <span class="eh-fx-flag">深度不足</span>');
-
-        return `
-          <div class="eh-fx-row">
-            <div class="eh-fx-head">
-              <span class="eh-fx-code">${code}</span>
-              <span class="eh-fx-country">${escapeHtml(quote.country)}</span>
-            </div>
-            <div class="eh-fx-prices">
-              <span class="eh-fx-tag ${ask == null ? 'eh-fx-tag--idle' : 'eh-fx-tag--buy'}">买入<b>${fxPrice(ask)}</b></span>
-              <span class="eh-fx-tag ${bid == null ? 'eh-fx-tag--idle' : 'eh-fx-tag--sell'}">卖出<b>${fxPrice(bid)}</b></span>
-            </div>
-            <div class="eh-fx-cost">${buyText}</div>
-            <div class="eh-fx-cost">${sellText}</div>
-          </div>`;
+              (sell.filled ? '' : ' <span class="eh-fx-deep">深度不足</span>');
       };
 
-      const render = () => {
-        if (!alive) return;
-        if (!quotes.length) {
-          listEl.innerHTML = loading ? '' : '<p class="eh-empty">还没有行情数据，点「刷新行情」抓取一次。</p>';
-          ctx.ui.reposition();
-          return;
-        }
+      const addRow = (quote) => {
+        quotes.push(quote);
+        buildRow(quote);
+        paintRow(quote);
+      };
 
-        listEl.innerHTML = quotes
-          .map((quote) => ({ quote, avg: fxFill(quote.asks, target).avg }))
-          .sort((a, b) => {
-            const av = a.avg == null ? Infinity : a.avg;
-            const bv = b.avg == null ? Infinity : b.avg;
-            if (av !== bv) return av - bv;
-            return a.quote.code.localeCompare(b.quote.code);
-          })
-          .map((item) => rowHtml(item.quote))
-          .join('');
+      const dropRow = (quote) => {
+        const view = rows.get(quote.id);
+        if (view) view.el.remove();
+        rows.delete(quote.id);
+        const index = quotes.indexOf(quote);
+        if (index !== -1) quotes.splice(index, 1);
+      };
 
-        ctx.ui.reposition();
+      const clearList = () => {
+        rows.forEach((view) => view.el.remove());
+        rows.clear();
+        quotes = [];
+      };
+
+      /** 按买入均价升序；还没拿到数据 / 拉取失败的排最后。 */
+      const sortList = () => {
+        const keyed = quotes.map((quote) => ({
+          quote,
+          avg: quote.status === 'ok' ? fxFill(quote.asks, target).avg : null
+        }));
+        keyed.sort((a, b) => {
+          const av = a.avg == null ? Infinity : a.avg;
+          const bv = b.avg == null ? Infinity : b.avg;
+          if (av !== bv) return av - bv;
+          return a.quote.code.localeCompare(b.quote.code);
+        });
+        quotes = keyed.map((item) => item.quote);
+        quotes.forEach((quote) => {
+          const view = rows.get(quote.id);
+          if (view) listEl.appendChild(view.el);
+        });
+      };
+
+      /** 本次刷新失败时，把上一次的结果原样放回列表。 */
+      const restore = (snapshot) => {
+        if (!snapshot || !snapshot.length) return;
+        const keep = snapshot.slice();
+        clearList();
+        keep.forEach(addRow);
+        sortList();
       };
 
       const load = async () => {
@@ -2109,17 +2403,18 @@
 
         if (market.state !== 'ok') {
           setStatus(tokenHint(), 'warn');
-          render();
+          syncEmpty();
           return;
         }
 
+        const previous = quotes; // 本次失败时用来回滚，别让已有结果凭空消失
         loading = true;
         if (controller) controller.abort();
         controller = new AbortController();
         const signal = controller.signal;
         refreshBtn.disabled = true;
         setStatus('正在读取国家与货币清单…');
-        render();
+        syncEmpty();
 
         try {
           const countries = await market.call('/countries/summary', { signal });
@@ -2130,43 +2425,58 @@
             throw error;
           }
 
-          const collected = [];
+          const list = entries.map((entry) =>
+            Object.assign({}, entry, { asks: null, bids: null, status: 'pending' })
+          );
+          const total = list.length;
           const failures = [];
-          const total = entries.length;
           let cursor = 0;
           let done = 0;
 
+          // 先按清单把每行摆出来（右侧带转圈），谁的数据回来就填谁
+          clearList();
+          list.forEach(addRow);
+          syncEmpty();
+          ctx.ui.reposition();
           setStatus(`正在拉取挂单 0/${total}…`);
 
-          const fetchEntry = async (entry) => {
+          const fetchEntry = async (quote) => {
             const [sell, buy] = await Promise.all([
               market.call('/market/coin/get', {
-                form: { currency_id: entry.id, transaction: 'SELL' },
+                form: { currency_id: quote.id, transaction: 'SELL' },
                 signal
               }),
               market.call('/market/coin/get', {
-                form: { currency_id: entry.id, transaction: 'BUY' },
+                form: { currency_id: quote.id, transaction: 'BUY' },
                 signal
               })
             ]);
             const book = fxBook(sell, buy);
-            if (book.asks.length || book.bids.length) {
-              collected.push(Object.assign({}, entry, { asks: book.asks, bids: book.bids }));
+            if (!book.asks.length && !book.bids.length) {
+              // 两侧都没有挂单：直接把这行拿掉，与「只显示有挂单的货币」一致
+              dropRow(quote);
+              return;
             }
+            quote.asks = book.asks;
+            quote.bids = book.bids;
+            quote.status = 'ok';
+            paintRow(quote);
           };
 
           const worker = async () => {
-            while (cursor < entries.length) {
+            while (cursor < list.length) {
               if (signal.aborted) return;
-              const entry = entries[cursor];
+              const quote = list[cursor];
               cursor += 1;
 
               try {
-                await fetchEntry(entry);
+                await fetchEntry(quote);
               } catch (err) {
                 if (err && err.name === 'AbortError') return;
                 if (err && err.code === 'UNAUTHORIZED') throw err;
-                failures.push(entry);
+                quote.status = 'error';
+                paintRow(quote);
+                failures.push(quote);
               }
 
               done += 1;
@@ -2179,27 +2489,37 @@
           await Promise.all(Array.from({ length: Math.min(FX_CONCURRENCY, total) }, () => worker()));
           if (signal.aborted) return;
 
-          // 失败多半是瞬时 429 / 5xx：串行补一次，仍失败才计入结果
+          // 失败多半是瞬时 429 / 5xx：串行补一次，行内转圈重新转起来，仍失败才计入结果
           const retry = failures.splice(0);
           for (let i = 0; i < retry.length; i += 1) {
             if (signal.aborted) return;
+            const quote = retry[i];
             setStatus(`正在重试 ${i + 1}/${retry.length}…`);
+            quote.status = 'pending';
+            paintRow(quote);
             try {
-              await fetchEntry(retry[i]);
+              await fetchEntry(quote);
             } catch (err) {
               if (err && err.name === 'AbortError') return;
               if (err && err.code === 'UNAUTHORIZED') throw err;
-              failures.push(retry[i]);
+              quote.status = 'error';
+              paintRow(quote);
+              failures.push(quote);
             }
             await fxSleep(FX_GAP * 3);
           }
 
-          quotes = collected;
+          sortList();
+          const okCount = quotes.filter((quote) => quote.status === 'ok').length;
           const suffix = failures.length ? ` · ${failures.length} 个货币拉取失败` : '';
-          setStatus(`${quotes.length} 种货币有挂单 · 更新于 ${formatClock()}${suffix}`);
+          setStatus(`${okCount} 种货币有挂单 · 更新于 ${formatClock()}${suffix}`);
         } catch (err) {
           if (err && err.name === 'AbortError') return;
           const code = err && err.code;
+
+          // 有上次结果就放回去；没有则清掉半成品，别让一串转圈一直转下去
+          restore(previous);
+          if (!previous.length) clearList();
 
           if (code === 'NO_TOKEN') {
             failStatus(tokenHint(), 'warn');
@@ -2219,9 +2539,10 @@
           if (alive) {
             loading = false;
             refreshBtn.disabled = false;
+            syncEmpty();
+            ctx.ui.reposition();
           }
         }
-        render();
       };
 
       const applyTarget = () => {
@@ -2230,7 +2551,10 @@
         target = valid ? value : 10;
         if (!valid) targetInput.value = String(target);
         ctx.storage.set('target', target);
-        render();
+        quotes.forEach((quote) => paintRow(quote));
+        // 加载中不动顺序，等收尾统一排，免得边填数边跳行
+        if (!loading) sortList();
+        ctx.ui.reposition();
       };
 
       on(targetInput, 'input', () => {
@@ -2252,7 +2576,7 @@
       if (market.state === 'ok') load();
       else {
         setStatus(tokenHint(), 'warn');
-        render();
+        syncEmpty();
       }
 
       ctx.onDestroy(() => {
