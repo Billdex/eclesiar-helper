@@ -2,8 +2,8 @@
 // @name         Eclesiar 助手
 // @name:en      Eclesiar Helper
 // @namespace    https://github.com/Billdex/eclesiar-helper
-// @version      0.1.5
-// @description  Eclesiar 经济 / 政治计算辅助插件：悬浮球面板 + 全球汇率总览 + 各国市场商品金价比价与销售税后收益估算。
+// @version      0.1.6
+// @description  Eclesiar 经济 / 政治计算辅助插件：悬浮球面板 + 全球汇率总览 + 各国市场商品金价比价与销售税后收益估算，商品市场列表直接标注折算金价。
 // @description:en Eclesiar helper: floating panel + exchange rates + cross-market goods pricing and after-tax sale revenue in gold.
 // @author       billdex
 // @match        https://app.eclesiar.com/*
@@ -43,7 +43,7 @@
    * 1. 常量与工具
    * ========================================================================= */
 
-  const VERSION = '0.1.5';
+  const VERSION = '0.1.6';
   const REPO_URL = 'https://github.com/Billdex/eclesiar-helper';
   /** jsDelivr 的 GitHub 镜像：国内可达，更新检查与安装都以它为主。 */
   const CDN_RAW = 'https://cdn.jsdelivr.net/gh/Billdex/eclesiar-helper@main/';
@@ -165,6 +165,30 @@
 
   *, *::before, *::after { box-sizing: border-box; }
   [hidden] { display: none !important; }
+
+  /* ---------- 黄金图标（代替「金」字，放在数字前面） ---------- */
+
+  .eh-gold-ico {
+    width: 14px;
+    height: 14px;
+    display: inline-block;
+    object-fit: contain;
+    vertical-align: -3px;
+    margin-right: 2px;
+  }
+
+  .eh-gold-ico--sm {
+    width: 13px;
+    height: 13px;
+    vertical-align: -2px;
+    margin-right: 1px;
+  }
+
+  .eh-gold-ico--lg {
+    width: 16px;
+    height: 16px;
+    vertical-align: -3px;
+  }
 
   /* ---------- 悬浮球 ---------- */
 
@@ -847,11 +871,42 @@
     background: rgba(227, 154, 154, .04);
   }
 
-  .eh-fx-prices {
+  /* 一个方向一行：徽标（含最优质）+ 成交明细，窄的时候自动折行 */
+  .eh-fx-line {
     display: flex;
     flex-wrap: wrap;
+    align-items: baseline;
     gap: 5px;
-    margin-top: 5px;
+    margin-top: 4px;
+    min-width: 0;
+    font-size: 10.5px;
+    line-height: 1.6;
+    color: #8d9bb0;
+  }
+
+  .eh-fx-flow {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .eh-fx-flow b {
+    font-family: var(--eh-mono);
+    font-weight: 600;
+    color: #e7dfcd;
+  }
+
+  .eh-fx-avg {
+    flex: none;
+    font-family: var(--eh-mono);
+    font-size: 9.5px;
+    color: #74839a;
+  }
+
+  .eh-fx-avg b {
+    font-weight: 600;
+    color: #98a5b8;
   }
 
   .eh-fx-tag {
@@ -887,19 +942,6 @@
     border-color: rgba(255, 255, 255, .08);
     background: rgba(255, 255, 255, .03);
     color: #6d7a8f;
-  }
-
-  .eh-fx-cost {
-    margin-top: 4px;
-    font-size: 10.5px;
-    line-height: 1.7;
-    color: #8d9bb0;
-  }
-
-  .eh-fx-cost b {
-    font-family: var(--eh-mono);
-    font-weight: 600;
-    color: #e7dfcd;
   }
 
   .eh-fx-deep {
@@ -1101,6 +1143,31 @@
 
   .eh-gd-hint[data-tone="warn"] { color: #e0b071; }
 
+  /* ---------- 商品市场列表金价标注开关 ---------- */
+
+  .eh-gd-switch {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 8px 0 0;
+    font-size: 11px;
+    line-height: 1.4;
+    color: #9fadc2;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .eh-gd-switch input {
+    width: 13px;
+    height: 13px;
+    margin: 0;
+    accent-color: #c9a54a;
+    cursor: pointer;
+    flex: none;
+  }
+
+  .eh-gd-switch:hover { color: #c7d3e3; }
+
   .eh-gd-meta--sub {
     padding-top: 1px;
     font-size: 9.5px;
@@ -1181,23 +1248,21 @@
 
   .eh-gd-gold {
     display: inline-flex;
-    align-items: baseline;
-    gap: 3px;
+    align-items: center;
+    gap: 4px;
+    line-height: 1;
     font-family: var(--eh-mono);
   }
 
   .eh-gd-gold b {
     font-size: 12.5px;
     font-weight: 600;
+    line-height: 1;
     letter-spacing: -.01em;
     color: #f0d9a4;
   }
 
-  .eh-gd-gold i {
-    font-style: normal;
-    font-size: 9.5px;
-    color: #8d9bb0;
-  }
+  .eh-gd-gold .eh-gold-ico { margin-right: 0; vertical-align: 0; }
 
   .eh-gd-row.is-best .eh-gd-gold b { color: #e8cd8f; }
 
@@ -1390,6 +1455,8 @@
 
     const shadow = host.attachShadow({ mode: 'open' });
     applyStyles(shadow);
+    // 黄金图标加载失败时退回「金」字（img 的 error 不冒泡，用捕获阶段委托）
+    on(shadow, 'error', onGoldIconError, true);
 
     // ---- 悬浮球 ----
     const ball = document.createElement('button');
@@ -2272,6 +2339,18 @@
     let apiExpired = false;
     let installed = false;
     const restores = [];
+    /** 第一次拿到登录凭据时通知订阅者（市场页标注靠它补画，不用轮询）。 */
+    const authListeners = new Set();
+
+    const notifyAuth = () => {
+      [...authListeners].forEach((fn) => {
+        try {
+          fn();
+        } catch (err) {
+          /* 订阅方自己出错不影响凭据捕获 */
+        }
+      });
+    };
 
     /** 兼容裸主机、大写主机、协议相对路径等写法；只看主机名。 */
     const isApiUrl = (url) => {
@@ -2295,6 +2374,7 @@
       loginToken = value;
       expired = false;
       log('已捕获登录凭据（仅内存）');
+      notifyAuth();
     };
 
     const scanHeaders = (headers) => {
@@ -2557,6 +2637,12 @@
       uninstall,
       call,
       generateKey,
+      /** 首次拿到登录凭据时回调（用于补画依赖凭据的界面）；返回取消订阅函数。 */
+      onAuth(fn) {
+        if (typeof fn !== 'function') return () => {};
+        authListeners.add(fn);
+        return () => authListeners.delete(fn);
+      },
       /** 手动保存玩家粘贴的密钥；格式由 apiKey 校验。 */
       setKey(raw) {
         if (!apiKey.set(raw)) return false;
@@ -2674,6 +2760,60 @@
     if (value >= 100) return value.toFixed(1);
     if (value >= 1) return value.toFixed(2);
     return value.toPrecision(3);
+  }
+
+  /** 黄金图标（游戏官方 CDN）：面板与页面标注里都用它代替「金」字。 */
+  const GOLD_ICON_SRC = 'https://storage.eclesiar.com/medias/41.png';
+
+  /** HTML 片段版：给 innerHTML 拼接用，尺寸走 .eh-gold-ico 系列类。 */
+  const goldIconHtml = (cls) =>
+    '<img class="eh-gold-ico' +
+    (cls ? ' ' + cls : '') +
+    '" src="' +
+    GOLD_ICON_SRC +
+    '" alt="金" decoding="async" loading="lazy">';
+
+  /** 元素版（面板内）：样式来自 STYLES，加载失败由 ShadowRoot 上的委托兜底换成「金」字。 */
+  function buildGoldIconEl(cls) {
+    const img = document.createElement('img');
+    img.className = 'eh-gold-ico' + (cls ? ' ' + cls : '');
+    img.src = GOLD_ICON_SRC;
+    img.alt = '金';
+    img.decoding = 'async';
+    img.loading = 'lazy';
+    return img;
+  }
+
+  /** 元素版（游戏页面标注）：内联样式定尺寸，不依赖插件样式表。 */
+  function buildGoldIcon(px) {
+    const img = document.createElement('img');
+    img.src = GOLD_ICON_SRC;
+    img.alt = '金';
+    img.decoding = 'async';
+    img.loading = 'lazy';
+    img.style.cssText =
+      'width:' +
+      px +
+      'px;height:' +
+      px +
+      'px;object-fit:contain;display:inline-block;flex:none;vertical-align:-' +
+      Math.max(1, Math.round(px / 8)) +
+      'px;';
+    img.addEventListener(
+      'error',
+      () => {
+        img.replaceWith(document.createTextNode('金'));
+      },
+      { once: true }
+    );
+    return img;
+  }
+
+  /** 面板里的图标加载失败时就地换成「金」字，别留破图（img 的 error 不冒泡，用捕获）。 */
+  function onGoldIconError(event) {
+    const img = event.target;
+    if (!img || img.tagName !== 'IMG' || !img.classList || !img.classList.contains('eh-gold-ico')) return;
+    img.replaceWith(document.createTextNode('金'));
   }
 
   /** 黄金单价可能很小（0.0000123），整数位少时多给几位小数，别都显示成 0.00。 */
@@ -3155,23 +3295,55 @@
         spin.setAttribute('aria-hidden', 'true');
         head.appendChild(spin);
 
-        const prices = document.createElement('div');
-        prices.className = 'eh-fx-prices';
-
-        const costs = document.createElement('div');
-        const buyEl = document.createElement('div');
-        buyEl.className = 'eh-fx-cost';
-        const sellEl = document.createElement('div');
-        sellEl.className = 'eh-fx-cost';
-        costs.appendChild(buyEl);
-        costs.appendChild(sellEl);
+        const buyLine = document.createElement('div');
+        buyLine.className = 'eh-fx-line';
+        const sellLine = document.createElement('div');
+        sellLine.className = 'eh-fx-line';
 
         el.appendChild(head);
-        el.appendChild(prices);
-        el.appendChild(costs);
+        el.appendChild(buyLine);
+        el.appendChild(sellLine);
 
-        rows.set(quote.id, { el, spin, prices, costs, buyEl, sellEl });
+        rows.set(quote.id, { el, spin, buyLine, sellLine });
         listEl.appendChild(el);
+      };
+
+      /**
+       * 一个方向占一行：方向徽标里带最优质，后面直接跟这笔目标额度的成交结果。
+       * 均价与最优质几乎一样时（只吃了一档）就不再重复写一遍。
+       */
+      const paintLine = (el, side, best, fill, code, emptyText) => {
+        const isBuy = side === 'buy';
+        const label = isBuy ? '买入' : '卖出';
+
+        if (best == null || fill.avg == null) {
+          el.innerHTML =
+            `<span class="eh-fx-tag eh-fx-tag--idle">${label}<b>—</b></span>` +
+            `<span class="eh-fx-flow">${emptyText}</span>`;
+          el.title = '';
+          return;
+        }
+
+        const gold = goldIconHtml('eh-gold-ico--sm') + '<b>' + goldLabel(fill.gold) + '</b>';
+        const flow = isBuy
+          ? gold + ' → <b>' + fxQty(fill.currency) + '</b> ' + code
+          : '<b>' + fxQty(fill.currency) + '</b> ' + code + ' → ' + gold;
+        // 只吃了一档时均价 == 最优质，没必要再写一遍
+        const samePrice = Math.abs(fill.avg - best) / best <= 0.002;
+
+        el.innerHTML =
+          `<span class="eh-fx-tag eh-fx-tag--${side}">${label}<b>${fxPrice(best)}</b></span>` +
+          `<span class="eh-fx-flow">${flow}</span>` +
+          (samePrice ? '' : `<span class="eh-fx-avg">均价 <b>${fxPrice(fill.avg)}</b></span>`) +
+          (fill.filled ? '' : '<span class="eh-fx-deep">深度不足</span>');
+
+        el.title =
+          label +
+          '：最优 ' +
+          fxPrice(best) +
+          '，目标额度成交均价 ' +
+          fxPrice(fill.avg) +
+          (fill.filled ? '' : '（挂单不够，只成交了一部分）');
       };
 
       const paintRow = (quote) => {
@@ -3183,15 +3355,20 @@
 
         view.spin.hidden = !pending;
         view.el.classList.toggle('is-error', failed);
-        view.prices.hidden = pending;
-        view.costs.hidden = pending;
+        view.buyLine.hidden = pending;
+        view.sellLine.hidden = pending;
         if (pending) return;
 
         if (failed) {
-          view.prices.innerHTML = '<span class="eh-fx-tag eh-fx-tag--idle">挂单拉取失败</span>';
-          view.costs.innerHTML = '<div class="eh-fx-cost">稍后点「刷新行情」会重新拉取</div>';
+          view.sellLine.hidden = true;
+          view.buyLine.innerHTML =
+            '<span class="eh-fx-tag eh-fx-tag--idle">拉取失败</span>' +
+            '<span class="eh-fx-flow">稍后点「刷新行情」会重新拉取</span>';
+          view.buyLine.title = '';
           return;
         }
+
+        view.sellLine.hidden = false;
 
         const code = escapeHtml(quote.code);
         const ask = quote.asks.length ? quote.asks[0].price : null;
@@ -3199,22 +3376,8 @@
         const buy = fxFill(quote.asks, target);
         const sell = fxFill(quote.bids, target);
 
-        view.prices.innerHTML =
-          `<span class="eh-fx-tag ${ask == null ? 'eh-fx-tag--idle' : 'eh-fx-tag--buy'}">买入<b>${fxPrice(ask)}</b></span>` +
-          `<span class="eh-fx-tag ${bid == null ? 'eh-fx-tag--idle' : 'eh-fx-tag--sell'}">卖出<b>${fxPrice(bid)}</b></span>`;
-
-        // 吃不满时如实显示实际成交的黄金量，不能让人误以为按目标额度全部成交
-        view.buyEl.innerHTML =
-          buy.avg == null
-            ? '买入：暂无卖单'
-            : `买入 <b>${goldLabel(buy.gold)}</b> 金 → <b>${fxQty(buy.currency)}</b> ${code} · 均价 <b>${fxPrice(buy.avg)}</b>` +
-              (buy.filled ? '' : ' <span class="eh-fx-deep">深度不足</span>');
-
-        view.sellEl.innerHTML =
-          sell.avg == null
-            ? '卖出：暂无买单'
-            : `卖出 <b>${fxQty(sell.currency)}</b> ${code} → <b>${goldLabel(sell.gold)}</b> 金 · 均价 <b>${fxPrice(sell.avg)}</b>` +
-              (sell.filled ? '' : ' <span class="eh-fx-deep">深度不足</span>');
+        paintLine(view.buyLine, 'buy', ask, buy, code, '暂无卖单');
+        paintLine(view.sellLine, 'sell', bid, sell, code, '暂无买单');
       };
 
       /** 按买入均价升序；还没拿到数据 / 拉取失败的排最后。 */
@@ -3408,6 +3571,70 @@
 
   const GOODS_BY_KEY = new Map(GOODS_ITEMS.map((item) => [item.key, item]));
 
+  /** 中文商品名 → 接口 api 名：游戏市场页只有中文名，靠它反查回挂单里的键。 */
+  const GOODS_API_BY_ZH = new Map(
+    GOODS_GROUPS.reduce((list, group) => list.concat(group.items.map((item) => [item.zh, item.api])), [])
+  );
+
+  /**
+   * 各国商品行情的共享缓存。
+   * 面板「商品」页抓完后写进这里，游戏市场页的金价标注读它算「比全球最低贵多少」。
+   * 这里绝不主动发请求：为一个参考值把 45 个国家的市场再拉一遍不划算，
+   * 没有数据时标注就只显示本国金价。
+   */
+  const goodsFeed = (() => {
+    const listeners = new Set();
+    let markets = [];
+
+    const notify = () => {
+      [...listeners].forEach((fn) => {
+        try {
+          fn();
+        } catch (err) {
+          warn('商品行情订阅回调异常', err);
+        }
+      });
+    };
+
+    return {
+      get markets() {
+        return markets;
+      },
+      get ready() {
+        return markets.some((entry) => entry && entry.items && entry.items.size);
+      },
+      subscribe(fn) {
+        if (typeof fn !== 'function') return () => {};
+        listeners.add(fn);
+        return () => listeners.delete(fn);
+      },
+      /** 面板商品页拉完后写入（含流亡政府标记，算最低价时要跳过）。 */
+      publish(list) {
+        markets = Array.isArray(list) ? list : [];
+        notify();
+      },
+      /**
+       * 某个商品（api#quality）的全球最低黄金单价。
+       * 汇率只认「汇率」页已有的缓存，缺汇率的国家跳过，不额外请求。
+       */
+      bestGold(key) {
+        let best = null;
+        markets.forEach((entry) => {
+          if (!entry || entry.exiled) return;
+          const item = entry.items && entry.items.get(key);
+          if (!item || !(item.price > 0)) return;
+          const rate = fxFeed.rateFor(entry.currency.id);
+          if (!(rate > 0)) return;
+          const gold = item.price * rate;
+          if (!best || gold < best.gold) {
+            best = { gold, country: entry.name, code: entry.currency.code };
+          }
+        });
+        return best;
+      }
+    };
+  })();
+
   /** api 名 → 商品图地址：从挂单里顺手收集，同一件商品各国各品质共用一个图标。 */
   const GOODS_AVATARS = new Map();
 
@@ -3494,6 +3721,11 @@
             <p class="eh-fx-status" data-role="status">…</p>
             <button class="eh-btn" type="button" data-role="refresh">刷新行情</button>
           </div>
+          <label class="eh-gd-switch"
+            title="在游戏自己的商品市场列表里，每个起价下面补一行换算后的黄金单价；只追加只读文字，不改游戏原有内容">
+            <input type="checkbox" data-role="badge">
+            <span>商品市场列表显示金价</span>
+          </label>
         </div>
         <div class="eh-section">
           <div class="eh-h3" data-role="listtitle">各国市场 · 黄金单价</div>
@@ -3906,14 +4138,10 @@
 
         const goldEl = document.createElement('span');
         goldEl.className = 'eh-gd-gold';
+        if (row.gold != null) goldEl.appendChild(buildGoldIconEl('eh-gold-ico--lg'));
         const goldValue = document.createElement('b');
         goldValue.textContent = row.gold == null ? '—' : fxGold(row.gold);
         goldEl.appendChild(goldValue);
-        if (row.gold != null) {
-          const unit = document.createElement('i');
-          unit.textContent = '金';
-          goldEl.appendChild(unit);
-        }
         el.appendChild(goldEl);
 
         const meta = document.createElement('span');
@@ -3962,11 +4190,13 @@
           if (row.rate == null) {
             sub.textContent = '缺卖出方向的汇率，无法估算实际收入。';
           } else if (!row.taxKnown) {
-            sub.innerHTML = '税前 <b>' + fxGold(row.goldBefore) + '</b> 金 · 税率未知（暂按 0 税估算）';
+            sub.innerHTML =
+              '税前 ' + goldIconHtml('eh-gold-ico--sm') + '<b>' + fxGold(row.goldBefore) + '</b> · 税率未知（暂按 0 税估算）';
           } else {
             const parts = ['增值税 ' + goodsPercent(row.vat)];
             parts.push(row.own ? '进口税 0%（本国免）' : '进口税 ' + goodsPercent(row.importTax));
-            sub.innerHTML = '税前 <b>' + fxGold(row.goldBefore) + '</b> 金 · ' + parts.join(' · ');
+            sub.innerHTML =
+              '税前 ' + goldIconHtml('eh-gold-ico--sm') + '<b>' + fxGold(row.goldBefore) + '</b> · ' + parts.join(' · ');
           }
           el.appendChild(meta);
           el.appendChild(sub);
@@ -4218,6 +4448,8 @@
 
           snapshotAt = Date.now();
           markets = entries.filter((entry) => entry.status === 'ok');
+          // 共享给游戏市场页的金价标注：它要拿这份数据算「比全球最低贵多少」
+          goodsFeed.publish(markets);
         } catch (err) {
           if (err && err.name === 'AbortError') return;
           markets = previous;
@@ -4259,6 +4491,14 @@
         load();
       });
 
+      // 市场页面上的金价标注：开关只影响游戏 DOM，不影响本面板
+      const badgeToggle = pane.querySelector('[data-role="badge"]');
+      badgeToggle.checked = marketBadge.enabled;
+      on(badgeToggle, 'change', () => {
+        marketBadge.setEnabled(badgeToggle.checked);
+        ctx.log('市场列表金价标注', badgeToggle.checked ? '开' : '关');
+      });
+
       const off = fxFeed.subscribe((kind) => {
         if (!alive) return;
         if (kind === 'done') {
@@ -4291,7 +4531,494 @@
     }
   });
 
-  /* -------- 9.4 设置与版本检查 -------- */
+  /* -------- 9.4 商品市场列表金价标注 -------- */
+
+  /**
+   * 在游戏自己的商品市场列表里，给每行的「起价」补一行换算后的黄金单价。
+   *
+   * 这是插件唯一会写游戏 DOM 的地方，规则（AGENTS.md「硬约束 2」的例外）：
+   *  - 只往价格单元格追加一个只读徽标，不改游戏原有节点、文本、按钮与事件；
+   *  - 徽标带 data-eh-gold 标记，注入前先查重，React 重渲染后自动补回；
+   *  - 关闭开关或 destroy() 时全部移除，MutationObserver、订阅一起断开；
+   *  - 认不出货币、拿不到汇率、没有凭据时静默跳过，不弹提示、不循环重试。
+   *
+   * 汇率优先复用「汇率」标签那份缓存（fxFeed.rateFor），缺少时才按单个货币查一次
+   * SELL 挂单，结果缓存 5 分钟；一次页面访问最多按币种数个请求，不轮询。
+   */
+  const marketBadge = (() => {
+    const ATTR = 'data-eh-gold';
+    const RATE_TTL = 5 * 60 * 1000;
+    const RATE_RETRY = 60 * 1000;
+    /** 国家清单拉失败后 30 秒内不再重试；单次请求超过 10 秒视为卡住，允许重来。 */
+    const MAP_RETRY = 30 * 1000;
+    const MAP_TIMEOUT = 10 * 1000;
+    const SCAN_DELAY = 150;
+    const WARMUP_GAP = 2000;
+    const WARMUP_TRIES = 15;
+    const PRICE_RE = /^\d{1,3}(?:[,\s]\d{3})*(?:\.\d+)?$/;
+    const CODE_RE = /^[A-Z]{3,5}$/;
+
+    let enabled = storage.read('marketBadge', true) !== false;
+    let running = false;
+    let observer = null;
+    let timer = 0;
+    let retryTimer = 0;
+    let credentialTries = 0;
+    let currencyMap = null;
+    let currencyPromise = null;
+    let currencyStartedAt = 0;
+    let currencyFailedAt = 0;
+    /** 当前认定的商品列表容器；离开页面或它被移除后重新找。 */
+    let scope = null;
+
+    /** 货币 id → { at, rate, failed }：rate 为 null 表示该币种确实没有换汇挂单。 */
+    const rates = new Map();
+    const pending = new Set();
+    /** 已在调试日志里报过「未识别」的货币代码，避免同一批行反复刷屏。 */
+    const unknownCodes = new Set();
+
+    /** 只在游戏的商品市场页标注；别的页面就算出现「价格 + 货币」也不碰。 */
+    const routeIsMarket = () => /(^|\/)market(\/|$)/.test(route.current.split(/[?#]/)[0]);
+
+    /**
+     * 价格单元格：价格 span 的同级里必须有货币代码（USD/CNY…），
+     * 靠这个把「起价」和数量、报价数之类的纯数字区分开，不依赖游戏的 class。
+     */
+    function readPrice(span) {
+      const parent = span.parentElement;
+      if (!parent) return null;
+      const text = (span.textContent || '').trim();
+      if (!PRICE_RE.test(text)) return null;
+
+      let code = '';
+      for (let i = 0; i < parent.children.length; i += 1) {
+        const sib = parent.children[i];
+        if (sib === span) continue;
+        const value = (sib.textContent || '').trim();
+        if (CODE_RE.test(value)) code = value;
+      }
+      if (!code) return null;
+
+      const host = parent.parentElement;
+      if (!host) return null;
+
+      const price = Number(text.replace(/[,\s]/g, ''));
+      if (!(price > 0)) return null;
+      return { host, row: host.parentElement, code, price, text };
+    }
+
+    /**
+     * 行 → 商品键（api#quality）：游戏只给中文名和 Q1–Q5 角标，
+     * 用内置对照表反查回挂单接口里的英文 api 名，查不到（新商品）就返回空。
+     */
+    function itemKeyOf(row) {
+      if (!row) return '';
+      const img = row.querySelector('img[alt]');
+      let name = img ? String(img.getAttribute('alt') || '').trim() : '';
+      let quality = 0;
+
+      const spans = row.querySelectorAll('span');
+      for (let i = 0; i < spans.length; i += 1) {
+        const text = (spans[i].textContent || '').trim();
+        if (/^Q[1-5]$/.test(text)) quality = Number(text.slice(1));
+        else if (!name && text && text.length <= 6 && !/^\d/.test(text)) name = text;
+      }
+
+      // 名称里带品质的写法（"食物 Q1"）
+      const match = /^(.*?)\s*Q([1-5])$/.exec(name);
+      if (match) {
+        name = match[1].trim();
+        quality = Number(match[2]);
+      }
+
+      const api = GOODS_API_BY_ZH.get(name);
+      return api ? api + '#' + quality : '';
+    }
+
+    function ensureBadge(host) {
+      let badge = host.querySelector('[' + ATTR + ']');
+      if (!badge) {
+        badge = document.createElement('div');
+        badge.setAttribute(ATTR, '');
+        badge.style.cssText =
+          'display:flex;align-items:center;justify-content:flex-end;gap:2px;margin-top:1px;' +
+          'font:600 10px/1.15 -apple-system,BlinkMacSystemFont,"PingFang SC",' +
+          '"Hiragino Sans GB","Microsoft YaHei",sans-serif;letter-spacing:.02em;' +
+          'white-space:nowrap;pointer-events:none;';
+        host.appendChild(badge);
+      }
+      return badge;
+    }
+
+    /** 写内容前先比对 key：内容没变就不动 DOM，免得自己触发的 MutationObserver 空转。 */
+    function paintBadge(host, key, tone, title, fill) {
+      const badge = ensureBadge(host);
+      if (badge.getAttribute('data-key') === key) return;
+      badge.setAttribute('data-key', key);
+      badge.setAttribute('data-tone', tone);
+      badge.style.color = tone === 'muted' ? '#7d8ba0' : '#8fd6a4';
+      badge.textContent = '';
+      fill(badge);
+      badge.title = title;
+    }
+
+    function currencyIdOf(code) {
+      if (!currencyMap) {
+        ensureCurrencyMap();
+        return 0;
+      }
+      return currencyMap.get(String(code).toUpperCase()) || 0;
+    }
+
+    /**
+     * 货币代码 → 货币 id：只有 /countries/summary 里有这份映射，拉一次就够。
+     * 自己发这一次请求、不借用 fxFeed 的缓存 promise：那份是给汇率 / 商品用的，
+     * 它失败或挂住时不该连带市场页标注一起失效。
+     */
+    function ensureCurrencyMap() {
+      const now = Date.now();
+      if (currencyMap) return;
+      if (currencyPromise) {
+        // 请求卡住超过 10 秒就不再等它，允许下一轮重来
+        if (now - currencyStartedAt < MAP_TIMEOUT) return;
+        currencyPromise = null;
+      }
+      if (market.state !== 'ok') return;
+      if (currencyFailedAt && now - currencyFailedAt < MAP_RETRY) return;
+
+      currencyStartedAt = now;
+      currencyPromise = fxFeed
+        .ensureCountries()
+        .then((list) => {
+          const map = new Map();
+          fxCurrencies(list).forEach((entry) => map.set(entry.code.toUpperCase(), entry.id));
+          currencyMap = map;
+          log('市场金价：国家清单已就绪', map.size + ' 种货币');
+          schedule();
+        })
+        .catch((err) => {
+          currencyFailedAt = Date.now();
+          log('市场金价：国家清单读取失败', err && (err.message || err.code));
+        })
+        .then(() => {
+          currencyPromise = null;
+        });
+    }
+
+    /** 没有兑换挂单的币种只查一次并记住；失败则冷却 1 分钟，避免反复打接口。 */
+    function fetchRate(id) {
+      if (market.state !== 'ok') return;
+      pending.add(id);
+      market
+        .call('/market/coin/get', { form: { currency_id: id, transaction: 'SELL' } })
+        .then((orders) => {
+          const book = fxBook(orders, null);
+          rates.set(id, { at: Date.now(), rate: book.asks.length ? book.asks[0].price : null });
+        })
+        .catch((err) => {
+          rates.set(id, { at: Date.now(), rate: null, failed: true });
+          log('市场金价：换汇挂单读取失败', err && (err.message || err.code));
+        })
+        .then(() => {
+          pending.delete(id);
+          schedule();
+        });
+    }
+
+    /** 返回售价（黄金/单位货币）；null = 没有挂单；undefined = 正在取或刚失败，先不画。 */
+    function rateOf(id) {
+      const direct = fxFeed.rateFor(id);
+      if (direct) return direct;
+
+      const cached = rates.get(id);
+      const now = Date.now();
+      if (cached) {
+        if (cached.failed && now - cached.at < RATE_RETRY) return undefined;
+        if (!cached.failed && now - cached.at < RATE_TTL) return cached.rate;
+      }
+      if (pending.has(id)) return undefined;
+      fetchRate(id);
+      return undefined;
+    }
+
+    function paint(info) {
+      if (!running || !enabled) return;
+      if (info.host.closest('[' + ATTR + ']')) return;
+
+      const id = currencyIdOf(info.code);
+      if (!id) {
+        // 同一种货币只记一次，免得调试日志被刷屏
+        if (!unknownCodes.has(info.code)) {
+          unknownCodes.add(info.code);
+          log('市场金价：货币未识别', info.code, '国家清单=' + (currencyMap ? currencyMap.size : '未就绪'));
+        }
+        return;
+      }
+
+      const rate = rateOf(id);
+      if (rate === undefined) return;
+      if (!(rate > 0)) {
+        paintBadge(info.host, 'none', 'muted', '该货币暂无换汇挂单，无法折算成黄金', (badge) => {
+          badge.textContent = '暂无换汇';
+        });
+        return;
+      }
+
+      const gold = info.price * rate;
+      // 全球最低价来自面板「商品」页抓过的行情，没有数据就只显示本国折算价
+      const best = goodsFeed.bestGold(itemKeyOf(info.row));
+      const diff = best ? gold - best.gold : 0;
+
+      let title =
+        info.text +
+        ' ' +
+        info.code +
+        ' × ' +
+        fxPrice(rate) +
+        ' 金/单位货币 = ' +
+        fxGold(gold) +
+        ' 金（按当前最优换汇挂单估算，未计手续费）';
+      if (best) {
+        title += '；全球最低 ' + fxGold(best.gold) + ' 金（' + best.country + ' ' + best.code + '）';
+        title +=
+          Math.abs(diff) <= best.gold * 0.005
+            ? '，本行即全球最低'
+            : '，本行' + (diff > 0 ? '贵 ' : '便宜 ') + fxGold(Math.abs(diff)) + ' 金';
+      } else if (!goodsFeed.ready) {
+        title += '；在面板「商品」页抓取一次行情后，会显示与全球最低价的对比';
+      }
+
+      paintBadge(
+        info.host,
+        'gold:' + gold + '|' + (best ? best.gold : '-'),
+        'gold',
+        title,
+        (badge) => {
+          badge.appendChild(document.createTextNode('≈'));
+          badge.appendChild(buildGoldIcon(13));
+          badge.appendChild(document.createTextNode(fxGold(gold)));
+          if (!best) return;
+
+          // 直接给差额的金数，比百分比直观：+0.0078 就是这行比全球最低贵 0.0078 金
+          const tag = document.createElement('span');
+          tag.style.marginLeft = '3px';
+          if (Math.abs(diff) <= best.gold * 0.005) {
+            tag.textContent = '全球最低';
+            tag.style.color = '#86c79c';
+          } else {
+            tag.textContent = (diff > 0 ? '+' : '−') + fxPrice(Math.abs(diff));
+            tag.style.color = diff > 0 ? '#e0a06b' : '#86c79c';
+          }
+          badge.appendChild(tag);
+        }
+      );
+    }
+
+    /**
+     * 找出「商品列表容器」：从每行往上 1–3 层找共同祖先，取第一个能装下至少两行的。
+     * 行外面可能还套着分隔线之类的包装层，所以不能只看直接父节点；
+     * HUD 上的货币余额、下拉里的余额这类孤零零的价格凑不成组，也不会被误标。
+     */
+    function findScope() {
+      const spans = document.body ? document.body.querySelectorAll('span') : [];
+      const rows = [];
+      for (let i = 0; i < spans.length; i += 1) {
+        const info = readPrice(spans[i]);
+        if (!info) continue;
+        const row = info.host.parentElement;
+        if (row) rows.push(row);
+      }
+      if (!rows.length) return null;
+
+      /** 把这些行按往上 level 层的祖先分组：key 是容器，value 是它装着的行。 */
+      const groupAt = (level) => {
+        const groups = new Map();
+        rows.forEach((row) => {
+          let list = row;
+          for (let i = 0; i < level && list; i += 1) list = list.parentElement;
+          if (!list) return;
+          if (!groups.has(list)) groups.set(list, new Set());
+          groups.get(list).add(row);
+        });
+        return groups;
+      };
+
+      // 1) 正常情况：找出装了两行以上的容器（层级越深越贴近列表本体）
+      for (let level = 1; level <= 3; level += 1) {
+        let best = null;
+        groupAt(level).forEach((set, list) => {
+          if (set.size >= 2 && (!best || set.size > best.size)) best = { list };
+        });
+        if (best) return best.list;
+      }
+
+      // 2) 只剩一行（例如某个品质只有一件商品有挂单）：
+      //    从外往内认列表容器，别把「行的包装层」当成列表，否则下次多行时只能标到第一行。
+      //    行结构的特征是「既有商品图、又带操作按钮」；HUD 的余额是个 <button> 本身，
+      //    内部不会再有 button，所以不会被误判。
+      const order = [2, 3, 1];
+      for (let i = 0; i < order.length; i += 1) {
+        let hit = null;
+        groupAt(order[i]).forEach((set, list) => {
+          if (hit) return;
+          const row = [...set][0];
+          if (row && row.querySelector('button') && row.querySelector('img')) hit = { list };
+        });
+        if (hit) return hit.list;
+      }
+      return null;
+    }
+
+    function paintAll() {
+      if (!running || !document.body) return;
+      if (!scope || !scope.isConnected) scope = findScope();
+      if (!scope) return;
+      const spans = scope.querySelectorAll('span');
+      for (let i = 0; i < spans.length; i += 1) {
+        const info = readPrice(spans[i]);
+        if (info) paint(info);
+      }
+    }
+
+    function schedule() {
+      if (!running || timer) return;
+      timer = setTimeout(() => {
+        timer = 0;
+        paintAll();
+      }, SCAN_DELAY);
+    }
+
+    /**
+     * 只有列表容器里发生变化才重扫。
+     * 增删都算：游戏重渲染时可能把我们的徽标顺手删掉（removedNodes），
+     * 只盯着新增的话徽标就再也不会回来了。
+     */
+    function onMutations(records) {
+      if (!running) return;
+      if (!scope || !scope.isConnected) {
+        scope = null;
+        schedule();
+        return;
+      }
+      for (let i = 0; i < records.length; i += 1) {
+        const record = records[i];
+        if (record.type !== 'childList') continue;
+        const target = record.target;
+        if (!target || (target !== scope && !scope.contains(target))) continue;
+        if (!record.addedNodes.length && !record.removedNodes.length) continue;
+        schedule();
+        return;
+      }
+    }
+
+    /**
+     * 进页面先画一遍。行先渲染、凭据 / 国家清单 / 换汇挂单后到时会一行都标不上，
+     * 所以每 2 秒本地重扫一次，最多 15 次（约 30 秒），标上第一行就停。
+     * 只扫本地 DOM，不发额外请求，也不是长期轮询。
+     */
+    function warmUp() {
+      if (!running) return;
+      paintAll();
+      if (document.querySelector('[' + ATTR + ']') || credentialTries >= WARMUP_TRIES) return;
+      clearInterval(retryTimer);
+      retryTimer = setInterval(() => {
+        if (!running) {
+          clearInterval(retryTimer);
+          retryTimer = 0;
+          return;
+        }
+        credentialTries += 1;
+        paintAll();
+        if (document.querySelector('[' + ATTR + ']') || credentialTries >= WARMUP_TRIES) {
+          clearInterval(retryTimer);
+          retryTimer = 0;
+        }
+      }, WARMUP_GAP);
+    }
+
+    function start() {
+      if (running || !enabled || !document.body || !routeIsMarket()) return;
+      running = true;
+      credentialTries = 0;
+      ensureCurrencyMap();
+      warmUp();
+      if (typeof MutationObserver === 'function') {
+        observer = new MutationObserver(onMutations);
+        observer.observe(document.body, { childList: true, subtree: true });
+      }
+    }
+
+    function stop() {
+      running = false;
+      if (observer) {
+        observer.disconnect();
+        observer = null;
+      }
+      clearTimeout(timer);
+      clearInterval(retryTimer);
+      timer = 0;
+      retryTimer = 0;
+      credentialTries = 0;
+      scope = null;
+      pending.clear();
+      unknownCodes.clear();
+      // 只删自己加的徽标，游戏原有节点一个不动
+      document.querySelectorAll('[' + ATTR + ']').forEach((node) => node.remove());
+    }
+
+    /** 开关和路由都走这里：不在商品市场页就不挂观察器，避免误标别的页面。 */
+    function sync() {
+      log('市场金价标注', routeIsMarket() ? '进入商品市场页' : '不在商品市场页');
+      if (!enabled || !booted || destroyed) {
+        stop();
+        return;
+      }
+      if (routeIsMarket()) {
+        start();
+        // 已经挂着观察器时也要重扫一次：游戏里换品类 / 换国家可能只改文本不新增节点
+        schedule();
+      } else {
+        stop();
+      }
+    }
+
+    // 汇率到位、首次拿到登录凭据、切换市场页、从后台切回来时各补画一次，
+    // 兜住「行先渲染、凭据后到」和「价格文本原地更新」这类不新增节点的情况
+    // （只是本地重扫，不多打接口）。
+    fxFeed.subscribe((kind) => {
+      if (running && kind === 'done') schedule();
+    });
+    market.onAuth(() => {
+      if (running) schedule();
+    });
+    // 面板「商品」页抓到新行情后，市场页上的「比全球最低贵多少」跟着刷新
+    goodsFeed.subscribe(() => {
+      if (running) schedule();
+    });
+    route.subscribe(sync);
+    on(document, 'visibilitychange', () => {
+      if (running && document.visibilityState === 'visible') schedule();
+    });
+
+    return {
+      get enabled() {
+        return enabled;
+      },
+      setEnabled(next) {
+        const value = next === true;
+        if (value === enabled) return value;
+        enabled = value;
+        storage.write('marketBadge', value);
+        sync();
+        return value;
+      },
+      start,
+      stop,
+      sync
+    };
+  })();
+
+  /* -------- 9.5 设置与版本检查 -------- */
 
   const UPDATE_CHECK_TIMEOUT = 4000;
 
@@ -4930,6 +5657,7 @@
       watchViewport();
       renderTabs();
       applyBall();
+      marketBadge.sync();
 
       window.EclesiarHelper = api;
       log('已启动 v' + VERSION);
@@ -4950,6 +5678,8 @@
     clearTimeout(statusTimer);
     clearTimeout(suppressClickTimer);
     if (hostObserver) hostObserver.disconnect();
+    // 先摘掉游戏页面上的徽标，再断开路由与接口
+    marketBadge.stop();
     route.destroy();
     fxFeed.cancel();
     market.uninstall();
