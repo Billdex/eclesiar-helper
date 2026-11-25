@@ -2,7 +2,7 @@
 // @name         Eclesiar 助手
 // @name:en      Eclesiar Helper
 // @namespace    https://github.com/Billdex/eclesiar-helper
-// @version      0.1.4
+// @version      0.1.5
 // @description  Eclesiar 经济 / 政治计算辅助插件：悬浮球面板 + 全球汇率总览 + 各国市场商品金价比价与销售税后收益估算。
 // @description:en Eclesiar helper: floating panel + exchange rates + cross-market goods pricing and after-tax sale revenue in gold.
 // @author       billdex
@@ -43,7 +43,7 @@
    * 1. 常量与工具
    * ========================================================================= */
 
-  const VERSION = '0.1.4';
+  const VERSION = '0.1.5';
   const REPO_URL = 'https://github.com/Billdex/eclesiar-helper';
   /** jsDelivr 的 GitHub 镜像：国内可达，更新检查与安装都以它为主。 */
   const CDN_RAW = 'https://cdn.jsdelivr.net/gh/Billdex/eclesiar-helper@main/';
@@ -1231,6 +1231,57 @@
     font-size: 9.5px;
     white-space: nowrap;
     color: #d9a35e;
+  }
+
+  /* 流亡政府：失去全部领土后玩家无法抵达，单独列一栏放在最底下 */
+  .eh-gd-exile {
+    margin-top: 9px;
+    padding-top: 8px;
+    border-top: 1px dashed rgba(200, 130, 96, .26);
+  }
+
+  .eh-gd-exile[hidden] { display: none; }
+
+  .eh-gd-exile-head { margin-bottom: 6px; }
+
+  .eh-gd-exile-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    color: #c88d6c;
+  }
+
+  .eh-gd-exile-title::before {
+    content: '';
+    width: 3px;
+    height: 11px;
+    border-radius: 2px;
+    background: #8c5a3c;
+  }
+
+  .eh-gd-exile-note {
+    margin: 3px 0 0;
+    font-size: 9.5px;
+    line-height: 1.6;
+    color: #6d7889;
+  }
+
+  .eh-gd-row.is-exile {
+    opacity: .58;
+    border-style: dashed;
+  }
+
+  .eh-gd-row.is-exile .eh-gd-rank { color: #6b5b52; }
+
+  .eh-gd-exile-tag {
+    margin-left: 4px;
+    font-size: 9.5px;
+    white-space: nowrap;
+    color: #b07a5c;
   }
 
   /* ---------- 底栏 ---------- */
@@ -2431,7 +2482,12 @@
 
       if (!response.ok) {
         // 列表接口可能只接受 POST：GET 被拒时补一次空表单请求
-        if (init.method === 'GET' && (response.status === 404 || response.status === 405)) {
+        // 只认 GET 的接口（如 /country/regions?country_id=…）传 noMethodRetry 跳过这一步
+        if (
+          init.method === 'GET' &&
+          !opts.noMethodRetry &&
+          (response.status === 404 || response.status === 405)
+        ) {
           return call(path, Object.assign({}, opts, { form: opts.form || {} }));
         }
         // 403 常见于 Cloudflare 挑战：带同站 Cookie 再试一次
@@ -2453,9 +2509,12 @@
       }
 
       // 列表接口返回数组；/market/get 这类返回 { offers, canBuy }，用 opts.object 显式放行
+      // 个别接口（如 /country/regions 查已无领土的国家）成功时干脆不带 data，用 opts.allowEmpty 放行
       const data = payload && payload.data;
       const validData =
-        Array.isArray(data) || (opts.object === true && Boolean(data) && typeof data === 'object');
+        Array.isArray(data) ||
+        (opts.allowEmpty === true && (data === undefined || data === null)) ||
+        (opts.object === true && Boolean(data) && typeof data === 'object');
       if (!payload || payload.code !== 200 || !validData) {
         const error = new Error('BAD_PAYLOAD');
         error.code = 'BAD_PAYLOAD';
@@ -3352,6 +3411,25 @@
   /** api 名 → 商品图地址：从挂单里顺手收集，同一件商品各国各品质共用一个图标。 */
   const GOODS_AVATARS = new Map();
 
+  /** 领土检查结果的缓存时长：战争不会每分钟易手，但刷新时也该能看到新结果。 */
+  const LAND_CACHE_MS = 5 * 60 * 1000;
+
+  /** 国家 id → { exiled, at }：记录该国是否有领土，跨面板开关复用，避免重复请求。 */
+  const GOODS_LAND = new Map();
+
+  /**
+   * 领土：GET /country/regions?country_id=…，返回该国目前实际占有的地区。
+   * 已失去全部领土的国家不会返回空数组，而是只有 { code: 200, description: '成功' }、没有 data，
+   * 所以这里要 allowEmpty 放行，由调用方把「没有 data」当成没有领土。
+   * 这个接口只认 GET（同地址的 POST 是 404，路由根本不存在），所以只发 GET：
+   * noMethodRetry 挡掉通用逻辑里「GET 404/405 就改发空表单 POST」的兜底，
+   * 失败直接上报，由调用方按「领土未知」处理，不浪费额度也不制造假的 POST。
+   */
+  async function goodsFetchRegions(countryId, signal) {
+    const path = '/country/regions?country_id=' + encodeURIComponent(String(countryId));
+    return market.call(path, { signal, noMethodRetry: true, allowEmpty: true });
+  }
+
   /**
    * 一个市场里同一件商品可能有多档挂单，只留最便宜的一档。
    * 买家只付挂单价：进口税是境外卖家在成交后被扣的，不加到买方成本里
@@ -3424,6 +3502,16 @@
             × 用黄金换该国货币的最优价。
           </p>
           <div class="eh-gd-list" data-role="list"></div>
+          <div class="eh-gd-exile" data-role="exile" hidden>
+            <div class="eh-gd-exile-head">
+              <p class="eh-gd-exile-title">流亡政府 · 已失去全部领土</p>
+              <p class="eh-gd-exile-note">
+                这些国家目前没有任何领土，玩家无法抵达，所列挂单事实上无法成交（战争导致政权变更后才会出现）。
+                仍按同一套规则单独排序，只作存档参考，请不要据此规划交易。
+              </p>
+            </div>
+            <div class="eh-gd-list" data-role="exilelist"></div>
+          </div>
         </div>
         <p class="eh-disclaimer">
           报价来自各国市场的公开挂单，未计入可能的手续费；汇率取自「汇率」标签的最近一次结果。
@@ -3431,6 +3519,8 @@
       `;
 
       const listEl = pane.querySelector('[data-role="list"]');
+      const exileEl = pane.querySelector('[data-role="exile"]');
+      const exileListEl = pane.querySelector('[data-role="exilelist"]');
       const statusEl = pane.querySelector('[data-role="status"]');
       const refreshBtn = pane.querySelector('[data-role="refresh"]');
       const productBox = pane.querySelector('[data-role="products"]');
@@ -3734,6 +3824,7 @@
       let done = 0;
       let total = 0;
       let failures = 0;
+      let landFailures = 0; // 领土查不到的国家数（这些国家仍留在主列表）
       let limited = false;
       let controller = null;
 
@@ -3774,11 +3865,13 @@
         }
 
         const fxNote = fxFeed.updatedAt ? ' · 汇率 ' + formatClock(fxFeed.updatedAt) : ' · 暂无汇率';
+        const exiledCount = markets.filter((entry) => entry.exiled).length;
+        const exileNote = exiledCount ? `（含 ${exiledCount} 个流亡政府）` : '';
         const suffix = failures
           ? ` · ${failures} 个市场拉取失败` + (limited ? '（含 429，可到「设置」页生成专用密钥）' : '')
           : '';
         setStatus(
-          `${markets.length} 个市场 · 更新于 ${formatClock(snapshotAt)}${fxNote}${suffix}`,
+          `${markets.length} 个市场${exileNote} · 更新于 ${formatClock(snapshotAt)}${fxNote}${suffix}`,
           limited ? 'error' : undefined
         );
       };
@@ -3787,13 +3880,15 @@
         const el = document.createElement('div');
         el.className = 'eh-gd-row';
         if (row.sortGold == null) el.classList.add('is-idle');
-        else if (index === 0) el.classList.add('is-best');
+        // 流亡政府单独成栏：不参与主列表排名，也不抢「最优」高亮
+        if (row.exiled) el.classList.add('is-exile');
+        else if (index === 0 && row.sortGold != null) el.classList.add('is-best');
 
         const locale = fxLocale(row.entry.currency.code);
 
         const rank = document.createElement('span');
         rank.className = 'eh-gd-rank';
-        rank.textContent = String(index + 1);
+        rank.textContent = row.exiled ? '—' : String(index + 1);
         el.appendChild(rank);
 
         el.appendChild(buildFlagEl(row.entry.currency.code, row.entry.avatar));
@@ -3837,7 +3932,8 @@
                 : row.own
                   ? '<span class="eh-gd-tag">本国</span>'
                   : '') +
-            (row.depthShort ? '<span class="eh-gd-tax">换汇深度不足</span>' : '');
+            (row.depthShort ? '<span class="eh-gd-tax">换汇深度不足</span>' : '') +
+            (row.exiled ? '<span class="eh-gd-exile-tag">流亡政府 · 无法抵达</span>' : '');
           meta.title =
             row.rate == null
               ? '缺少该国货币的买单挂单，销售所得无法换回黄金'
@@ -3880,6 +3976,7 @@
         let text =
           `<b>${priceText}</b> ${code}/件 · 可买 ` + `<b>${supplyText}</b>`;
         if (row.rate == null) text += '<span class="eh-gd-tax">该国货币暂无换汇挂单</span>';
+        if (row.exiled) text += '<span class="eh-gd-exile-tag">流亡政府 · 无法抵达</span>';
         meta.innerHTML = text;
         meta.title =
           row.rate == null
@@ -3916,7 +4013,8 @@
               best,
               rate,
               gold,
-              sortGold: gold
+              sortGold: gold,
+              exiled: Boolean(entry.exiled)
             });
             return;
           }
@@ -3946,7 +4044,8 @@
             // 税率未知的行只做参考，不参与排名（否则 0 税会让它虚高）
             sortGold: tax && rate ? netPrice * rate : null,
             // 商品市场只有卖单：只核对「1 件的换汇所得」买盘吃不吃得下
-            depthShort: Boolean(rate) && capacity > 0 && netPrice > capacity
+            depthShort: Boolean(rate) && capacity > 0 && netPrice > capacity,
+            exiled: Boolean(entry.exiled)
           });
         });
 
@@ -3957,14 +4056,48 @@
           return a.entry.name.localeCompare(b.entry.name);
         });
 
+        // 流亡政府（已失去全部领土）没法抵达，单独放到底部一栏，各自内部照旧排序
+        const active = entries.filter((row) => !row.exiled);
+        const exiled = entries.filter((row) => row.exiled);
+
         listEl.textContent = '';
         listEl.appendChild(emptyEl);
-        entries.forEach((row, index) => listEl.appendChild(buildRow(row, index)));
+        active.forEach((row, index) => listEl.appendChild(buildRow(row, index)));
 
-        emptyEl.textContent = snapshotAt
-          ? `所有市场都没有「${item.label}」的挂单。`
-          : '还没有市场行情，点「刷新行情」抓取一次。';
+        exileListEl.textContent = '';
+        exiled.forEach((row, index) => exileListEl.appendChild(buildRow(row, index)));
+        exileEl.hidden = exiled.length === 0;
+
+        if (snapshotAt) {
+          emptyEl.textContent = `所有市场都没有「${item.label}」的挂单。`;
+        } else {
+          emptyEl.textContent = '还没有市场行情，点「刷新行情」抓取一次。';
+        }
         emptyEl.hidden = entries.length > 0 || loading;
+        // 可抵达的国家全都没货、只剩流亡政府的存档报价时，主列表也要说一声
+        if (!loading && !active.length && exiled.length) {
+          emptyEl.textContent = `所有可抵达的国家都没有「${item.label}」的挂单，只有流亡政府还留着报价。`;
+          emptyEl.hidden = false;
+        }
+      };
+
+      /**
+       * 领土检查：/country/regions 没有 data（或返回空数组）即流亡政府（已失去全部领土）。
+       * 只查有挂单的国家——没挂单的市场本来就不进列表，没必要多打请求。
+       * 请求本身失败（超时 / 4xx / 429）才按「有领土」处理，宁可留在主列表也不误判。
+       */
+      const checkLand = async (entry, signal) => {
+        const cached = GOODS_LAND.get(String(entry.id));
+        if (cached && Date.now() - cached.at < LAND_CACHE_MS) {
+          entry.exiled = cached.exiled;
+          return;
+        }
+        const list = await goodsFetchRegions(entry.id, signal);
+        // 已失去全部领土的国家只回 { code: 200, description: '成功' }：没有 data 就是没有领土，
+        // 与「返回空数组」等价（真实接口两种都可能出现，都按流亡政府处理）
+        const exiled = list == null || (Array.isArray(list) && list.length === 0);
+        GOODS_LAND.set(String(entry.id), { exiled, at: Date.now() });
+        entry.exiled = exiled;
       };
 
       const load = async () => {
@@ -3979,6 +4112,7 @@
         done = 0;
         total = 0;
         failures = 0;
+        landFailures = 0;
         limited = false;
         const previous = markets; // 本次失败时放回去，别让已有结果凭空消失
         refreshBtn.disabled = true;
@@ -4013,7 +4147,8 @@
               avatar: country.avatar == null ? '' : String(country.avatar),
               currency: { id: country.currency.id, code: String(country.currency.name) },
               items: null,
-              status: 'pending'
+              status: 'pending',
+              exiled: false // 领土检查结果：true = 已失去全部领土
             }));
 
           if (!entries.length) {
@@ -4054,6 +4189,19 @@
                 failures += 1;
               }
 
+              // 市场拉回来之后再核对领土：没挂单的国家根本不进列表，省一次请求
+              if (entry.status === 'ok' && entry.items && entry.items.size) {
+                try {
+                  await checkLand(entry, signal);
+                } catch (err) {
+                  if (err && err.name === 'AbortError') return;
+                  if (err && err.code === 'UNAUTHORIZED') throw err;
+                  if (err && err.code === 'HTTP' && String(err.message) === 'HTTP_429') limited = true;
+                  landFailures += 1;
+                  ctx.log('领土读取失败', entry.name + ' · ' + ((err && err.code) || 'ERROR') + ' ' + ((err && err.message) || ''));
+                }
+              }
+
               done += 1;
               paintStatus();
               await fxSleep(FX_GAP);
@@ -4064,6 +4212,9 @@
             Array.from({ length: Math.min(FX_CONCURRENCY, entries.length) }, () => worker())
           );
           if (signal.aborted) return;
+
+          // 领土查不到不影响结果展示（这些国家按「有领土」留在主列表），只在调试日志里留个汇总
+          if (landFailures) ctx.log('领土检查部分失败', landFailures + ' 个国家按「有领土」处理');
 
           snapshotAt = Date.now();
           markets = entries.filter((entry) => entry.status === 'ok');
