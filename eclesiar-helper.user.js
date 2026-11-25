@@ -2,7 +2,7 @@
 // @name         Eclesiar 助手
 // @name:en      Eclesiar Helper
 // @namespace    https://github.com/Billdex/eclesiar-helper
-// @version      0.1.2
+// @version      0.1.3
 // @description  Eclesiar 经济 / 政治计算辅助插件：悬浮球面板 + 全球汇率总览 + 各国市场商品金价比价。
 // @description:en Eclesiar helper: floating panel + exchange rates + cross-market goods pricing in gold.
 // @author       billdex
@@ -27,7 +27,7 @@
  * 结构：
  *   1. 外壳 —— Shadow DOM 隔离样式，宿主挂在 document.body 上（0×0，不挡页面）
  *   2. 悬浮球 —— 可拖拽、位置记忆、点击开合面板
- *   3. 面板 —— 标签页容器 + 内置「汇率 / 商品 / 关于」
+ *   3. 面板 —— 标签页容器 + 内置「汇率 / 商品 / 设置」
  *   4. 功能注册表 —— window.EclesiarHelper.features.register({ ... })
  *   5. SPA 路由钩子 —— 包装 history.pushState / replaceState，供功能订阅
  *
@@ -43,7 +43,7 @@
    * 1. 常量与工具
    * ========================================================================= */
 
-  const VERSION = '0.1.2';
+  const VERSION = '0.1.3';
   const REPO_URL = 'https://github.com/Billdex/eclesiar-helper';
   /** jsDelivr 的 GitHub 镜像：国内可达，更新检查与安装都以它为主。 */
   const CDN_RAW = 'https://cdn.jsdelivr.net/gh/Billdex/eclesiar-helper@main/';
@@ -486,6 +486,33 @@
     overflow-wrap: anywhere;
   }
 
+  /* 需要用颜色提醒的取值（比如还没配置专用密钥时的「登录凭据」） */
+  .eh-kv > b.is-warn { color: #e39a9a; }
+
+  /* 版本号 + 检查更新按钮同一行 */
+  .eh-ver {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+  }
+
+  .eh-ver > span { color: var(--eh-dim); }
+
+  .eh-ver > b {
+    font-weight: 500;
+    color: #e7dfcd;
+  }
+
+  .eh-ver .eh-btn {
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 11.5px;
+  }
+
+  .eh-ver a.eh-btn { line-height: 1.5; }
+
   .eh-mono {
     font-family: var(--eh-mono);
     font-size: 11.5px;
@@ -543,6 +570,22 @@
     border-color: rgba(201, 165, 74, .45);
   }
 
+  .eh-linkline { margin: 12px 0 0; }
+
+  .eh-textlink {
+    color: #e6cd93;
+    font-size: 12px;
+    text-decoration: underline;
+    text-decoration-color: rgba(201, 165, 74, .45);
+    text-underline-offset: 3px;
+    transition: color .15s, text-decoration-color .15s;
+  }
+
+  .eh-textlink:hover {
+    color: #f4e2b4;
+    text-decoration-color: rgba(232, 205, 143, .9);
+  }
+
   .eh-row {
     display: flex;
     flex-wrap: wrap;
@@ -590,11 +633,35 @@
     text-decoration: none;
   }
 
+  .eh-input {
+    flex: 1 1 180px;
+    min-width: 0;
+    padding: 6px 10px;
+    border: 1px solid rgba(255, 255, 255, .12);
+    border-radius: 8px;
+    background: rgba(8, 14, 24, .5);
+    color: #e7dfcd;
+    font-family: var(--eh-mono);
+    font-size: 11.5px;
+    outline: none;
+  }
+
+  .eh-input:focus-visible {
+    border-color: rgba(232, 205, 143, .7);
+  }
+
+  .eh-input::placeholder {
+    color: #5f6e85;
+  }
+
   .eh-flash {
     margin: 10px 0 0;
     font-size: 11.5px;
     color: #8fd6a8;
   }
+
+  .eh-flash[data-tone="warn"] { color: #d9a35e; }
+  .eh-flash[data-tone="error"] { color: #e39a9a; }
 
   .eh-note.is-ok { color: #8fd6a8; }
   .eh-note.is-warn { color: #d9a35e; }
@@ -1892,7 +1959,10 @@
       if (state.open) placePanel();
     },
     resetAll() {
+      // API 密钥是玩家自己生成、专门给插件用的，不随界面设置一起清掉
+      const keepKey = apiKey.value;
       storage.clear();
+      if (keepKey) apiKey.set(keepKey);
       state.ball = { ...DEFAULT_BALL };
       state.panelPinned = false;
       state.panelPos = null;
@@ -1910,6 +1980,56 @@
   const FX_API = 'https://api.eclesiar.com';
   const FX_CONCURRENCY = 3;
   const FX_GAP = 60;
+  /** 游戏内的接口文档页，也可以在这里自己生成 / 管理 API 密钥。 */
+  const API_DOC_URL = 'https://app.eclesiar.com/zh-CN/api';
+
+  /**
+   * 专用 API 密钥。
+   * 游戏对公开数据的每日查询按账号限次，插件自己发起的请求改用自己的密钥，
+   * 就不会挤占玩家在游戏里操作时的那份额度。
+   * 这是玩家主动生成、专门给第三方查询用的密钥（与登录 JWT 无关），
+   * 允许保存在 localStorage；只存本地，不打日志、不上报。
+   */
+  const apiKey = (() => {
+    const KEY = 'api-key';
+    const PATTERN = /^eclesiar_[a-z0-9]+_[A-Za-z0-9]{8,}$/i;
+    let value = '';
+    try {
+      const saved = storage.read(KEY, '');
+      if (typeof saved === 'string' && PATTERN.test(saved.trim())) value = saved.trim();
+    } catch (err) {
+      /* ignore */
+    }
+
+    return {
+      get value() {
+        return value;
+      },
+      get active() {
+        return Boolean(value);
+      },
+      /** 形如 eclesiar_prod_848a…60c4，仅用于界面展示。 */
+      get masked() {
+        if (!value) return '';
+        return value.length <= 20 ? value : value.slice(0, 14) + '…' + value.slice(-4);
+      },
+      /** 判断一段凭据是不是 API 密钥（用于区分游戏自己的登录 JWT）。 */
+      looksLike(raw) {
+        return PATTERN.test(String(raw == null ? '' : raw).trim());
+      },
+      set(raw) {
+        const next = String(raw == null ? '' : raw).trim();
+        if (!PATTERN.test(next)) return false;
+        value = next;
+        storage.write(KEY, next);
+        return true;
+      },
+      clear() {
+        value = '';
+        storage.remove(KEY);
+      }
+    };
+  })();
 
   /**
    * 内置中文国名 + 国旗 emoji（按法币代码索引）。
@@ -2009,13 +2129,15 @@
 
   /**
    * 市场接口凭据。
-   * 只从游戏自己发往 api.eclesiar.com 的请求里读取 Authorization，
-   * 仅保存在内存中：不写 localStorage、不打日志、不上报。
+   * 登录 JWT 只从游戏自己发往 api.eclesiar.com 的请求里读取，仅保存在内存中：
+   * 不写 localStorage、不打日志、不上报。
+   * 若用户在「设置」页保存了专用 API 密钥，则所有插件请求优先用它。
    */
   const market = (() => {
-    let token = '';
+    let loginToken = '';
     let seenAuth = false;
     let expired = false;
+    let apiExpired = false;
     let installed = false;
     const restores = [];
 
@@ -2035,10 +2157,12 @@
       // 见过凭据头就够了：格式不符时也能在界面上说清楚，而不是让用户猜
       seenAuth = true;
       if (value.length < 16 || !/^bearer\s+\S+$/i.test(value)) return;
-      if (value === token) return;
-      token = value;
+      // 插件自己带着专用密钥发的请求也会经过这里，别把 API 密钥当成登录凭据
+      if (apiKey.looksLike(value.replace(/^bearer\s+/i, ''))) return;
+      if (value === loginToken) return;
+      loginToken = value;
       expired = false;
-      log('已捕获接口凭据（仅内存）');
+      log('已捕获登录凭据（仅内存）');
     };
 
     const scanHeaders = (headers) => {
@@ -2134,7 +2258,10 @@
         }
       });
       installed = false;
-      token = '';
+      loginToken = '';
+      seenAuth = false;
+      expired = false;
+      apiExpired = false;
     }
 
     const normalize = (err) => {
@@ -2146,15 +2273,22 @@
       return err;
     };
 
+    /**
+     * 插件所有公开数据请求的统一出口。
+     * 默认优先使用专用 API 密钥；生成密钥这类账号操作必须用登录凭据（opts.login）。
+     */
     async function call(path, options) {
       const opts = options || {};
-      if (!token) {
+      const useLogin = opts.login === true;
+      const auth = useLogin ? loginToken : apiKey.active ? 'Bearer ' + apiKey.value : loginToken;
+      if (!auth) {
         const error = new Error('NO_TOKEN');
         error.code = 'NO_TOKEN';
         throw error;
       }
+      const usingApiKey = !useLogin && apiKey.active;
 
-      const headers = { accept: 'application/json', authorization: token };
+      const headers = { accept: 'application/json', authorization: auth };
       const guards = [];
       if (opts.signal) guards.push(opts.signal);
       if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function' && typeof AbortSignal.any === 'function') {
@@ -2169,7 +2303,11 @@
         signal: guards.length > 1 ? AbortSignal.any(guards) : guards[0]
       };
 
-      if (opts.form) {
+      if (opts.generate) {
+        // POST + 空 body：浏览器会自动补 content-length: 0
+        headers['content-type'] = 'application/json';
+        init.method = 'POST';
+      } else if (opts.form) {
         headers['content-type'] = 'application/x-www-form-urlencoded;charset=UTF-8';
         init.method = 'POST';
         init.body = new URLSearchParams(opts.form).toString();
@@ -2195,12 +2333,20 @@
       }
 
       if (response.status === 401) {
-        token = '';
-        expired = true;
+        if (usingApiKey) {
+          // 密钥被拒：保留登录凭据（重新生成密钥还要用它），只标记失效
+          apiExpired = true;
+        } else {
+          loginToken = '';
+          expired = true;
+        }
         const error = new Error('UNAUTHORIZED');
         error.code = 'UNAUTHORIZED';
+        error.source = usingApiKey ? 'api' : 'login';
         throw error;
       }
+
+      if (usingApiKey) apiExpired = false;
 
       if (!response.ok) {
         // 列表接口可能只接受 POST：GET 被拒时补一次空表单请求
@@ -2237,21 +2383,72 @@
       return data;
     }
 
+    /** 用玩家当前登录凭据换一个专用 API 密钥；只用于账号操作，不占用数据查询额度。 */
+    async function generateKey() {
+      const data = await call('/account/apikey/generate', {
+        login: true,
+        object: true,
+        generate: true
+      });
+      const key = data && typeof data.key === 'string' ? data.key.trim() : '';
+      if (!apiKey.set(key)) {
+        const error = new Error('BAD_KEY');
+        error.code = 'BAD_KEY';
+        throw error;
+      }
+      apiExpired = false;
+      return apiKey.value;
+    }
+
     return {
-      get token() {
-        return token;
+      /** api：使用专用密钥；login：临时借用登录凭据；none：还没有任何凭据。 */
+      get mode() {
+        if (apiKey.active) return 'api';
+        return loginToken ? 'login' : 'none';
       },
       /** none：没见过凭据头；unsupported：见过但格式不符；expired：服务端判失效 */
       get state() {
-        if (token) return 'ok';
+        if (apiKey.active) return apiExpired ? 'expired' : 'ok';
+        if (loginToken) return 'ok';
         if (expired) return 'expired';
         return seenAuth ? 'unsupported' : 'none';
       },
       install,
       uninstall,
-      call
+      call,
+      generateKey,
+      /** 手动保存玩家粘贴的密钥；格式由 apiKey 校验。 */
+      setKey(raw) {
+        if (!apiKey.set(raw)) return false;
+        apiExpired = false;
+        return true;
+      },
+      /** 移除已保存的密钥，回到使用登录凭据。 */
+      clearKey() {
+        apiKey.clear();
+        apiExpired = false;
+      }
     };
   })();
+
+  /** 凭据不可用时的统一提示，汇率与商品共用。 */
+  function authHint() {
+    if (market.mode === 'api') {
+      return market.state === 'expired'
+        ? '专用 API 密钥已失效，请到「设置」页重新生成。'
+        : '专用 API 密钥暂不可用，请到「设置」页检查。';
+    }
+    const state = market.state;
+    if (state === 'expired') return '登录凭据已失效，请刷新游戏页面后再试。';
+    if (state === 'unsupported') return '抓到接口请求了，但凭据格式不是 Bearer，请刷新游戏页面后再试。';
+    return '尚未拿到登录凭据：先在游戏里打开任意页面（触发一次接口请求），再点「刷新行情」。';
+  }
+
+  /** 429 多半是每日查询额度用尽，提示去换专用密钥。 */
+  function quotaHint(err) {
+    if (!err || err.code !== 'HTTP' || String(err.message) !== 'HTTP_429') return '';
+    return '接口返回 429（请求过多或已达当日查询上限），可到「设置」页生成专用密钥后再试。';
+  }
 
   /** countries/summary → 只保留有独立法币的国家，跳过 Gold 与海盗/世界实体。 */
   function fxCurrencies(list) {
@@ -2478,6 +2675,7 @@
           const total = list.length;
           const work = list.slice();
           const failures = [];
+          let limited = false;
           let cursor = 0;
 
           const fetchEntry = async (quote) => {
@@ -2516,6 +2714,7 @@
               } catch (err) {
                 if (err && err.name === 'AbortError') return;
                 if (err && err.code === 'UNAUTHORIZED') throw err;
+                if (err && err.code === 'HTTP' && String(err.message) === 'HTTP_429') limited = true;
                 quote.status = 'error';
                 notify('row', quote);
                 failures.push(quote);
@@ -2548,6 +2747,7 @@
             } catch (err) {
               if (err && err.name === 'AbortError') return;
               if (err && err.code === 'UNAUTHORIZED') throw err;
+              if (err && err.code === 'HTTP' && String(err.message) === 'HTTP_429') limited = true;
               quote.status = 'error';
               notify('row', quote);
               failures.push(quote);
@@ -2558,7 +2758,7 @@
 
           updatedAt = Date.now();
           progress = Object.assign({}, progress, { phase: 'idle', retryIndex: 0, retryTotal: 0 });
-          if (failures.length) error = { code: 'PARTIAL', count: failures.length };
+          if (failures.length) error = { code: 'PARTIAL', count: failures.length, limited };
         } catch (err) {
           if (err && err.name === 'AbortError') return;
           quotes = previous;
@@ -2690,12 +2890,7 @@
         setStatus(fxFeed.quotes.length ? text + ' · 下方为上次结果' : text, tone);
       };
 
-      const tokenHint = () => {
-        const state = market.state;
-        if (state === 'expired') return '登录凭据已失效，请刷新游戏页面后再试。';
-        if (state === 'unsupported') return '抓到接口请求了，但凭据格式不是 Bearer，请刷新游戏页面后再试。';
-        return '尚未拿到登录凭据：先在游戏里打开任意页面（触发一次接口请求），再点「刷新行情」。';
-      };
+      const tokenHint = authHint;
 
       const goldLabel = (value) => {
         const rounded = Math.round(value * 100) / 100;
@@ -2873,8 +3068,10 @@
         const err = feed.error;
         if (err && err.code === 'PARTIAL') {
           const okCount = feed.quotes.filter((item) => item.status === 'ok').length;
+          const tail = err.limited ? '（含 429，可能已达当日查询上限，可到「设置」页生成专用密钥）' : '';
           setStatus(
-            `${okCount} 种货币有挂单 · 更新于 ${formatClock(feed.updatedAt)} · ${err.count} 个拉取失败`
+            `${okCount} 种货币有挂单 · 更新于 ${formatClock(feed.updatedAt)} · ${err.count} 个拉取失败${tail}`,
+            err.limited ? 'error' : undefined
           );
           return;
         }
@@ -2882,6 +3079,7 @@
           if (err.code === 'NO_TOKEN') failStatus(tokenHint(), 'warn');
           else if (err.code === 'UNAUTHORIZED') failStatus(tokenHint(), 'error');
           else if (err.code === 'TIMEOUT') failStatus('请求超时，请稍后重试。', 'error');
+          else if (quotaHint(err)) failStatus(quotaHint(err), 'error');
           else failStatus('拉取失败：' + (err.message || '未知错误'), 'error');
           return;
         }
@@ -3195,6 +3393,7 @@
       let done = 0;
       let total = 0;
       let failures = 0;
+      let limited = false;
       let controller = null;
 
       const setStatus = (text, tone) => {
@@ -3204,12 +3403,7 @@
         else delete statusEl.dataset.tone;
       };
 
-      const tokenHint = () => {
-        const state = market.state;
-        if (state === 'expired') return '登录凭据已失效，请刷新游戏页面后再试。';
-        if (state === 'unsupported') return '抓到接口请求了，但凭据格式不是 Bearer，请刷新游戏页面后再试。';
-        return '尚未拿到登录凭据：先在游戏里打开任意页面（触发一次接口请求），再点「刷新行情」。';
-      };
+      const tokenHint = authHint;
 
       const paintStatus = () => {
         if (!alive) return;
@@ -3239,8 +3433,13 @@
         }
 
         const fxNote = fxFeed.updatedAt ? ' · 汇率 ' + formatClock(fxFeed.updatedAt) : ' · 暂无汇率';
-        const suffix = failures ? ` · ${failures} 个市场拉取失败` : '';
-        setStatus(`${markets.length} 个市场 · 更新于 ${formatClock(snapshotAt)}${fxNote}${suffix}`);
+        const suffix = failures
+          ? ` · ${failures} 个市场拉取失败` + (limited ? '（含 429，可到「设置」页生成专用密钥）' : '')
+          : '';
+        setStatus(
+          `${markets.length} 个市场 · 更新于 ${formatClock(snapshotAt)}${fxNote}${suffix}`,
+          limited ? 'error' : undefined
+        );
       };
 
       const buildRow = (row, index) => {
@@ -3346,6 +3545,7 @@
         done = 0;
         total = 0;
         failures = 0;
+        limited = false;
         const previous = markets; // 本次失败时放回去，别让已有结果凭空消失
         refreshBtn.disabled = true;
         if (controller) {
@@ -3414,6 +3614,7 @@
               } catch (err) {
                 if (err && err.name === 'AbortError') return;
                 if (err && err.code === 'UNAUTHORIZED') throw err;
+                if (err && err.code === 'HTTP' && String(err.message) === 'HTTP_429') limited = true;
                 entry.status = 'error';
                 failures += 1;
               }
@@ -3446,6 +3647,8 @@
             setStatus(tokenHint(), 'error');
           } else if (code === 'TIMEOUT') {
             setStatus('请求超时，请稍后重试。', 'error');
+          } else if (quotaHint(err)) {
+            setStatus(quotaHint(err), 'error');
           } else {
             setStatus('拉取失败：' + (err && err.message ? err.message : '未知错误'), 'error');
           }
@@ -3496,7 +3699,7 @@
     }
   });
 
-  /* -------- 9.4 关于与版本检查 -------- */
+  /* -------- 9.4 设置与版本检查 -------- */
 
   const UPDATE_CHECK_TIMEOUT = 4000;
 
@@ -3558,33 +3761,44 @@
 
   registerFeature({
     id: 'about',
-    title: '关于',
+    title: '设置',
     order: 900,
     mount(pane, ctx) {
       pane.innerHTML = `
         <div class="eh-section">
-          <div class="eh-h3">插件</div>
-          <div class="eh-kv">
-            <span>版本</span><b>v${VERSION}</b>
-            <span>形态</span><b>油猴用户脚本 · 无外部依赖</b>
-            <span>样式隔离</span><b>Shadow DOM</b>
-          </div>
-          <p class="eh-note">社区自制工具，与 Eclesiar 官方无关。</p>
-        </div>
-        <div class="eh-section">
           <div class="eh-h3">版本更新</div>
-          <div class="eh-kv">
-            <span>最新版本</span><b data-role="latest">自动检查中…</b>
-          </div>
-          <div class="eh-row">
-            <button class="eh-btn" type="button" data-role="check">重新检查</button>
+          <div class="eh-ver">
+            <span>当前版本</span><b>v${VERSION}</b>
+            <button class="eh-btn" type="button" data-role="check">检查更新</button>
             <a class="eh-btn" href="${UPDATE_INSTALL_URL}" target="_blank" rel="noopener noreferrer" data-role="install" hidden>安装更新</a>
           </div>
-          <p class="eh-note" data-role="update-note">打开本页时自动检查一次版本号；只有确认有新版本，才需要你手动安装。</p>
+          <p class="eh-note" data-role="update-note" hidden></p>
           <p class="eh-links">
-            <a href="${UPDATE_INSTALL_URL}" target="_blank" rel="noopener noreferrer">手动安装最新版（jsDelivr）</a>
+            <a href="${UPDATE_INSTALL_URL}" target="_blank" rel="noopener noreferrer">手动安装（jsDelivr）</a>
             <a href="${UPDATE_INSTALL_FALLBACK}" target="_blank" rel="noopener noreferrer">备用地址（GitHub）</a>
           </p>
+        </div>
+        <div class="eh-section">
+          <div class="eh-h3">API 访问</div>
+          <div class="eh-kv">
+            <span>当前鉴权</span><b data-role="api-mode">…</b>
+            <span data-role="api-key-label" hidden>专用密钥</span><b class="eh-mono" data-role="api-key" hidden>—</b>
+            <span data-role="api-usage-label" hidden>今日用量</span><b data-role="api-usage" hidden>—</b>
+          </div>
+          <p class="eh-note" data-role="api-usage-note" hidden></p>
+          <p class="eh-note" data-role="api-note" hidden></p>
+          <div class="eh-row">
+            <button class="eh-btn" type="button" data-role="api-generate">生成 API 专用密钥</button>
+            <button class="eh-btn eh-btn--ghost" type="button" data-role="api-clear" hidden>移除密钥</button>
+          </div>
+          <div class="eh-row" data-role="api-manual">
+            <input class="eh-input" type="password" data-role="api-input" placeholder="或粘贴已有密钥（eclesiar_…）" autocomplete="off" spellcheck="false" />
+            <button class="eh-btn eh-btn--ghost" type="button" data-role="api-save">保存密钥</button>
+          </div>
+          <p class="eh-linkline">
+            <a class="eh-textlink" href="${API_DOC_URL}" target="_blank" rel="noopener noreferrer">接口文档 / 管理密钥</a>
+          </p>
+          <p class="eh-flash" data-role="api-flash" hidden></p>
         </div>
         <div class="eh-section">
           <div class="eh-h3">操作</div>
@@ -3606,7 +3820,7 @@
         </div>
         <div class="eh-section">
           <div class="eh-h3">维护</div>
-          <p class="eh-note">重置只影响插件保存在浏览器本地的界面设置，不会改动游戏数据。</p>
+          <p class="eh-note">重置只影响插件保存在浏览器本地的界面设置，不会改动游戏数据，也不会删除已保存的 API 密钥。</p>
           <div class="eh-row">
             <button class="eh-btn" type="button" data-role="reset-ball">重置悬浮球位置</button>
             <button class="eh-btn eh-btn--ghost" type="button" data-role="reset-all">清除本地设置</button>
@@ -3618,13 +3832,252 @@
         </p>
       `;
 
-      const latestEl = pane.querySelector('[data-role="latest"]');
       const noteEl = pane.querySelector('[data-role="update-note"]');
       const checkBtn = pane.querySelector('[data-role="check"]');
       const installLink = pane.querySelector('[data-role="install"]');
 
+      const apiModeEl = pane.querySelector('[data-role="api-mode"]');
+      const apiKeyLabelEl = pane.querySelector('[data-role="api-key-label"]');
+      const apiKeyEl = pane.querySelector('[data-role="api-key"]');
+      const apiNoteEl = pane.querySelector('[data-role="api-note"]');
+      const apiGenBtn = pane.querySelector('[data-role="api-generate"]');
+      const apiClearBtn = pane.querySelector('[data-role="api-clear"]');
+      const apiManualEl = pane.querySelector('[data-role="api-manual"]');
+      const apiInputEl = pane.querySelector('[data-role="api-input"]');
+      const apiSaveBtn = pane.querySelector('[data-role="api-save"]');
+      const apiFlash = pane.querySelector('[data-role="api-flash"]');
+      const apiUsageLabelEl = pane.querySelector('[data-role="api-usage-label"]');
+      const apiUsageEl = pane.querySelector('[data-role="api-usage"]');
+      const apiUsageNoteEl = pane.querySelector('[data-role="api-usage-note"]');
+
       let alive = true;
       let controller = null;
+      let generating = false;
+      let apiFlashTimer = 0;
+      let usageLoading = false;
+      let usageText = '';
+      let usageDate = '';
+      let usageReady = false;
+      let usageError = '';
+
+      const sayApi = (text, tone) => {
+        apiFlash.hidden = false;
+        apiFlash.textContent = text;
+        if (tone) apiFlash.dataset.tone = tone;
+        else delete apiFlash.dataset.tone;
+        clearTimeout(apiFlashTimer);
+        apiFlashTimer = window.setTimeout(() => {
+          apiFlash.hidden = true;
+        }, 5000);
+      };
+
+      /** 距下一个 UTC 零点的倒计时（分钟粒度）；额度就是那个时候重置。 */
+      const usageCountdown = () => {
+        if (!usageReady) return usageError;
+        const now = new Date();
+        const next = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
+        const minutes = Math.max(0, Math.ceil((next - now.getTime()) / 60000));
+        let left = '即将重置';
+        if (minutes > 0) {
+          const hours = Math.floor(minutes / 60);
+          const rest = minutes % 60;
+          left = '距重置 ' + (hours ? hours + ' 小时' + (rest ? ' ' + rest + ' 分钟' : '') : rest + ' 分钟');
+        }
+        return left + (usageDate ? ' · 统计日 ' + usageDate : '');
+      };
+
+      /** 把「当前用哪套凭据」同步到界面上。 */
+      const syncApi = () => {
+        const mode = market.mode;
+        const expired = market.state === 'expired';
+        const usingApi = mode === 'api';
+        const healthy = usingApi && !expired;
+
+        // 未使用专用密钥时把状态文字标红，代替多余的解释
+        apiModeEl.className = healthy ? '' : 'is-warn';
+        if (healthy) apiModeEl.textContent = 'API 专用密钥';
+        else if (usingApi) apiModeEl.textContent = 'API 专用密钥（已失效）';
+        else if (mode === 'login') apiModeEl.textContent = '登录凭据（临时）';
+        else apiModeEl.textContent = '未获取';
+
+        // 没设置密钥时不必展示「未保存」那一行
+        apiKeyLabelEl.hidden = !usingApi;
+        apiKeyEl.hidden = !usingApi;
+        apiKeyEl.textContent = usingApi ? apiKey.masked : '—';
+
+        apiNoteEl.className = 'eh-note is-warn';
+        apiNoteEl.textContent = usingApi
+          ? expired
+            ? '密钥已失效，请重新生成密钥并粘贴到这里使用。'
+            : ''
+          : mode === 'login'
+            ? '正在使用游戏登录凭据，查询会和游戏操作共用每日额度，建议生成专用密钥。'
+            : '未获取到凭据，请先登录游戏或者从 API 管理中生成密钥并粘贴到这里使用。';
+        apiNoteEl.hidden = !apiNoteEl.textContent;
+        apiClearBtn.hidden = !usingApi;
+
+        // 已有可用密钥时不再需要手动粘贴框；密钥失效时保留，方便直接换一个
+        apiManualEl.hidden = healthy;
+
+        // 用量只在专用密钥可用时展示
+        const showUsage = usingApi && !expired;
+        const usageHint = usageCountdown();
+        apiUsageLabelEl.hidden = !showUsage;
+        apiUsageEl.hidden = !showUsage;
+        apiUsageNoteEl.hidden = !showUsage || !usageHint;
+        if (showUsage) {
+          apiUsageEl.textContent = usageLoading ? '读取中…' : usageText || '—';
+          apiUsageNoteEl.textContent = usageHint;
+        }
+
+        apiGenBtn.textContent = generating ? '生成中…' : usingApi ? '重新生成密钥' : '生成专用密钥';
+        apiGenBtn.disabled = generating;
+        apiSaveBtn.disabled = generating;
+      };
+
+      const countLabel = (value) => {
+        const n = Number(value);
+        if (!Number.isFinite(n)) return '—';
+        return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+      };
+
+      const resetUsage = () => {
+        usageText = '';
+        usageDate = '';
+        usageReady = false;
+        usageError = '';
+      };
+
+      /**
+       * 进入设置页时读一次当日用量；只有专用密钥可用时才请求。
+       * 用量接口只认游戏登录凭据，用专用密钥反而会被拒，所以这里显式指定 login。
+       */
+      const loadUsage = async () => {
+        if (!alive || usageLoading) return;
+        if (market.mode !== 'api' || market.state !== 'ok') return;
+
+        usageLoading = true;
+        syncApi();
+        try {
+          const usage = await market.call('/account/apikey/usage', { login: true, object: true });
+          if (!alive) return;
+          const used = Number(usage && usage.used);
+          const limit = Number(usage && usage.limit);
+          const remaining = Number(usage && usage.remaining);
+          if (!Number.isFinite(used) || !Number.isFinite(limit)) throw new Error('BAD_USAGE');
+          usageText =
+            countLabel(used) +
+            ' / ' +
+            countLabel(limit) +
+            (Number.isFinite(remaining) ? '（剩余 ' + countLabel(remaining) + '）' : '');
+          usageDate = usage && usage.date ? String(usage.date) : '';
+          usageReady = true;
+          usageError = '';
+        } catch (err) {
+          if (!alive) return;
+          if (err && err.name === 'AbortError') return;
+          usageReady = false;
+          usageDate = '';
+          if (err && err.code === 'NO_TOKEN') {
+            usageText = '—';
+            usageError = '需要游戏登录凭据，刷新页面后重试';
+          } else if (err && err.code === 'UNAUTHORIZED') {
+            usageText = '—';
+            usageError = '登录凭据已失效，刷新页面后重试';
+          } else {
+            usageText = '读取失败';
+            usageError = '';
+          }
+        } finally {
+          usageLoading = false;
+          if (alive) {
+            syncApi();
+            ctx.ui.reposition();
+          }
+        }
+      };
+
+      // 每分钟刷新一次「距重置」倒计时
+      const usageTimer = window.setInterval(() => {
+        if (!alive || !usageReady) return;
+        syncApi();
+      }, 60000);
+
+      const describeApiError = (err) => {
+        const code = err && err.code;
+        if (code === 'NO_TOKEN') return '还没抓到登录凭据：先在游戏里点开任意页面，稍等几秒再试。';
+        if (code === 'UNAUTHORIZED') return '登录凭据已失效，请刷新游戏页面后再试。';
+        if (code === 'TIMEOUT') return '请求超时，请稍后重试。';
+        if (code === 'BAD_KEY') return '接口返回的密钥格式不认识，请到接口文档页手动生成。';
+        const http = code === 'HTTP' ? /^HTTP_(\d+)$/.exec(String(err.message || '')) : null;
+        if (http) return '生成失败：HTTP ' + http[1] + '，请稍后重试。';
+        return '生成失败：' + (err && err.message ? err.message : '未知错误');
+      };
+
+      const generateApiKey = async () => {
+        if (generating) return;
+        generating = true;
+        syncApi();
+        ctx.ui.reposition();
+        try {
+          await market.generateKey();
+          if (!alive) return;
+          apiInputEl.value = '';
+          sayApi('已保存密钥 ' + apiKey.masked + '，后续查询都用它。');
+          resetUsage();
+          loadUsage();
+        } catch (err) {
+          if (!alive) return;
+          sayApi(describeApiError(err), 'warn');
+        } finally {
+          if (alive) {
+            generating = false;
+            syncApi();
+            ctx.ui.reposition();
+          }
+        }
+      };
+
+      const saveApiKey = () => {
+        if (generating) return;
+        const raw = apiInputEl.value.trim();
+        if (!raw) {
+          sayApi('请先粘贴密钥。', 'warn');
+          return;
+        }
+        if (!market.setKey(raw)) {
+          sayApi('密钥格式不对：应以 eclesiar_ 开头，检查是否多了空格或漏了字符。', 'warn');
+          return;
+        }
+        apiInputEl.value = '';
+        syncApi();
+        ctx.ui.reposition();
+        sayApi('已保存密钥 ' + apiKey.masked + '，后续查询都用它。');
+        resetUsage();
+        loadUsage();
+      };
+
+      const clearApiKey = () => {
+        market.clearKey();
+        resetUsage();
+        syncApi();
+        ctx.ui.reposition();
+        sayApi('已移除密钥，改回使用登录凭据。', 'warn');
+      };
+
+      on(apiGenBtn, 'click', generateApiKey);
+      on(apiSaveBtn, 'click', saveApiKey);
+      on(apiClearBtn, 'click', clearApiKey);
+      on(apiInputEl, 'keydown', (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        saveApiKey();
+      });
+
+      // 面板在 Shadow DOM 内，输入框的按键别冒泡给游戏当快捷键
+      ['keydown', 'keypress', 'keyup'].forEach((type) => {
+        on(apiInputEl, type, (event) => event.stopPropagation());
+      });
 
       const stopCheck = () => {
         if (!controller) return;
@@ -3645,35 +4098,36 @@
         controller = current;
 
         checkBtn.disabled = true;
+        checkBtn.textContent = '检查中…';
         installLink.hidden = true;
-        latestEl.textContent = '检查中…';
+        noteEl.hidden = false;
         noteEl.className = 'eh-note';
-        noteEl.textContent = '正在读取仓库中的版本号（只拉元数据，不下载脚本）。';
+        noteEl.textContent = '正在检查更新…';
 
         try {
           const latest = await fetchLatestVersion(current.signal);
           if (!alive || controller !== current) return;
           const newer = compareVersions(latest, VERSION) > 0;
-          latestEl.textContent = 'v' + latest;
           installLink.hidden = !newer;
-          noteEl.className = 'eh-note is-ok';
+          noteEl.className = newer ? 'eh-note is-warn' : 'eh-note is-ok';
           noteEl.textContent = newer
-            ? '发现新版本（当前 v' + VERSION + '）。点「安装更新」会打开脚本地址，由 Tampermonkey 提示覆盖安装，本地界面设置会保留。'
+            ? '发现新版本 v' + latest + '，点「安装更新」覆盖安装，本地设置会保留。'
             : '已是最新版本。';
         } catch (err) {
           if (!alive || controller !== current) return;
           const name = err && err.name;
           const timeout = name === 'AbortError' || name === 'TimeoutError';
-          latestEl.textContent = '检查失败';
+          noteEl.hidden = false;
           noteEl.className = 'eh-note is-warn';
           noteEl.textContent = timeout
-            ? '检查超时（网络不通或 CDN 太慢），可点下面的「手动安装最新版」直接装。'
-            : '无法读取版本信息（可能被站点安全策略或网络拦截），可点下面的「手动安装最新版」直接装。';
+            ? '检查超时（网络不通或 CDN 太慢），可点下面的「手动安装」直接装。'
+            : '无法读取版本信息（可能被站点安全策略或网络拦截），可点下面的「手动安装」直接装。';
         } finally {
           if (controller === current) {
             controller = null;
             if (alive) {
               checkBtn.disabled = false;
+              checkBtn.textContent = '检查更新';
               ctx.ui.reposition();
             }
           }
@@ -3703,13 +4157,44 @@
         say('已清除本地设置，界面恢复默认');
       });
 
+      // 「设置」页常驻：进入本页时核对凭据状态并刷新一次用量（切标签、重新打开面板都会触发）
+      const panelEl = pane.closest('.eh-panel');
+      const enterPage = () => {
+        if (pane.hidden) return;
+        if (panelEl && !panelEl.classList.contains('is-open')) return;
+        syncApi();
+        loadUsage();
+        ctx.ui.reposition();
+      };
+      const watchPane = new MutationObserver(() => {
+        if (!pane.hidden) enterPage();
+      });
+      watchPane.observe(pane, { attributes: true, attributeFilter: ['hidden'] });
+
+      // 只看面板开合，忽略拖动时增删的其它 class
+      let panelOpen = panelEl ? panelEl.classList.contains('is-open') : false;
+      const watchPanel = new MutationObserver(() => {
+        if (!panelEl) return;
+        const next = panelEl.classList.contains('is-open');
+        if (next === panelOpen) return;
+        panelOpen = next;
+        if (next) enterPage();
+      });
+      if (panelEl) watchPanel.observe(panelEl, { attributes: true, attributeFilter: ['class'] });
+
       ctx.onDestroy(() => {
         alive = false;
         stopCheck();
         clearTimeout(flashTimer);
+        clearTimeout(apiFlashTimer);
+        clearInterval(usageTimer);
+        watchPane.disconnect();
+        watchPanel.disconnect();
       });
 
-      // 打开「关于」即自动检查一次
+      syncApi();
+      loadUsage();
+      // 打开「设置」即自动检查一次
       check();
     }
   });

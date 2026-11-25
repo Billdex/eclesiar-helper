@@ -5,7 +5,7 @@
 ## 1. 项目定位
 
 - 目标：为多人在线经济 / 政治模拟游戏 Eclesiar（<https://app.eclesiar.com/>）提供 Tampermonkey 用户脚本。
-- 现状：**v0.1.2**（走 GitHub 仓库分发，下载与更新走 jsDelivr 镜像）——外壳（悬浮球 + 面板 + 功能注册表 + SPA 路由钩子）+ 业务模块「汇率总览」（拉取全球法币挂单、算最优价与目标额度加权均价，内置中文国名 / 国旗，逐行加载进度）与「商品比价」（两行图标按钮点选成品 / 原材料、成品再选 Q1–Q5，各国市场挂单折算成黄金单价并按低到高排序）。两者共用 `fxFeed` 这一份汇率缓存。「关于」页负责版本检查与更新入口。
+- 现状：**v0.1.3**（走 GitHub 仓库分发，下载与更新走 jsDelivr 镜像）——外壳（悬浮球 + 面板 + 功能注册表 + SPA 路由钩子）+ 业务模块「汇率总览」（拉取全球法币挂单、算最优价与目标额度加权均价，内置中文国名 / 国旗，逐行加载进度）与「商品比价」（两行图标按钮点选成品 / 原材料、成品再选 Q1–Q5，各国市场挂单折算成黄金单价并按低到高排序）。两者共用 `fxFeed` 这一份汇率缓存。「设置」页负责专用 API 密钥管理（生成 / 粘贴 / 移除，优先于登录 JWT 用于插件查询）与版本检查、更新入口。
 - 非官方工具：不修改游戏数据、不自动操作，遵守游戏规则。
 - 文档：`README.md` 面向玩家（安装 / 扩展），官方 Wiki 为 <https://wiki.eclesiar.com/>。
 
@@ -14,11 +14,11 @@
 1. **单文件交付**：唯一安装产物是 `eclesiar-helper.user.js`。不要引入构建链、包管理器或运行时依赖；确有需要先征得用户同意。仓库里另有一个 `eclesiar-helper.meta.js`，只放元数据（供油猴 `@updateURL` 只拉版本号），它不是安装产物，内容必须与主脚本头部保持一致。
 2. **UI 全在 Shadow DOM**：新增界面挂在 `dom.shadow` 内，样式写进 `STYLES`（`eh-` 前缀）。不要直接往游戏页面插 DOM / CSS。
 3. **资源必须可回收**：监听器用 `on(...)` 注册；功能内的定时器、订阅用 `ctx.onDestroy(...)` 登记。新增资源时同步检查 `destroy()` 是否覆盖。
-4. **不碰账号与隐私**：不读取或上报 Cookie、Token、账号信息；日志不打印玩家数据。计算只在本地进行。唯一例外是「汇率」功能需要 `Authorization: Bearer`——只从游戏自己发往 `api.eclesiar.com` 的请求头里捕获，仅存内存，不写 `localStorage`、不打印、不上报；不要扩展到读取 Cookie 或任何其它凭据。
-5. **不做影响公平性的自动化**：不自动点击、提交表单、循环请求接口、多开或绕过验证；只做展示、计算与用户主动触发的辅助。
+4. **不碰账号与隐私**：不读取或上报 Cookie、Token、账号信息；日志不打印玩家数据。计算只在本地进行。登录 JWT 只从游戏自己发往 `api.eclesiar.com` 的请求头里捕获，仅存内存，不写 `localStorage`、不打印、不上报；不要扩展到读取 Cookie 或任何其它凭据。唯一允许落盘的是玩家在「设置」页主动生成 / 粘贴的**专用 API 密钥**（`eclesiar_prod_…`，存 `localStorage` 的 `api-key`）：插件请求一律优先用它，避免占用玩家游戏内的每日查询额度；仍不得打印完整密钥、不得把它发给任何第三方。
+5. **不做影响公平性的自动化**：不自动点击、提交表单、循环请求接口、多开或绕过验证；只做展示、计算与用户主动触发的辅助（例如玩家点按钮生成插件专用 API 密钥）。
 6. **扩展只走功能注册表**：新模块用 `features.register()`，不要改面板外壳或硬编码标签页。
 7. **版本号四处同步**：`eclesiar-helper.user.js` 的 `@version`、`eclesiar-helper.meta.js` 的 `@version`、`const VERSION`、`README.md` 的「当前版本」。
-8. **更新源地址固定**：`@updateURL` / `@downloadURL` / 关于页的版本检查与「安装更新」都优先走 jsDelivr 镜像 `https://cdn.jsdelivr.net/gh/Billdex/eclesiar-helper@main/…`（国内可达）；`raw.githubusercontent.com` 只作为备用源（`REPO_RAW`、`UPDATE_INSTALL_FALLBACK`）。改名或迁移仓库时这几处（含 `REPO_URL` / `CDN_RAW` / `REPO_RAW` / `UPDATE_META_URLS` / `UPDATE_INSTALL_URL`、README 里的安装链接）必须一起改，否则老版本收不到更新。
+8. **更新源地址固定**：`@updateURL` / `@downloadURL` / 设置页的版本检查与「安装更新」都优先走 jsDelivr 镜像 `https://cdn.jsdelivr.net/gh/Billdex/eclesiar-helper@main/…`（国内可达）；`raw.githubusercontent.com` 只作为备用源（`REPO_RAW`、`UPDATE_INSTALL_FALLBACK`）。改名或迁移仓库时这几处（含 `REPO_URL` / `CDN_RAW` / `REPO_RAW` / `UPDATE_META_URLS` / `UPDATE_INSTALL_URL`、README 里的安装链接）必须一起改，否则老版本收不到更新。
 
 ## 3. 目录
 
@@ -92,8 +92,9 @@ EclesiarHelper.features.register({
 3. 改过生命周期时，控制台执行 `EclesiarHelper.destroy()`，确认宿主与 API 都消失。
 4. 改过「汇率」：最优价与均价和手算一致；目标额度吃不满时显示实际成交金数并标注深度不足；逐行转圈随数据到达消失，无挂单的行被移除；没捕获到凭据时给出提示。
 5. 改过「商品」：黄金单价 = 挂单价 × 汇率（不叠加进口税）；缺换汇挂单的货币排最后并标注；切商品不重新请求；选择区是两行图标按钮（成品 / 原材料），品质行只在选中成品时出现；商品图标缺图时退回内置 emoji。
-6. 改过「关于」或版本检查：同版本显示「已是最新」、`@version` 更大时出现「安装更新」且链接指向 jsDelivr 上的 `.user.js`、两个源都失败时显示提示并保留手动安装链接；顺手确认 `eclesiar-helper.meta.js` 的 `@version` 与主脚本一致。
-7. 真实环境：从 `@downloadURL` 安装后刷新游戏，确认悬浮球出现、面板正常，「关于」页能读到仓库里的版本号。
+6. 改过「设置」或版本检查：同版本显示「已是最新」、`@version` 更大时出现「安装更新」且链接指向 jsDelivr 上的 `.user.js`、两个源都失败时显示提示并保留手动安装链接；顺手确认 `eclesiar-helper.meta.js` 的 `@version` 与主脚本一致。
+7. 真实环境：从 `@downloadURL` 安装后刷新游戏，确认悬浮球出现、面板正常，「设置」页能读到仓库里的版本号。
+8. 改过「设置」的 API 密钥：没有密钥时按钮能生成并立即显示掩码；有密钥时「汇率 / 商品」发出的请求头带的是 `Bearer eclesiar_prod_…` 而不是登录 JWT；密钥被拒（401）时只提示密钥失效、不丢登录凭据；「移除密钥」后回到登录凭据；「清除本地设置」不删除密钥。使用专用密钥时进入「设置」页会请求一次 `/account/apikey/usage` 并显示已用 / 上限、剩余与距 UTC 零点重置的倒计时（本地每分钟刷新，请求不轮询），切走再回来或重开面板只多请求一次；没有密钥时不发这个请求。注意：该接口只认游戏登录凭据，必须用 `{ login: true }` 发请求，不能用专用密钥。
 
 ## 8. Git 约定
 
