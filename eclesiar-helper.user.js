@@ -2,8 +2,8 @@
 // @name         Eclesiar 助手
 // @name:en      Eclesiar Helper
 // @namespace    https://github.com/Billdex/eclesiar-helper
-// @version      0.1.6
-// @description  Eclesiar 经济 / 政治计算辅助插件：悬浮球面板 + 全球汇率总览 + 各国市场商品金价比价与销售税后收益估算，商品市场列表直接标注折算金价。
+// @version      0.1.7
+// @description  Eclesiar 经济 / 政治计算辅助插件：悬浮球面板 + 全球汇率总览 + 各国市场商品金价比价与销售税后收益估算，商品市场列表与上架表单直接标注折算金价。
 // @description:en Eclesiar helper: floating panel + exchange rates + cross-market goods pricing and after-tax sale revenue in gold.
 // @author       billdex
 // @match        https://app.eclesiar.com/*
@@ -43,7 +43,7 @@
    * 1. 常量与工具
    * ========================================================================= */
 
-  const VERSION = '0.1.6';
+  const VERSION = '0.1.7';
   const REPO_URL = 'https://github.com/Billdex/eclesiar-helper';
   /** jsDelivr 的 GitHub 镜像：国内可达，更新检查与安装都以它为主。 */
   const CDN_RAW = 'https://cdn.jsdelivr.net/gh/Billdex/eclesiar-helper@main/';
@@ -3187,6 +3187,87 @@
     };
   })();
 
+  /* -------- 9.2b 玩家信息：国籍与当前所在国家 -------- */
+
+  /**
+   * 只取两个字段，两个模块共用同一份缓存：
+   *  - nationalityId：玩家国籍，「销售」时用来判断本国免进口税；
+   *  - countryId：当前所在国家（region.country.id），
+   *    商品市场里的价格按「所在国市场的本币」计价（上架表单的单价 / 实收金额就是这种），
+   *    折算成黄金必须知道这一条。
+   * 固定用 POST /account/getuser（只认游戏登录凭据，带专用密钥会 401），
+   * 结果只存内存，不展示原字段、不打印、不上报、不落盘；响应里的 bearer 等字段一律忽略。
+   */
+  const playerFeed = (() => {
+    /** 缓存 2 分钟：换国家后最多 2 分钟就会重新读一次；期间不重复打接口。 */
+    const TTL = 2 * 60 * 1000;
+    /** 失败冷却：接口挂了就别每条价格都试一遍。 */
+    const RETRY = 60 * 1000;
+
+    let info = null;
+    let at = 0;
+    let promise = null;
+    let failedAt = 0;
+
+    const pick = (data) => {
+      const account = data && data.user && typeof data.user === 'object' ? data.user : data;
+      const nationality = account && account.nationality;
+      const rawNationality =
+        nationality && nationality.id != null ? nationality.id : account && account.nationality_id;
+      const region = account && account.region;
+      const country = region && typeof region === 'object' ? region.country : null;
+      const rawCountry = country && country.id != null ? country.id : account && account.country_id;
+      return {
+        nationalityId: Number(rawNationality) || 0,
+        countryId: Number(rawCountry) || 0
+      };
+    };
+
+    function ensure() {
+      const now = Date.now();
+      if (info && now - at < TTL) return Promise.resolve(info);
+      if (promise) return promise;
+      if (failedAt && now - failedAt < RETRY) {
+        if (info) return Promise.resolve(info);
+        return Promise.reject(Object.assign(new Error('COOLDOWN'), { code: 'COOLDOWN' }));
+      }
+
+      promise = market
+        .call('/account/getuser', { login: true, form: {}, object: true })
+        .then((data) => {
+          info = pick(data);
+          at = Date.now();
+          failedAt = 0;
+          return info;
+        })
+        .catch((err) => {
+          // 还没捕获到凭据不算「接口坏了」：登录后要能立刻再问一次
+          const code = err && err.code;
+          if (code !== 'NO_TOKEN' && code !== 'UNAUTHORIZED') failedAt = Date.now();
+          throw err;
+        });
+
+      const settle = () => {
+        promise = null;
+      };
+      promise.then(settle, settle);
+      return promise;
+    }
+
+    return {
+      get info() {
+        return info;
+      },
+      get nationalityId() {
+        return info ? info.nationalityId : 0;
+      },
+      get countryId() {
+        return info ? info.countryId : 0;
+      },
+      ensure
+    };
+  })();
+
   registerFeature({
     id: 'fx',
     title: '汇率',
@@ -3723,9 +3804,9 @@
             <button class="eh-btn" type="button" data-role="refresh">刷新行情</button>
           </div>
           <label class="eh-gd-switch"
-            title="在游戏自己的商品市场列表里，每个起价下面补一行换算后的黄金单价；只追加只读文字，不改游戏原有内容">
+            title="在游戏自己的商品市场列表里，每个起价下面补一行换算后的黄金单价；上架表单的「实收金额」右侧也会补上折算金价。只追加只读文字，不改游戏原有内容">
             <input type="checkbox" data-role="badge">
-            <span>商品市场列表显示金价</span>
+            <span>商品市场与上架表单显示金价</span>
           </label>
         </div>
         <div class="eh-section">
@@ -3875,9 +3956,7 @@
       };
 
       /**
-       * 玩家国籍：当前登录账号的 nationality.id / nationality_id。
-       * 固定用 POST /account/getuser（/account 是按 account_id 查询指定用户，不适用）。
-       * 该接口只认游戏登录凭据：带专用 API 密钥会 401，所以必须传 login: true。
+       * 玩家国籍：取自 playerFeed（POST /account/getuser 的 nationality.id / nationality_id）。
        * 只取国籍 id、仅存内存，不展示原始字段、不落盘、不打日志（账号信息仍不外泄）。
        */
       const loadPlayer = () => {
@@ -3886,16 +3965,12 @@
         playerFailed = false;
         playerError = null;
         syncTaxHint();
-        market
-          .call('/account/getuser', { login: true, form: {}, object: true })
-          .then((data) => {
+        // 与「市场列表金价标注」共用 playerFeed：一次 /account/getuser 两边都够用
+        playerFeed
+          .ensure()
+          .then((info) => {
             if (!alive) return;
-            // 兼容 { nationality: { id } }、{ nationality_id } 与 { user: {...} } 几种包法；
-            // 只取国籍 id，响应里其它账号字段（含 bearer）一律不读、不存
-            const account = data && data.user && typeof data.user === 'object' ? data.user : data;
-            const nationality = account && account.nationality;
-            const raw = nationality && nationality.id != null ? nationality.id : account && account.nationality_id;
-            myCountryId = Number(raw) || 0;
+            myCountryId = (info && info.nationalityId) || 0;
           })
           .catch((err) => {
             if (!alive) return;
@@ -4535,7 +4610,9 @@
   /* -------- 9.4 商品市场列表金价标注 -------- */
 
   /**
-   * 在游戏自己的商品市场列表里，给每行的「起价」补一行换算后的黄金单价。
+   * 在游戏自己的商品市场里补两层只读标注：
+   *  1. 列表里每行的「起价」下面，补一行换算后的黄金单价；
+   *  2. 上架表单底部的「实收金额」右边，补一行税后实收折算成黄金的值。
    *
    * 这是插件唯一会写游戏 DOM 的地方，规则（AGENTS.md「硬约束 2」的例外）：
    *  - 只往价格单元格追加一个只读徽标，不改游戏原有节点、文本、按钮与事件；
@@ -4543,8 +4620,12 @@
    *  - 关闭开关或 destroy() 时全部移除，MutationObserver、订阅一起断开；
    *  - 认不出货币、拿不到汇率、没有凭据时静默跳过，不弹提示、不循环重试。
    *
-   * 汇率优先复用「汇率」标签那份缓存（fxFeed.rateFor），缺少时才按单个货币查一次
-   * SELL 挂单，结果缓存 5 分钟；一次页面访问最多按币种数个请求，不轮询。
+   * 列表行的价格自带货币代码，直接用；上架表单的价格没有币种，
+   * 按「当前所在国家市场的本币」处理（playerFeed 的 region.country.id → currency.id），
+   * 实收金额是卖币所得，所以用「卖币换金」的买单方向报价（fxFeed.sellRateFor）。
+   *
+   * 汇率优先复用「汇率」标签那份缓存（fxFeed），缺少时才按单个货币查一次挂单，
+   * 结果缓存 5 分钟；一次页面访问最多按币种数个请求，不轮询。
    */
   const marketBadge = (() => {
     const ATTR = 'data-eh-gold';
@@ -4558,6 +4639,10 @@
     const WARMUP_TRIES = 15;
     const PRICE_RE = /^\d{1,3}(?:[,\s]\d{3})*(?:\.\d+)?$/;
     const CODE_RE = /^[A-Z]{3,5}$/;
+    /** 上架表单的「单价」输入框：只出现在商品市场的上架面板里，拿它当定位锚点。 */
+    const UNIT_INPUT = 'input[inputmode="decimal"]';
+    /** 上架表单底部那行的标签；数值是它的下一个兄弟节点。 */
+    const GROSS_LABEL = '实收金额';
 
     let enabled = storage.read('marketBadge', true) !== false;
     let running = false;
@@ -4566,15 +4651,26 @@
     let retryTimer = 0;
     let credentialTries = 0;
     let currencyMap = null;
+    let currencyByCountry = null;
     let currencyPromise = null;
     let currencyStartedAt = 0;
     let currencyFailedAt = 0;
     /** 当前认定的商品列表容器；离开页面或它被移除后重新找。 */
     let scope = null;
+    /** 上架面板容器（含「上架身份」与「实收金额」的那一栏）；同样会失效重找。 */
+    let listingRoot = null;
+    /** 已为「当前所在国家」发过请求，避免每轮扫描都问一次。 */
+    let playerAsked = false;
+    /** 两类标注各自是否画成功过：决定热身重试何时收工。 */
+    let rowPainted = false;
+    let grossPainted = false;
 
-    /** 货币 id → { at, rate, failed }：rate 为 null 表示该币种确实没有换汇挂单。 */
+    /** 货币 id → { at, rate, failed }：rate 为 null 表示该币种确实没有挂单。 */
     const rates = new Map();
     const pending = new Set();
+    /** 同上，但记的是「卖币换金」方向（吃买单），给上架实收金额用。 */
+    const sellRates = new Map();
+    const sellPending = new Set();
     /** 已在调试日志里报过「未识别」的货币代码，避免同一批行反复刷屏。 */
     const unknownCodes = new Set();
 
@@ -4694,6 +4790,21 @@
           const map = new Map();
           fxCurrencies(list).forEach((entry) => map.set(entry.code.toUpperCase(), entry.id));
           currencyMap = map;
+
+          // 上架表单只有「当前所在国家」，没有货币代码，所以要保留国家 → 货币这条线
+          const byCountry = new Map();
+          (Array.isArray(list) ? list : []).forEach((country) => {
+            const currency = country && country.currency;
+            if (!currency || !currency.id || !currency.name) return;
+            if (String(currency.name).toLowerCase() === 'gold') return;
+            byCountry.set(Number(country.id), {
+              id: Number(currency.id),
+              code: String(currency.name),
+              country: String(country.name || '')
+            });
+          });
+          currencyByCountry = byCountry;
+
           log('市场金价：国家清单已就绪', map.size + ' 种货币');
           schedule();
         })
@@ -4706,41 +4817,53 @@
         });
     }
 
-    /** 没有兑换挂单的币种只查一次并记住；失败则冷却 1 分钟，避免反复打接口。 */
-    function fetchRate(id) {
+    /**
+     * 没有对应方向挂单的币种只查一次并记住；失败则冷却 1 分钟，避免反复打接口。
+     * selling=true 查买单（卖币换金），false 查卖单（买币花金）。
+     */
+    function fetchRate(id, selling) {
       if (market.state !== 'ok') return;
-      pending.add(id);
+      const bucket = selling ? sellRates : rates;
+      const waiting = selling ? sellPending : pending;
+      waiting.add(id);
       market
-        .call('/market/coin/get', { form: { currency_id: id, transaction: 'SELL' } })
+        .call('/market/coin/get', { form: { currency_id: id, transaction: selling ? 'BUY' : 'SELL' } })
         .then((orders) => {
-          const book = fxBook(orders, null);
-          rates.set(id, { at: Date.now(), rate: book.asks.length ? book.asks[0].price : null });
+          const book = selling ? fxBook(null, orders) : fxBook(orders, null);
+          const levels = selling ? book.bids : book.asks;
+          bucket.set(id, { at: Date.now(), rate: levels.length ? levels[0].price : null });
         })
         .catch((err) => {
-          rates.set(id, { at: Date.now(), rate: null, failed: true });
+          bucket.set(id, { at: Date.now(), rate: null, failed: true });
           log('市场金价：换汇挂单读取失败', err && (err.message || err.code));
         })
         .then(() => {
-          pending.delete(id);
+          waiting.delete(id);
           schedule();
         });
     }
 
-    /** 返回售价（黄金/单位货币）；null = 没有挂单；undefined = 正在取或刚失败，先不画。 */
-    function rateOf(id) {
-      const direct = fxFeed.rateFor(id);
+    /**
+     * 黄金/单位货币；null = 没有这个方向的挂单；undefined = 正在取或刚失败，先不画。
+     * selling=true 走买单（你把手里的法币卖成黄金），false 走卖单（你花黄金买法币）。
+     */
+    function goldRateOf(id, selling) {
+      const direct = selling ? fxFeed.sellRateFor(id) : fxFeed.rateFor(id);
       if (direct) return direct;
 
-      const cached = rates.get(id);
+      const cached = (selling ? sellRates : rates).get(id);
       const now = Date.now();
       if (cached) {
         if (cached.failed && now - cached.at < RATE_RETRY) return undefined;
         if (!cached.failed && now - cached.at < RATE_TTL) return cached.rate;
       }
-      if (pending.has(id)) return undefined;
-      fetchRate(id);
+      if ((selling ? sellPending : pending).has(id)) return undefined;
+      fetchRate(id, selling);
       return undefined;
     }
+
+    /** 返回售价（黄金/单位货币）；null = 没有挂单；undefined = 正在取或刚失败，先不画。 */
+    const rateOf = (id) => goldRateOf(id, false);
 
     function paint(info) {
       if (!running || !enabled) return;
@@ -4813,6 +4936,151 @@
           badge.appendChild(tag);
         }
       );
+      rowPainted = true;
+    }
+
+    /* -------- 上架表单：实收金额折算成黄金 -------- */
+
+    /**
+     * 上架面板容器：同时装着「上架身份」和「实收金额」的那一栏。
+     * 用「单价」输入框当锚点——商品市场里只有上架表单有 inputmode=decimal 的输入框；
+     * 插件面板在 Shadow DOM 里，document.querySelector 选不到，不会误认。
+     */
+    function findListingRoot() {
+      const input = document.querySelector(UNIT_INPUT);
+      if (!input) return null;
+      let node = input;
+      for (let i = 0; i < 10 && node; i += 1) {
+        const text = node.textContent || '';
+        if (text.indexOf(GROSS_LABEL) >= 0 && text.indexOf('上架身份') >= 0) return node;
+        node = node.parentElement;
+      }
+      return null;
+    }
+
+    /**
+     * 读「实收金额」：标签 span 的下一个兄弟节点就是数值，
+     * 徽标追加在数值所在的横排末尾（即金额右边），不另起一行。
+     * 返回 { host, price, text }；读不到（面板没开 / 还没填价格）返回 null。
+     */
+    function readGross() {
+      if (!listingRoot || !listingRoot.isConnected) listingRoot = findListingRoot();
+      if (!listingRoot) return null;
+
+      const spans = listingRoot.querySelectorAll('span');
+      for (let i = 0; i < spans.length; i += 1) {
+        if ((spans[i].textContent || '').trim() !== GROSS_LABEL) continue;
+        const value = spans[i].nextElementSibling;
+        if (!value || !value.parentElement) return null;
+        const text = (value.textContent || '').trim();
+        if (!PRICE_RE.test(text)) return null;
+        const price = Number(text.replace(/[,\s]/g, ''));
+        if (!(price > 0)) return null;
+        // host 是「总收入 … 实收金额 0.243」那条横排，徽标跟金额同一行
+        return { host: value.parentElement, price, text };
+      }
+      return null;
+    }
+
+    function ensureGrossBadge(host) {
+      let badge = host.querySelector('[' + ATTR + '="gross"]');
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.setAttribute(ATTR, 'gross');
+        badge.style.cssText =
+          'display:inline-flex;align-items:center;gap:2px;margin-left:4px;' +
+          'font:600 10.5px/1.1 -apple-system,BlinkMacSystemFont,"PingFang SC",' +
+          '"Hiragino Sans GB","Microsoft YaHei",sans-serif;letter-spacing:.02em;' +
+          'white-space:nowrap;pointer-events:none;';
+        host.appendChild(badge);
+      }
+      return badge;
+    }
+
+    function paintGrossBadge(host, key, tone, title, fill) {
+      const badge = ensureGrossBadge(host);
+      if (badge.getAttribute('data-key') === key) return;
+      badge.setAttribute('data-key', key);
+      badge.style.color = tone === 'muted' ? '#7d8ba0' : '#8fd6a4';
+      badge.textContent = '';
+      fill(badge);
+      badge.title = title;
+    }
+
+    /** 实收金额是「卖币所得」，折算时走买单方向（卖币换金），与列表行的买币口径相反。 */
+    function paintGross() {
+      if (!running || !enabled) return;
+      const gross = readGross();
+      if (!gross) {
+        // 面板收起 / 还没渲染：等它出现时再补（页面静止时由热身重试盯着）
+        grossPainted = false;
+        return;
+      }
+
+      const countryId = playerFeed.countryId;
+      if (!countryId) {
+        if (!playerAsked) {
+          playerAsked = true;
+          playerFeed
+            .ensure()
+            .then((info) => {
+              if (running && info && info.countryId) schedule();
+            })
+            .catch((err) => {
+              const code = err && err.code;
+              // 凭据还没到 / 还在冷却：下次扫描再试，别把「没登录」当成「接口挂了」
+              if (code === 'NO_TOKEN' || code === 'COOLDOWN') playerAsked = false;
+              if (code !== 'COOLDOWN') log('市场金价：所在国家读取失败', err && (err.message || code));
+            });
+        }
+        return;
+      }
+
+      if (!currencyByCountry) {
+        ensureCurrencyMap();
+        return;
+      }
+      const money = currencyByCountry.get(countryId);
+      if (!money) {
+        if (!unknownCodes.has('#' + countryId)) {
+          unknownCodes.add('#' + countryId);
+          log('市场金价：所在国家没有对应货币', 'country=' + countryId);
+        }
+        return;
+      }
+
+      const rate = goldRateOf(money.id, true);
+      if (rate === undefined) return;
+      if (!(rate > 0)) {
+        paintGrossBadge(gross.host, 'gross-none', 'muted', '该国货币暂无换汇买单，无法折算成黄金', (badge) => {
+          badge.textContent = '暂无换汇买单';
+        });
+        grossPainted = true;
+        return;
+      }
+
+      const gold = gross.price * rate;
+      const title =
+        '实收金额 ' +
+        gross.text +
+        ' ' +
+        money.code +
+        ' × 卖币换金 ' +
+        fxPrice(rate) +
+        ' 金/单位货币 = ' +
+        fxGold(gold) +
+        ' 金（按当前最优买单估算，未计换汇深度与手续费；上架价按所在国 ' +
+        money.country +
+        ' 的本币 ' +
+        money.code +
+        ' 计价）';
+
+      paintGrossBadge(gross.host, 'gross:' + gross.price + '|' + fxGold(gold), 'gold', title, (badge) => {
+        badge.appendChild(document.createTextNode('≈'));
+        badge.appendChild(buildGoldIcon(12));
+        badge.appendChild(document.createTextNode(fxGold(gold)));
+      });
+      grossPainted = true;
     }
 
     /**
@@ -4873,12 +5141,15 @@
     function paintAll() {
       if (!running || !document.body) return;
       if (!scope || !scope.isConnected) scope = findScope();
-      if (!scope) return;
-      const spans = scope.querySelectorAll('span');
-      for (let i = 0; i < spans.length; i += 1) {
-        const info = readPrice(spans[i]);
-        if (info) paint(info);
+      if (scope) {
+        const spans = scope.querySelectorAll('span');
+        for (let i = 0; i < spans.length; i += 1) {
+          const info = readPrice(spans[i]);
+          if (info) paint(info);
+        }
       }
+      // 上架面板与列表是两个独立区域：列表还没渲染出来时也要能标实收金额
+      paintGross();
     }
 
     function schedule() {
@@ -4889,10 +5160,41 @@
       }, SCAN_DELAY);
     }
 
+    /** 被删掉的节点里是否有我们的徽标：游戏整块重渲染时靠它把标注补回来。 */
+    function removedBadge(record) {
+      const nodes = record.removedNodes;
+      if (!nodes || !nodes.length) return false;
+      for (let i = 0; i < nodes.length; i += 1) {
+        const node = nodes[i];
+        if (!node || node.nodeType !== 1) continue;
+        if (node.hasAttribute && node.hasAttribute(ATTR)) return true;
+        if (node.querySelector && node.querySelector('[' + ATTR + ']')) return true;
+      }
+      return false;
+    }
+
     /**
-     * 只有列表容器里发生变化才重扫。
+     * 新插入的节点里是否带上架表单的锚点（「单价」输入框）。
+     * 上架面板默认收起，点开「上架物品」才整块插进来——那时候列表容器里什么都没变，
+     * 不专门认一下这个锚点，实收金额那条就永远等不到补画。
+     */
+    function addedListingAnchor(record) {
+      const nodes = record.addedNodes;
+      if (!nodes || !nodes.length) return false;
+      for (let i = 0; i < nodes.length; i += 1) {
+        const node = nodes[i];
+        if (!node || node.nodeType !== 1) continue;
+        if (node.matches && node.matches(UNIT_INPUT)) return true;
+        if (node.querySelector && node.querySelector(UNIT_INPUT)) return true;
+      }
+      return false;
+    }
+
+    /**
+     * 只有列表容器 / 上架面板里发生变化才重扫。
      * 增删都算：游戏重渲染时可能把我们的徽标顺手删掉（removedNodes），
-     * 只盯着新增的话徽标就再也不会回来了。
+     * 只盯着新增的话徽标就再也不会回来了；文本原地更新（characterData）也算，
+     * 否则改了单价后实收金额的金价会一直停在上一个值。
      */
     function onMutations(records) {
       if (!running) return;
@@ -4901,11 +5203,40 @@
         schedule();
         return;
       }
+      if (listingRoot && !listingRoot.isConnected) listingRoot = null;
+
       for (let i = 0; i < records.length; i += 1) {
         const record = records[i];
-        if (record.type !== 'childList') continue;
         const target = record.target;
-        if (!target || (target !== scope && !scope.contains(target))) continue;
+        if (!target) continue;
+
+        const near = Boolean(
+          (scope && scope.contains(target)) || (listingRoot && listingRoot.contains(target))
+        );
+
+        if (record.type === 'characterData') {
+          if (near) {
+            schedule();
+            return;
+          }
+          continue;
+        }
+        if (record.type !== 'childList') continue;
+
+        if (!near) {
+          // 上架面板整块被替换时，徽标随旧节点一起消失，这里兜住
+          if (removedBadge(record)) {
+            schedule();
+            return;
+          }
+          // 面板刚展开（之前还没认到容器）：认到锚点就重扫一次
+          if (!listingRoot && addedListingAnchor(record)) {
+            listingRoot = findListingRoot();
+            schedule();
+            return;
+          }
+          continue;
+        }
         if (!record.addedNodes.length && !record.removedNodes.length) continue;
         schedule();
         return;
@@ -4913,14 +5244,24 @@
     }
 
     /**
+     * 两类标注都画出来才算收工。
+     * 列表行标上了、但上架面板展开着还没标（等所在国家 / 汇率）时不能提前停，
+     * 否则用户点开「上架物品」后就只剩一条空的实收金额。
+     */
+    function warmUpSettled() {
+      if (!grossPainted && document.querySelector(UNIT_INPUT)) return false;
+      return rowPainted || grossPainted;
+    }
+
+    /**
      * 进页面先画一遍。行先渲染、凭据 / 国家清单 / 换汇挂单后到时会一行都标不上，
-     * 所以每 2 秒本地重扫一次，最多 15 次（约 30 秒），标上第一行就停。
+     * 所以每 2 秒本地重扫一次，最多 15 次（约 30 秒），两类标注都出来才停。
      * 只扫本地 DOM，不发额外请求，也不是长期轮询。
      */
     function warmUp() {
       if (!running) return;
       paintAll();
-      if (document.querySelector('[' + ATTR + ']') || credentialTries >= WARMUP_TRIES) return;
+      if (warmUpSettled() || credentialTries >= WARMUP_TRIES) return;
       clearInterval(retryTimer);
       retryTimer = setInterval(() => {
         if (!running) {
@@ -4930,7 +5271,7 @@
         }
         credentialTries += 1;
         paintAll();
-        if (document.querySelector('[' + ATTR + ']') || credentialTries >= WARMUP_TRIES) {
+        if (warmUpSettled() || credentialTries >= WARMUP_TRIES) {
           clearInterval(retryTimer);
           retryTimer = 0;
         }
@@ -4941,11 +5282,24 @@
       if (running || !enabled || !document.body || !routeIsMarket()) return;
       running = true;
       credentialTries = 0;
+      playerAsked = false;
+      rowPainted = false;
+      grossPainted = false;
+      listingRoot = findListingRoot();
       ensureCurrencyMap();
+      // 上架面板按「所在国家」的本币计价：进页面时确保拿到（有缓存就不再请求）
+      playerFeed.ensure().then(
+        () => {
+          if (running) schedule();
+        },
+        () => {
+          /* 拿不到就静默跳过，只影响上架面板那一条标注 */
+        }
+      );
       warmUp();
       if (typeof MutationObserver === 'function') {
         observer = new MutationObserver(onMutations);
-        observer.observe(document.body, { childList: true, subtree: true });
+        observer.observe(document.body, { childList: true, subtree: true, characterData: true });
       }
     }
 
@@ -4961,7 +5315,12 @@
       retryTimer = 0;
       credentialTries = 0;
       scope = null;
+      listingRoot = null;
+      playerAsked = false;
+      rowPainted = false;
+      grossPainted = false;
       pending.clear();
+      sellPending.clear();
       unknownCodes.clear();
       // 只删自己加的徽标，游戏原有节点一个不动
       document.querySelectorAll('[' + ATTR + ']').forEach((node) => node.remove());
