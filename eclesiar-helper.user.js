@@ -7388,7 +7388,6 @@
         <div class="eh-section">
           <div class="eh-h3">链接</div>
           <p class="eh-links">
-            <a href="https://app.eclesiar.com/" target="_blank" rel="noopener noreferrer">游戏入口</a>
             <a href="https://wiki.eclesiar.com/" target="_blank" rel="noopener noreferrer">官方 Wiki</a>
             <a href="${REPO_URL}" target="_blank" rel="noopener noreferrer">GitHub 仓库</a>
             <a href="${REPO_URL}/issues" target="_blank" rel="noopener noreferrer">问题反馈</a>
