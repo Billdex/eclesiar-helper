@@ -2,7 +2,7 @@
 // @name         Eclesiar 助手
 // @name:en      Eclesiar Helper
 // @namespace    https://github.com/Billdex/eclesiar-helper
-// @version      0.1.7
+// @version      0.1.8
 // @description  Eclesiar 经济 / 政治计算辅助插件：悬浮球面板 + 全球汇率总览 + 各国市场商品金价比价与销售税后收益估算，商品市场列表与上架表单直接标注折算金价。
 // @description:en Eclesiar helper: floating panel + exchange rates + cross-market goods pricing and after-tax sale revenue in gold.
 // @author       billdex
@@ -43,7 +43,7 @@
    * 1. 常量与工具
    * ========================================================================= */
 
-  const VERSION = '0.1.7';
+  const VERSION = '0.1.8';
   const REPO_URL = 'https://github.com/Billdex/eclesiar-helper';
   /** jsDelivr 的 GitHub 镜像：国内可达，更新检查与安装都以它为主。 */
   const CDN_RAW = 'https://cdn.jsdelivr.net/gh/Billdex/eclesiar-helper@main/';
@@ -708,27 +708,29 @@
     gap: 8px;
   }
 
+  /* 高度与右边的「刷新行情」按钮一致（12px 字 × 1.5 行高 + 6px 上下内边距 + 1px 边框 = 32px） */
   .eh-fx-field {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 4px 8px 4px 10px;
+    gap: 7px;
+    height: 32px;
+    padding: 0 10px;
     border: 1px solid var(--eh-line);
-    border-radius: 9px;
+    border-radius: 8px;
     background: rgba(255, 255, 255, .03);
-    font-size: 11.5px;
+    font-size: 12px;
     color: var(--eh-muted);
   }
 
   .eh-fx-field input {
-    width: 54px;
-    padding: 1px 2px;
+    width: 68px;
+    padding: 0 2px;
     border: 0;
     border-bottom: 1px dashed rgba(201, 165, 74, .45);
     background: transparent;
     color: #f0d9a4;
     font-family: var(--eh-mono);
-    font-size: 12px;
+    font-size: 15px;
     text-align: right;
     outline: none;
   }
@@ -748,6 +750,47 @@
   .eh-fx-field input[type="number"] {
     -moz-appearance: textfield;
     appearance: textfield;
+  }
+
+  /* 换汇目标：口径标签本身就是切换按钮（右侧图标表示可切换） */
+  .eh-fx-unit {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0;
+    border: 0;
+    border-radius: 5px;
+    background: none;
+    color: inherit;
+    font-family: inherit;
+    font-size: 12px;
+    line-height: 1.5;
+    cursor: pointer;
+    transition: color .15s;
+  }
+
+  .eh-fx-unit:hover { color: #cfc6b2; }
+
+  .eh-fx-unit:focus-visible {
+    outline: 1px solid rgba(201, 165, 74, .55);
+    outline-offset: 2px;
+  }
+
+  .eh-fx-unit__ico {
+    flex: none;
+    width: 12px;
+    height: 12px;
+    opacity: .7;
+    transition: opacity .15s;
+  }
+
+  .eh-fx-unit:hover .eh-fx-unit__ico { opacity: 1; }
+
+  .eh-fx-note {
+    margin: 6px 0 0;
+    font-size: 10.5px;
+    line-height: 1.6;
+    color: #7d8ba0;
   }
 
   .eh-fx-status {
@@ -869,6 +912,56 @@
   .eh-fx-row.is-error {
     border-color: rgba(227, 154, 154, .3);
     background: rgba(227, 154, 154, .04);
+  }
+
+  /* 置顶：玩家国籍 / 当前所在国的汇率，用不同配色与标签区分 */
+  .eh-fx-pin {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+
+  .eh-fx-pin:empty { display: none; }
+
+  .eh-fx-row--pin-home {
+    border-color: rgba(124, 178, 232, .42);
+    background: rgba(124, 178, 232, .08);
+  }
+
+  .eh-fx-row--pin-here {
+    border-color: rgba(217, 163, 94, .42);
+    background: rgba(217, 163, 94, .08);
+  }
+
+  .eh-fx-pin-label {
+    flex: none;
+    padding: 0 6px;
+    border-radius: 5px;
+    font-size: 9.5px;
+    line-height: 1.7;
+    letter-spacing: .04em;
+    white-space: nowrap;
+  }
+
+  .eh-fx-row--pin-home .eh-fx-pin-label {
+    background: rgba(124, 178, 232, .2);
+    color: #9dc2e6;
+  }
+
+  .eh-fx-row--pin-here .eh-fx-pin-label {
+    background: rgba(217, 163, 94, .2);
+    color: #dcb17a;
+  }
+
+  /* 已经置顶的货币不再在全球列表里重复出现 */
+  .eh-fx-row.is-pinned { display: none; }
+
+  .eh-fx-pin-hint {
+    margin: 0 0 2px;
+    font-size: 10.5px;
+    line-height: 1.6;
+    color: #7d8ba0;
   }
 
   /* 一个方向一行：徽标（含最优质）+ 成交明细，窄的时候自动折行 */
@@ -2746,6 +2839,29 @@
     };
   }
 
+  /** 同上，但目标是「凑够 qtyBudget 单位法币」：换汇目标切成法币时用。 */
+  function fxFillQty(levels, qtyBudget) {
+    let left = qtyBudget;
+    let currency = 0;
+    let gold = 0;
+
+    levels.forEach((level) => {
+      if (left <= 1e-9) return;
+      const take = Math.min(left, level.qty);
+      if (!(take > 0)) return;
+      currency += take;
+      gold += take * level.price;
+      left -= take;
+    });
+
+    return {
+      gold,
+      currency,
+      avg: currency > 0 ? gold / currency : null,
+      filled: left <= 1e-9
+    };
+  }
+
   function fxPrice(value) {
     if (!Number.isFinite(value) || value <= 0) return '—';
     if (value >= 1000) return value.toFixed(0);
@@ -3150,6 +3266,25 @@
         if (updatedAt && Date.now() - updatedAt < age) return quotes;
         return load();
       },
+      /**
+       * 国家 id → 该国法币（来自 /countries/summary）。
+       * 「汇率」置顶玩家国籍 / 所在国时用它把国家换成货币；清单还没拉到或该国没有法币时返回 null。
+       */
+      currencyOfCountry(countryId) {
+        if (!countries || countryId == null) return null;
+        const id = Number(countryId);
+        if (!id) return null;
+        const row = countries.find((item) => item && Number(item.id) === id);
+        const currency = row && row.currency;
+        if (!currency || currency.id == null || !currency.name) return null;
+        if (String(currency.name).toLowerCase() === 'gold') return null;
+        return {
+          id: currency.id,
+          code: String(currency.name),
+          country: String(row.name || ''),
+          avatar: row.avatar == null ? '' : String(row.avatar)
+        };
+      },
       /** 法币 id → 最优卖单价（黄金 / 1 单位法币）；没有行情时返回 null。 */
       rateFor(currencyId) {
         const quote = quotes.find((item) => item.id === currencyId);
@@ -3277,11 +3412,21 @@
         <div class="eh-section">
           <div class="eh-h3">换汇目标</div>
           <div class="eh-fx-bar">
-            <label class="eh-fx-field">目标黄金
-              <input type="number" min="0.01" step="1" inputmode="decimal" data-role="target" />
-            </label>
+            <div class="eh-fx-field">
+              <button class="eh-fx-unit" type="button" data-role="mode">
+                <span data-role="unit">目标黄金</span>
+                <svg class="eh-fx-unit__ico" viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
+                  <path d="M3 6h9M9.5 3.5 12 6l-2.5 2.5M13 10H4M6.5 7.5 4 10l2.5 2.5"
+                        fill="none" stroke="currentColor" stroke-width="1.4"
+                        stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </button>
+              <input type="number" min="0.01" step="1" inputmode="decimal"
+                     aria-label="目标额度" data-role="target" />
+            </div>
             <button class="eh-btn" type="button" data-role="refresh">刷新行情</button>
           </div>
+          <p class="eh-fx-note" data-role="mode-note"></p>
           <p class="eh-fx-status" data-role="status">…</p>
         </div>
         <div class="eh-section">
@@ -3290,6 +3435,7 @@
             买入 = 花黄金买该国法币（吃卖单，价越低越好）；卖出 = 卖法币换黄金（吃买单，价越高越好）。
             价格单位：黄金 / 1 单位法币。
           </p>
+          <div class="eh-fx-pin" data-role="pins"></div>
           <div class="eh-fx-list" data-role="list"></div>
         </div>
         <p class="eh-disclaimer">
@@ -3298,15 +3444,26 @@
       `;
 
       const targetInput = pane.querySelector('[data-role="target"]');
+      const unitEl = pane.querySelector('[data-role="unit"]');
+      const modeBtn = pane.querySelector('[data-role="mode"]');
+      const modeNoteEl = pane.querySelector('[data-role="mode-note"]');
+      const pinsEl = pane.querySelector('[data-role="pins"]');
       const listEl = pane.querySelector('[data-role="list"]');
       const statusEl = pane.querySelector('[data-role="status"]');
       const refreshBtn = pane.querySelector('[data-role="refresh"]');
 
+      // 目标额度只有一个数字（默认 10）：切换黄金 / 法币只换口径，不改输入框里的值
+      let mode = ctx.storage.get('mode', 'gold') === 'currency' ? 'currency' : 'gold';
       let target = Number(ctx.storage.get('target', 10));
       if (!Number.isFinite(target) || target <= 0) target = 10;
       targetInput.value = String(target);
 
       const rows = new Map(); // 法币 id → 行内节点，用于原地更新而不重建整块列表
+      /** 置顶条目：[{ key, cls, label, currency }]。 */
+      let pinEntries = [];
+      const pinViews = new Map(); // key → { view, entry, quote }
+      let pinLoaded = false;
+      let pinHint = '';
       let alive = true;
       let targetTimer = 0;
 
@@ -3342,10 +3499,16 @@
 
       const buildFlag = (quote) => buildFlagEl(quote.code, quote.avatar);
 
-      /** 一行的骨架只建一次，之后数据回来只改内容，转圈动画不会被重建打断。 */
-      const buildRow = (quote) => {
+      /** 按当前目标口径（黄金 / 法币）沿挂单逐档吃单，数字都取输入框里的同一个值。 */
+      const fillFor = (levels) => (mode === 'gold' ? fxFill(levels, target) : fxFillQty(levels, target));
+
+      /**
+       * 一行的骨架只建一次，之后数据回来只改内容，转圈动画不会被重建打断。
+       * pin 非空时是置顶行：多一枚标签，配色由调用方给的 cls 决定。
+       */
+      const createRow = (quote, pin) => {
         const el = document.createElement('div');
-        el.className = 'eh-fx-row';
+        el.className = 'eh-fx-row' + (pin ? ' eh-fx-row--pin ' + pin.cls : '');
 
         const head = document.createElement('div');
         head.className = 'eh-fx-head';
@@ -3372,6 +3535,14 @@
         nameEl.appendChild(enEl);
         head.appendChild(nameEl);
 
+        if (pin) {
+          const labelEl = document.createElement('span');
+          labelEl.className = 'eh-fx-pin-label';
+          labelEl.textContent = pin.label;
+          labelEl.title = pin.label;
+          head.appendChild(labelEl);
+        }
+
         const spin = document.createElement('span');
         spin.className = 'eh-fx-spin';
         spin.setAttribute('aria-hidden', 'true');
@@ -3386,8 +3557,13 @@
         el.appendChild(buyLine);
         el.appendChild(sellLine);
 
-        rows.set(quote.id, { el, spin, buyLine, sellLine });
-        listEl.appendChild(el);
+        return { el, spin, buyLine, sellLine };
+      };
+
+      const buildRow = (quote) => {
+        const view = createRow(quote, null);
+        rows.set(quote.id, view);
+        listEl.appendChild(view.el);
       };
 
       /**
@@ -3406,7 +3582,10 @@
           return;
         }
 
-        const gold = goldIconHtml('eh-gold-ico--sm') + '<b>' + goldLabel(fill.gold) + '</b>';
+        const fiat = mode === 'currency';
+        // 按法币算时黄金数是结果，可能很小，用 fxGold 保留足够位数
+        const gold =
+          goldIconHtml('eh-gold-ico--sm') + '<b>' + (fiat ? fxGold(fill.gold) : goldLabel(fill.gold)) + '</b>';
         const flow = isBuy
           ? gold + ' → <b>' + fxQty(fill.currency) + '</b> ' + code
           : '<b>' + fxQty(fill.currency) + '</b> ' + code + ' → ' + gold;
@@ -3423,14 +3602,15 @@
           label +
           '：最优 ' +
           fxPrice(best) +
-          '，目标额度成交均价 ' +
+          (mode === 'currency'
+            ? '，换 ' + fxQty(target) + ' 单位的成交均价 '
+            : '，目标额度成交均价 ') +
           fxPrice(fill.avg) +
           (fill.filled ? '' : '（挂单不够，只成交了一部分）');
       };
 
-      const paintRow = (quote) => {
-        const view = rows.get(quote.id);
-        if (!view) return;
+      const paintView = (view, quote) => {
+        if (!view || !quote) return;
 
         const pending = quote.status === 'pending';
         const failed = quote.status === 'error';
@@ -3455,18 +3635,173 @@
         const code = escapeHtml(quote.code);
         const ask = quote.asks.length ? quote.asks[0].price : null;
         const bid = quote.bids.length ? quote.bids[0].price : null;
-        const buy = fxFill(quote.asks, target);
-        const sell = fxFill(quote.bids, target);
+        const buy = fillFor(quote.asks);
+        const sell = fillFor(quote.bids);
 
         paintLine(view.buyLine, 'buy', ask, buy, code, '暂无卖单');
         paintLine(view.sellLine, 'sell', bid, sell, code, '暂无买单');
+      };
+
+      const paintRow = (quote) => paintView(rows.get(quote.id), quote);
+
+      /* -------- 置顶：玩家国籍 / 当前所在国的汇率 -------- */
+
+      /** 置顶行用的行情：优先取共享行情，行情里没有（两侧都没挂单）就按国家清单拼个占位行。 */
+      const pinQuote = (currency, found) => {
+        if (found) {
+          // 国名 / 国旗按玩家所在的那一国取，别用货币去重时留下的第一个国家
+          return Object.assign({}, found, { country: currency.country, avatar: currency.avatar });
+        }
+        return {
+          id: currency.id,
+          code: currency.code,
+          country: currency.country,
+          avatar: currency.avatar,
+          asks: [],
+          bids: [],
+          status: 'ok'
+        };
+      };
+
+      const paintPin = (item) => {
+        const currency = item.entry.currency;
+        const found = fxFeed.quotes.find((quote) => quote.id === currency.id);
+        item.quote = pinQuote(currency, found);
+
+        // 还在拉：跟着转圈，别提前写「暂无卖单」
+        if (!found && fxFeed.loading) {
+          item.view.spin.hidden = false;
+          item.view.el.classList.remove('is-error');
+          item.view.buyLine.hidden = true;
+          item.view.sellLine.hidden = true;
+          return;
+        }
+
+        // 行情一次都没拉过：写「未加载」，不要把「没数据」说成「没挂单」
+        if (!found && !fxFeed.updatedAt) {
+          item.view.spin.hidden = true;
+          item.view.el.classList.remove('is-error');
+          item.view.buyLine.hidden = false;
+          item.view.sellLine.hidden = true;
+          item.view.buyLine.innerHTML =
+            '<span class="eh-fx-tag eh-fx-tag--idle">未加载</span>' +
+            '<span class="eh-fx-flow">点「刷新行情」后显示</span>';
+          item.view.buyLine.title = '';
+          return;
+        }
+
+        paintView(item.view, item.quote);
+      };
+
+      const repaintPins = () => pinViews.forEach((item) => paintPin(item));
+
+      /** 已置顶的货币从全球列表里收起来，同一个汇率不出现两次。 */
+      const syncPinnedInList = () => {
+        const hide = new Set();
+        if (pinLoaded) pinEntries.forEach((entry) => hide.add(String(entry.currency.id)));
+        rows.forEach((view, id) => view.el.classList.toggle('is-pinned', hide.has(String(id))));
+      };
+
+      const renderPins = () => {
+        if (!alive) return;
+        pinViews.forEach((item) => item.view.el.remove());
+        pinViews.clear();
+        pinsEl.textContent = '';
+
+        if (!pinLoaded) return;
+
+        if (!pinEntries.length) {
+          if (pinHint) {
+            const hint = document.createElement('p');
+            hint.className = 'eh-fx-pin-hint';
+            hint.textContent = pinHint;
+            pinsEl.appendChild(hint);
+          }
+          syncPinnedInList();
+          return;
+        }
+
+        pinEntries.forEach((entry) => {
+          const view = createRow(entry.currency, entry);
+          pinsEl.appendChild(view.el);
+          const item = { view, entry, quote: null };
+          pinViews.set(entry.key, item);
+          paintPin(item);
+        });
+        syncPinnedInList();
+      };
+
+      /**
+       * 读一次账号的两个 id（与「商品」共用 playerFeed 缓存），
+       * 再把国家换成法币，决定置顶哪两行。
+       */
+      const readPins = async () => {
+        let info = null;
+        let reason = '';
+        try {
+          info = await playerFeed.ensure();
+        } catch (err) {
+          info = playerFeed.info;
+          const code = err && err.code;
+          reason = code === 'NO_TOKEN' || code === 'UNAUTHORIZED' ? 'no-token' : 'missing';
+        }
+        if (!alive) return;
+
+        if (info) {
+          try {
+            await fxFeed.ensureCountries();
+          } catch (err) {
+            /* 清单拉不到：下面按「没读到」处理 */
+          }
+        }
+        if (!alive) return;
+
+        const home = info && info.nationalityId ? fxFeed.currencyOfCountry(info.nationalityId) : null;
+        const here = info && info.countryId ? fxFeed.currencyOfCountry(info.countryId) : null;
+
+        const entries = [];
+        if (home) entries.push({ key: 'home', cls: 'eh-fx-row--pin-home', label: '国籍', currency: home });
+        if (here) {
+          // 国籍与所在国是同一种货币时合成一行，别并排显示两遍
+          if (home && String(home.id) === String(here.id)) {
+            entries[0].label = '国籍 · 当前所在国';
+          } else {
+            entries.push({ key: 'here', cls: 'eh-fx-row--pin-here', label: '当前所在国', currency: here });
+          }
+        }
+
+        pinEntries = entries;
+        pinLoaded = true;
+        pinHint = entries.length
+          ? ''
+          : reason === 'no-token'
+            ? '还没拿到登录凭据，读到账号后会自动置顶本国汇率。'
+            : '没读到你的国籍与所在国家，暂时无法置顶本国汇率。';
+        renderPins();
+        syncPinnedInList();
+        ctx.ui.reposition();
+      };
+
+      /** 同一时刻只跑一次（挂载 / 一轮行情结束 / 点刷新可能同时触发）。 */
+      let pinPromise = null;
+      const loadPins = () => {
+        if (pinPromise) return pinPromise;
+        pinPromise = readPins().then(
+          () => {
+            pinPromise = null;
+          },
+          () => {
+            pinPromise = null;
+          }
+        );
+        return pinPromise;
       };
 
       /** 按买入均价升序；还没拿到数据 / 拉取失败的排最后。 */
       const sortList = () => {
         const keyed = fxFeed.quotes.map((quote) => ({
           quote,
-          avg: quote.status === 'ok' ? fxFill(quote.asks, target).avg : null
+          avg: quote.status === 'ok' ? fillFor(quote.asks).avg : null
         }));
         keyed.sort((a, b) => {
           const av = a.avg == null ? Infinity : a.avg;
@@ -3506,6 +3841,9 @@
         refreshBtn.disabled = fxFeed.loading;
         syncEmpty();
         updateStatus();
+        // 置顶行跟着同一份行情走，并同步隐藏列表里的同种货币
+        repaintPins();
+        syncPinnedInList();
         // 加载中不动顺序，等收尾统一排，免得边填数边跳行
         if (!fxFeed.loading) sortList();
         if (kind === 'reset' || kind === 'done') ctx.ui.reposition();
@@ -3554,16 +3892,39 @@
         setStatus(`${okCount} 种货币有挂单 · 更新于 ${formatClock(feed.updatedAt)}`);
       };
 
-      const applyTarget = () => {
+      /** 切换口径只换标签与说明（图标保留在按钮里），输入框里的数字保持原样。 */
+      const applyModeUi = () => {
+        const gold = mode === 'gold';
+        unitEl.textContent = gold ? '目标黄金' : '目标法币';
+        modeBtn.title = gold
+          ? '点击切换为「目标法币」：按要换到的法币数量反算需要多少黄金'
+          : '点击切换为「目标黄金」：按要花的黄金数量算能换到多少法币';
+        modeBtn.setAttribute('aria-label', modeBtn.title);
+        modeNoteEl.textContent = gold
+          ? '按黄金算：每种货币各花这么多黄金，能换到多少法币。'
+          : '按法币算：每种货币各换这么多单位，需要花多少黄金。';
+      };
+
+      const repaintAll = () => {
+        fxFeed.quotes.forEach((quote) => paintRow(quote));
+        repaintPins();
+        // 加载中不动顺序，等收尾统一排，免得边填数边跳行
+        if (!fxFeed.loading) sortList();
+        ctx.ui.reposition();
+      };
+
+      /** 把输入框里的数字落定（可能还在防抖里），不发请求。 */
+      const commitTarget = () => {
         const value = Number(targetInput.value);
         const valid = Number.isFinite(value) && value > 0;
         target = valid ? value : 10;
         if (!valid) targetInput.value = String(target);
         ctx.storage.set('target', target);
-        fxFeed.quotes.forEach((quote) => paintRow(quote));
-        // 加载中不动顺序，等收尾统一排，免得边填数边跳行
-        if (!fxFeed.loading) sortList();
-        ctx.ui.reposition();
+      };
+
+      const applyTarget = () => {
+        commitTarget();
+        repaintAll();
       };
 
       on(targetInput, 'input', () => {
@@ -3578,20 +3939,44 @@
         on(targetInput, type, (event) => event.stopPropagation());
       });
 
-      on(refreshBtn, 'click', () => {
-        fxFeed.load();
+      on(modeBtn, 'click', () => {
+        // 先落定输入框里可能还在防抖中的数字，再换口径重算，避免界面上是 20 却按 10 算
+        clearTimeout(targetTimer);
+        commitTarget();
+        mode = mode === 'gold' ? 'currency' : 'gold';
+        ctx.storage.set('mode', mode);
+        applyModeUi();
+        repaintAll();
       });
 
+      on(refreshBtn, 'click', () => {
+        fxFeed.load();
+        loadPins();
+      });
+
+      // 凭据晚到（面板先开、游戏还没发过请求）：账号能读到后补一次置顶，行情仍由玩家点刷新
+      const offAuth = market.onAuth(() => {
+        if (alive && !pinEntries.length) loadPins();
+      });
+
+      applyModeUi();
+
       // 挂载即同步：已有缓存（例如刚在「商品」里拉过）就直接复用，不再重复请求
-      const off = fxFeed.subscribe(sync);
+      const off = fxFeed.subscribe((kind, quote) => {
+        sync(kind, quote);
+        // 一轮抓取结束后补读账号信息：国籍 / 所在国此时才可读时也能置顶
+        if (kind === 'done') loadPins();
+      });
       if (fxFeed.quotes.length || fxFeed.loading) sync('reset');
       else sync('state');
       fxFeed.ensure(FX_CACHE_MS);
+      loadPins();
 
       ctx.onDestroy(() => {
         alive = false;
         clearTimeout(targetTimer);
         off();
+        offAuth();
       });
     }
   });
