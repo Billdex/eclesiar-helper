@@ -59,7 +59,21 @@
   const BALL_SIZE = 54;
   const EDGE = 8;
   const DEFAULT_BALL = { rx: 1, ry: 0.78 };
-  const DEBUG = /[?&]eh-debug=1(?:&|$)/.test(location.search);
+  /**
+   * 调试开关：地址上带 eh-debug=1 打开后记进 sessionStorage，
+   * 这样 SPA 跳转丢掉 query、或者退回整页刷新后仍然继续打印日志。
+   */
+  const DEBUG = (() => {
+    try {
+      if (/[?&]eh-debug=1(?:&|$)/.test(location.search)) {
+        sessionStorage.setItem('eh:debug', '1');
+        return true;
+      }
+      return sessionStorage.getItem('eh:debug') === '1';
+    } catch (err) {
+      return /[?&]eh-debug=1(?:&|$)/.test(location.search);
+    }
+  })();
 
   if (window.EclesiarHelper) {
     console.warn('[Eclesiar Helper] 已检测到已加载的实例，跳过重复注入。');
@@ -817,6 +831,7 @@
   }
 
   .eh-fx-row {
+    position: relative;
     padding: 7px 9px;
     border: 1px solid rgba(255, 255, 255, .06);
     border-radius: 10px;
@@ -909,6 +924,39 @@
     to { transform: rotate(1turn); }
   }
 
+  /* 行内右下角的跳转按钮：汇率 → 货币市场，商品 → 该国商品市场 */
+  .eh-go {
+    position: absolute;
+    right: 5px;
+    bottom: 4px;
+    display: inline-grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    color: #7f8ea3;
+    cursor: pointer;
+  }
+
+  .eh-go[hidden] { display: none; }
+
+  .eh-go svg {
+    display: block;
+    width: 15px;
+    height: 15px;
+  }
+
+  /* 静止时只有箭头，悬停只把箭头本身点亮 */
+  .eh-go:hover { color: #f0d9a4; }
+
+  .eh-go:focus-visible {
+    outline: 1px solid rgba(201, 165, 74, .6);
+    outline-offset: 1px;
+  }
+
   .eh-fx-row.is-error {
     border-color: rgba(227, 154, 154, .3);
     background: rgba(227, 154, 154, .04);
@@ -971,6 +1019,8 @@
     align-items: baseline;
     gap: 5px;
     margin-top: 4px;
+    /* 右下角要放跳转按钮，文字别顶到那里 */
+    padding-right: 30px;
     min-width: 0;
     font-size: 10.5px;
     line-height: 1.6;
@@ -1291,6 +1341,7 @@
   }
 
   .eh-gd-row {
+    position: relative;
     display: grid;
     grid-template-columns: 14px 18px minmax(0, 1fr) auto;
     align-items: center;
@@ -1380,6 +1431,8 @@
   .eh-gd-meta {
     grid-column: 1 / -1;
     padding-left: 21px;
+    /* 右下角留给跳转按钮 */
+    padding-right: 34px;
     font-size: 10px;
     line-height: 1.6;
     color: #7d8ba0;
@@ -2030,7 +2083,8 @@
         get current() {
           return route.current;
         },
-        onChange: (fn) => route.subscribe(fn)
+        onChange: (fn) => route.subscribe(fn),
+        goto: (path) => route.goto(path)
       },
       onDestroy(fn) {
         if (typeof fn === 'function') cleanups.push(fn);
@@ -2181,6 +2235,22 @@
       return location.pathname + location.search + location.hash;
     }
 
+    /**
+     * 游戏把当前语言拼在路径首段（/zh-CN/market/12），跳转目标必须跟着带，
+     * 否则游戏路由认不出这个地址，会把玩家弹回首页。
+     * 首段是不是语言：先和 <html lang> 对（en / en-US 两种写法都算），
+     * 再看是否符合两位语言码格式，都不像就当它是普通页面路径。
+     */
+    function routePrefix() {
+      const first = String(location.pathname.split('/')[1] || '');
+      if (!first) return '';
+      const lower = first.toLowerCase();
+      const docLang = String(document.documentElement.lang || '').toLowerCase();
+      if (docLang && (lower === docLang || lower === docLang.split('-')[0])) return '/' + first;
+      if (/^[a-z]{2}([-_][a-z]{2})?$/.test(lower)) return '/' + first;
+      return '';
+    }
+
     function emit() {
       const next = read();
       if (next === current) return;
@@ -2218,6 +2288,94 @@
 
     patch();
 
+    /**
+     * 在 SPA 内前进到 path。
+     * React Router 底下的 history 库靠 state.idx 判断是不是一次新的导航，
+     * idx 不变它会直接忽略这次 popstate，所以先加一再派发。
+     */
+    function pushTo(path) {
+      try {
+        const next = Object.assign({}, history.state);
+        if (typeof next.idx === 'number') next.idx += 1;
+        history.pushState(next, '', path);
+        window.dispatchEvent(new PopStateEvent('popstate', { state: next }));
+        return true;
+      } catch (err) {
+        warn('SPA 跳转失败', err);
+        return false;
+      }
+    }
+
+    /** 同上，但替换当前这条历史记录（中转页不留在历史里）。 */
+    function replaceTo(path) {
+      try {
+        const next = Object.assign({}, history.state);
+        if (typeof next.idx === 'number') next.idx += 1;
+        history.replaceState(next, '', path);
+        window.dispatchEvent(new PopStateEvent('popstate', { state: next }));
+        return true;
+      } catch (err) {
+        warn('SPA 替换失败', err);
+        return false;
+      }
+    }
+
+    /**
+     * 同一个页面只换 id（/market/17 → /18、/monetary-market/2 → /3）时，
+     * 游戏组件不会因为路由参数变化重新挂载，直接 pushState 只会让地址变、页面不动。
+     * 绕法：先跳到 dashboard 把当前页面卸掉（结构变化，路由会正常重渲染），
+     * 等它渲染出来再 replaceState 成目标（再变化一次），两段都不刷新，
+     * 中转页也会被 replace 掉，不会多留一条历史。
+     *
+     * 「渲染出来」用节点增删判断，不靠固定等待：dashboard 一画完就换目标，
+     * 正常只要一百多毫秒；600ms 还没动静就用兜底时钟。
+     * 换完不再回头校验 URL —— 目标若是玩家所在国，游戏会自己把地址改成不带 id 的
+     * /market，校验反而会误判成失败再整页刷一次。
+     */
+    function detour(target) {
+      const home = routePrefix() + '/dashboard';
+      if (location.pathname === home) {
+        location.assign(target);
+        return true;
+      }
+      if (!pushTo(home)) {
+        location.assign(target);
+        return true;
+      }
+
+      // 同样盯 body：dashboard 渲染可能把 #app 换掉，观察旧节点会一直等不到信号
+      const shell = document.body;
+
+      let mutating = 0;
+      let done = false;
+      let timer = 0;
+
+      function finish() {
+        if (done) return;
+        done = true;
+        observer.disconnect();
+        clearTimeout(timer);
+        if (!replaceTo(target)) location.assign(target);
+      }
+
+      const observer = new MutationObserver((records) => {
+        for (let i = 0; i < records.length; i += 1) {
+          const record = records[i];
+          if (record.type !== 'childList') continue;
+          mutating += record.addedNodes.length + record.removedNodes.length;
+        }
+        if (mutating >= 10) finish();
+      });
+
+      try {
+        observer.observe(shell, { childList: true, subtree: true });
+      } catch (err) {
+        /* 观察不了就直接靠兜底时钟 */
+      }
+      timer = setTimeout(finish, 300);
+      return true;
+    }
+
     return {
       get current() {
         return current;
@@ -2226,6 +2384,112 @@
         if (typeof fn !== 'function') return () => {};
         subscribers.add(fn);
         return () => subscribers.delete(fn);
+      },
+      /**
+       * 跳到游戏内页面（例如 /market/{country_id}、/monetary-market/{currency_id}）。
+       * 先试 SPA 内切换：pushState 后用 popstate 交给游戏自己的路由渲染，
+       * 行情缓存与面板状态都能留住，比整页刷新快得多；游戏没接住时退回整页跳转。
+       * 已经是同一个页面、只换 id 的（/market/17 → /18）游戏不会重新渲染，直接整页跳。
+       */
+      goto(path) {
+        const raw = String(path || '');
+        if (!raw) return false;
+        const prefix = routePrefix();
+        const target =
+          prefix && raw.charAt(0) === '/' && !raw.startsWith(prefix + '/') ? prefix + raw : raw;
+        log('跳转', '语言前缀 ' + (prefix || '（无）'), '→', target);
+        if (target === read()) return false;
+
+        /*
+         * 同一个路由只换 id（/monetary-market/5 → /12、/market/17 → /18）时，
+         * 游戏对应的 React 组件不会因为参数变化重新挂载，pushState 后地址变了页面不动。
+         * 这种交给 detour 走一趟 dashboard 中转，两段都是结构变化，都不用刷新。
+         * 段数不同的（/market → /market/17）本身就是结构变化，直接 SPA。
+         */
+        const shapeOf = (value) =>
+          value
+            .split('/')
+            .map((seg) => (/^\d+$/.test(seg) ? '*' : seg))
+            .join('/');
+        if (shapeOf(target.split(/[?#]/)[0]) === shapeOf(location.pathname)) {
+          log('跳转', '同一页面只换 id，走 dashboard 中转');
+          return detour(target);
+        }
+
+        /*
+         * 直接用 body 当观察目标：游戏换页面时可能把 #app 整个替换掉，
+         * 持有旧引用就永远测不到变化，会被误判成「游戏没响应」然后整页刷。
+         * 插件自己的界面在 Shadow DOM 里，不计入 innerHTML，不会干扰判断。
+         */
+        const shell = document.body;
+        // 用整页正文长度当指纹：游戏切换页面时这里一定会变，够判断它有没有接住
+        const mark = () => shell.innerHTML.length;
+        const before = mark();
+        // 跳之前的位置，用来判断游戏有没有把地址改回原处
+        const fromUrl = read();
+
+        if (!pushTo(target)) {
+          location.assign(target);
+          return true;
+        }
+
+        /*
+         * 判定「游戏有没有接住」：不猜固定时长，改成盯着页面变化。
+         * 结构变化的跳转（/market → /market/17、市场 ↔ 货币市场）游戏渲染新页面时 DOM 一定动，
+         * 给 3 秒窗口，期间有变化就算接管；真的一动不动才整页跳。
+         */
+        // 只数节点的增删，忽略纯文本刷新：货币市场页的价格跳动不该算「页面切换了」
+        let mutating = 0;
+        let observer = null;
+        try {
+          observer = new MutationObserver((records) => {
+            for (let i = 0; i < records.length; i += 1) {
+              const record = records[i];
+              if (record.type !== 'childList') continue;
+              mutating += record.addedNodes.length + record.removedNodes.length;
+            }
+          });
+          observer.observe(shell, { childList: true, subtree: true });
+        } catch (err) {
+          observer = null;
+        }
+
+        const stopWatching = () => {
+          if (observer) observer.disconnect();
+          observer = null;
+        };
+
+        const deadline = Date.now() + 3000;
+        const watch = () => {
+          const now = read();
+          if (now !== target) {
+            // 游戏把地址改回原处 = 它不接受这次跳转，别再干等，直接整页跳
+            if (now === fromUrl) {
+              stopWatching();
+              log('跳转', '游戏把地址改回原处，改用整页跳转');
+              location.assign(target);
+              return;
+            }
+            // 游戏自己补了参数 / 去了别处，交给它
+            stopWatching();
+            return;
+          }
+          // 行情页会不停刷新节点，阈值给宽一点，别把「价格跳动」当成「页面换了」
+          if (mutating >= 200 || Math.abs(mark() - before) > before * 0.05) {
+            stopWatching();
+            log('跳转', '游戏路由已接管，未刷新');
+            return;
+          }
+          if (Date.now() >= deadline) {
+            stopWatching();
+            log('跳转', '游戏路由没响应，改用整页跳转');
+            location.assign(target);
+            return;
+          }
+          setTimeout(watch, 250);
+        };
+        setTimeout(watch, 300);
+        return true;
       },
       destroy() {
         originals.forEach((entry, name) => {
@@ -2253,6 +2517,8 @@
     toggle: () => setOpen(!state.open),
     isOpen: () => state.open,
     position: () => ballPosition(),
+    /** 跳到游戏内页面（优先 SPA 内切换，失败退回整页跳转） */
+    navigate: (path) => route.goto(path),
     /** 功能模块改变自身内容高度后调用，重新测量并保持顶部位置 */
     reposition() {
       if (state.open) placePanel({ measure: true, keepTop: true });
@@ -2282,6 +2548,32 @@
       if (state.open) placePanel();
     }
   };
+
+  /**
+   * 行尾的跳转按钮：点击先收起面板，再让游戏路由切到对应页面。
+   * 只读数据 + 用户主动点击，不替玩家做任何游戏内操作。
+   */
+  function buildGoButton(title, go, intent) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'eh-go';
+    btn.title = title;
+    btn.setAttribute('aria-label', title);
+    // 右箭头：语义是「前往」，不要用外链 / 分享那种方框箭头
+    btn.innerHTML =
+      '<svg viewBox="0 0 16 16" aria-hidden="true">' +
+      '<path d="M3.4 8h9.2M8.9 4.1 12.8 8l-3.9 3.9" fill="none" stroke="currentColor" ' +
+      'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" /></svg>';
+    on(btn, 'click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      // 商品 / 品质不在游戏 URL 里，先把意图写进 sessionStorage，落地后再消费
+      if (intent) marketJump.remember(intent);
+      publicUi.close();
+      route.goto(go);
+    });
+    return btn;
+  }
 
   /* =========================================================================
    * 9. 内置功能
@@ -3562,6 +3854,12 @@
           head.appendChild(labelEl);
         }
 
+        // 去货币市场：URL 直接带货币 id（/monetary-market/{currency_id}）
+        // 这行还在加载时先不露箭头，数据到了再显示
+        const go = buildGoButton('去货币市场（' + quote.code + '）', '/monetary-market/' + quote.id);
+        go.hidden = quote.status === 'pending';
+        head.appendChild(go);
+
         const spin = document.createElement('span');
         spin.className = 'eh-fx-spin';
         spin.setAttribute('aria-hidden', 'true');
@@ -3576,7 +3874,7 @@
         el.appendChild(buyLine);
         el.appendChild(sellLine);
 
-        return { el, spin, buyLine, sellLine };
+        return { el, spin, buyLine, sellLine, go };
       };
 
       const buildRow = (quote) => {
@@ -3635,6 +3933,7 @@
         const failed = quote.status === 'error';
 
         view.spin.hidden = !pending;
+        view.go.hidden = pending;
         view.el.classList.toggle('is-error', failed);
         view.buyLine.hidden = pending;
         view.sellLine.hidden = pending;
@@ -5097,6 +5396,22 @@
         goldEl.appendChild(goldValue);
         el.appendChild(goldEl);
 
+        // 去该国商品市场：URL 只带国家（/market/{country_id}），商品与品质走 sessionStorage 意图。
+        // 流亡政府已无领土，玩家到不了；还没拉到数据的行也先不给入口。
+        if (!row.exiled && row.entry.id != null && row.sortGold != null) {
+          el.appendChild(
+            buildGoButton(
+              '去' + (locale ? locale[0] : String(row.entry.name || '')) + '的商品市场',
+              '/market/' + row.entry.id,
+              {
+                countryId: Number(row.entry.id),
+                api: pickedApi,
+                quality: isProductApi(pickedApi) ? pickedQuality : 0
+              }
+            )
+          );
+        }
+
         const meta = document.createElement('span');
         meta.className = 'eh-gd-meta';
         const code = escapeHtml(row.entry.currency.code);
@@ -6177,6 +6492,284 @@
     };
   })();
 
+  /* -------- 9.4b 市场跳转：把面板里点的那一行带到游戏市场页 -------- */
+
+  /**
+   * 商品市场的地址只带国家（/market/{country_id}），商品与品质游戏没放进 URL，
+   * 所以跳过去之后只能按文本点一下它自己的筛选按钮。
+   *
+   * 约束：只点文本（或图标 alt）完全相等的可点控件，链接（href）一律不点，
+   * 避免把玩家带到商品详情或列表行的其它页面；也从不提交表单、不下单。
+   * 找不到就安静放弃，`sessionStorage` 里的意图一并清掉。
+   */
+  const marketJump = (() => {
+    const INTENT_KEY = 'eh:market-intent';
+    const INTENT_TTL = 10 * 60 * 1000;
+    const RETRY_MS = 250;
+    // 整页刷新进来时游戏还要拉一轮行情，给足 10 秒
+    const MAX_TRIES = 40;
+
+    let timer = 0;
+    let tries = 0;
+    let pendingKey = '';
+    let itemPicked = false;
+    // 分类和品质按钮都在「筛选」面板里，默认是收起的，只展开一次
+    let filterOpened = false;
+    let destroyed = false;
+
+    const norm = (text) => String(text == null ? '' : text).replace(/\s+/g, ' ').trim().toLowerCase();
+
+    /** 当前是不是 /market/{国家 id}；是的话返回国家 id，否则 0。 */
+    function currentCountryId() {
+      const match = /(?:^|\/)market\/(\d+)(?:\/|$)/.exec(location.pathname);
+      return match ? Number(match[1]) : 0;
+    }
+
+    /**
+     * 意图放 sessionStorage，而不是拼在 URL 上：
+     * 游戏会按自己的路由重写地址，未知参数容易被它清掉；
+     * sessionStorage 在整页刷新后也还在，正好覆盖「SPA 没接住」那一档。
+     */
+    function remember(intent) {
+      if (!intent || !intent.api || intent.countryId == null) return;
+      try {
+        sessionStorage.setItem(
+          INTENT_KEY,
+          JSON.stringify({
+            countryId: Number(intent.countryId),
+            api: String(intent.api),
+            quality: Number(intent.quality) || 0,
+            at: Date.now()
+          })
+        );
+      } catch (err) {
+        /* 隐私模式写不进去就算了，跳转本身不受影响 */
+      }
+    }
+
+    function clearIntent() {
+      try {
+        sessionStorage.removeItem(INTENT_KEY);
+      } catch (err) {
+        /* ignore */
+      }
+    }
+
+    function readIntent() {
+      // 只在市场页消费：/market（当前国家）或 /market/{国家 id} 都算
+      if (!/(?:^|\/)market(?:\/\d+)?(?:\/|$)/.test(location.pathname)) return null;
+      const countryId = currentCountryId();
+
+      let raw = '';
+      try {
+        raw = sessionStorage.getItem(INTENT_KEY) || '';
+      } catch (err) {
+        return null;
+      }
+      if (!raw) return null;
+
+      let intent = null;
+      try {
+        intent = JSON.parse(raw);
+      } catch (err) {
+        intent = null;
+      }
+      if (!intent || !intent.api || Date.now() - Number(intent.at || 0) > INTENT_TTL) {
+        clearIntent();
+        return null;
+      }
+      // 路径带国家 id 时要求一致；/market 是「当前国家」，没法比，直接用
+      if (countryId && Number(intent.countryId) !== countryId) return null;
+
+      return { api: String(intent.api), quality: Number(intent.quality) || 0 };
+    }
+
+    function isVisible(el) {
+      return el instanceof HTMLElement && el.getClientRects().length > 0;
+    }
+
+    /** 从命中的节点向上找一个真正可点的容器；链接一律不点（会把人带到详情页）。 */
+    function clickableOf(el) {
+      let node = el;
+      for (let depth = 0; depth < 4 && node instanceof HTMLElement; depth += 1, node = node.parentElement) {
+        const role = node.getAttribute('role');
+        if (node.tagName === 'BUTTON' || role === 'button' || role === 'tab' || role === 'option') return node;
+        if (node.tagName === 'A' && node.getAttribute('href')) return null;
+        if (getComputedStyle(node).cursor === 'pointer') return node;
+      }
+      return null;
+    }
+
+    /**
+     * 页面上文本完全等于 label 的可点击控件；找不到返回 null。
+     * 只认按钮类节点：顶栏资源位里到处是「食物」这种图标 / 文字，
+     * 点到那里没有任何反应，会让人以为「找不到控件」。
+     */
+    function findButton(label) {
+      const wanted = norm(label);
+      if (!wanted) return null;
+
+      const nodes = document.querySelectorAll('button, a, [role], li');
+      // 两轮：先按文字精确匹配，再退到图标 alt（只对纯图标按钮生效）
+      for (let pass = 0; pass < 2; pass += 1) {
+        for (let i = 0; i < nodes.length; i += 1) {
+          const el = nodes[i];
+          // 子节点多的多半是整块区域，先排掉，省掉大段 textContent 拼接
+          if (el.children.length > 3) continue;
+          if (!isVisible(el)) continue;
+
+          const text = String(el.textContent || '').replace(/\s+/g, ' ').trim();
+          if (pass === 0) {
+            if (!text || text.length > 12 || norm(text) !== wanted) continue;
+          } else {
+            if (text) continue;
+            const img = el.querySelector('img[alt]');
+            if (!img || norm(img.getAttribute('alt')) !== wanted) continue;
+          }
+
+          const target = clickableOf(el);
+          if (target) return target;
+        }
+      }
+      return null;
+    }
+
+    /** 放弃前把页面上的按钮文本丢进调试日志，方便排查是不是文案对不上。 */
+    function logCandidates() {
+      const nodes = document.querySelectorAll('button, [role="button"], [role="tab"], [role="option"]');
+      const labels = [];
+      for (let i = 0; i < nodes.length && labels.length < 40; i += 1) {
+        const text = String(nodes[i].textContent || '').replace(/\s+/g, ' ').trim();
+        if (text && text.length <= 12) labels.push(text);
+      }
+      log('市场跳转', '页面上的可点文案：', labels);
+    }
+
+    /**
+     * 游戏市场页只按 4 个大类筛选（食物 / 武器 / 票券 / 原材料），没有「具体商品」这一层，
+     * 所以插件里的 8 种商品要先落到游戏分类上：飞机和武器同属「武器」，机票属于「票券」，
+     * 四种原材料都归「原材料」。英文界面下再试英文类别名和 api 本名。
+     */
+    const MARKET_CATEGORY = {
+      Food: ['食物', 'Food'],
+      Weapon: ['武器', 'Weapon'],
+      Aircraft: ['武器', 'Weapon'],
+      'Airplane ticket': ['票券', 'Ticket'],
+      Grain: ['原材料', 'Material'],
+      Iron: ['原材料', 'Material'],
+      Fuel: ['原材料', 'Material'],
+      Titanium: ['原材料', 'Material']
+    };
+
+    function findItemButton(api) {
+      const meta = GOODS_META.get(api);
+      const labels = (MARKET_CATEGORY[api] || []).concat(meta ? [meta.zh] : [], [api]);
+      for (let i = 0; i < labels.length; i += 1) {
+        const btn = findButton(labels[i]);
+        if (btn) return btn;
+      }
+      return null;
+    }
+
+    function schedule(delay) {
+      clearTimeout(timer);
+      timer = setTimeout(step, delay);
+    }
+
+    function giveUp(reason) {
+      log('市场跳转', reason);
+      logCandidates();
+      clearIntent();
+      pendingKey = '';
+    }
+
+    function retry() {
+      tries += 1;
+      if (tries >= MAX_TRIES) {
+        giveUp('没找到对应筛选控件，放弃');
+        return;
+      }
+      schedule(RETRY_MS);
+    }
+
+    function step() {
+      timer = 0;
+      if (destroyed) return;
+
+      const intent = readIntent();
+      if (!intent) {
+        pendingKey = '';
+        return;
+      }
+
+      const key = intent.api + '#' + intent.quality;
+      if (pendingKey !== key) {
+        pendingKey = key;
+        tries = 0;
+        itemPicked = false;
+        filterOpened = false;
+      }
+
+      if (!itemPicked) {
+        const itemBtn = findItemButton(intent.api);
+        if (!itemBtn) {
+          // 市场页默认收起「筛选」，分类按钮在里面，先展开再重试
+          if (!filterOpened) {
+            const filterBtn = findButton('筛选');
+            if (filterBtn) {
+              filterOpened = true;
+              filterBtn.click();
+              tries = 0;
+              schedule(RETRY_MS);
+              return;
+            }
+          }
+          retry();
+          return;
+        }
+        itemBtn.click();
+        itemPicked = true;
+        // 列表要重渲染一次品质按钮才出来，重新计时
+        tries = 0;
+        schedule(RETRY_MS);
+        return;
+      }
+
+      if (intent.quality > 0) {
+        const qBtn = findButton('Q' + intent.quality);
+        if (!qBtn) {
+          retry();
+          return;
+        }
+        qBtn.click();
+      }
+
+      log('市场跳转', '已切到 ' + intent.api + (intent.quality ? ' Q' + intent.quality : ''));
+      clearIntent();
+      pendingKey = '';
+    }
+
+    function start() {
+      if (destroyed) return;
+      if (!readIntent()) return;
+      tries = 0;
+      schedule(0);
+    }
+
+    // 面板里跳过来（SPA）与整页刷新进来都要跑一次
+    route.subscribe(start);
+
+    return {
+      remember,
+      start,
+      destroy() {
+        destroyed = true;
+        clearTimeout(timer);
+        timer = 0;
+      }
+    };
+  })();
+
   /* -------- 9.5 设置与版本检查 -------- */
 
   const UPDATE_CHECK_TIMEOUT = 4000;
@@ -6820,6 +7413,8 @@
       renderTabs();
       applyBall();
       marketBadge.sync();
+      // 整页跳进来时（SPA 没接住的那一档）地址里还带着商品 / 品质意图，补一次消费
+      marketJump.start();
       // 「商品市场自动加载比价数据」开启时，启动就预抓一次行情（延迟几秒，先让游戏首屏跑完）
       goodsAuto.start(false);
 
@@ -6846,6 +7441,7 @@
     goodsAuto.stop();
     goodsSnapshot.cancel();
     marketBadge.stop();
+    marketJump.destroy();
     route.destroy();
     fxFeed.cancel();
     market.uninstall();
@@ -6910,7 +7506,8 @@
       get current() {
         return route.current;
       },
-      onChange: (fn) => route.subscribe(fn)
+      onChange: (fn) => route.subscribe(fn),
+      goto: (path) => route.goto(path)
     },
     ui: publicUi,
     open: publicUi.open,
