@@ -4933,18 +4933,15 @@
             <p class="eh-fx-status" data-role="status">…</p>
             <button class="eh-btn" type="button" data-role="refresh">刷新行情</button>
           </div>
-          <label class="eh-gd-switch"
-            title="在游戏自己的商品市场列表里，每个起价下面补一行换算后的黄金单价；上架表单的「实收金额」右侧也会补上折算金价。只追加只读文字，不改游戏原有内容">
+          <label class="eh-gd-switch">
             <input type="checkbox" data-role="badge">
             <span>商品市场与上架表单显示金价</span>
           </label>
-          <label class="eh-gd-switch"
-            title="在游戏自己的商品市场页，按国家显示该国的地区按钮，点一下直接打开该地区页面。只追加插件自己的节点，不改游戏原有内容">
+          <label class="eh-gd-switch">
             <input type="checkbox" data-role="regions">
             <span>商品市场显示该国地区快捷入口</span>
           </label>
-          <label class="eh-gd-switch"
-            title="只影响游戏自己的商品市场页：不打开面板也能看到与全球最低价的对比。插件面板始终会自行抓取行情，不受这个开关影响">
+          <label class="eh-gd-switch">
             <input type="checkbox" data-role="auto-compare">
             <span>商品市场自动加载比价数据</span>
           </label>
