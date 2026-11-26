@@ -1069,6 +1069,12 @@
     font-weight: 600;
   }
 
+  /* 深度不足时徽标里的价格是成交均价，前面标一下，免得被当成最优价 */
+  .eh-fx-tag__avg {
+    font-size: 9px;
+    opacity: .75;
+  }
+
   .eh-fx-tag--buy {
     border-color: rgba(124, 178, 232, .22);
     background: rgba(124, 178, 232, .1);
@@ -3885,11 +3891,12 @@
 
       /**
        * 一个方向占一行：方向徽标里带最优质，后面直接跟这笔目标额度的成交结果。
-       * 均价与最优质几乎一样时（只吃了一档）就不再重复写一遍。
+       * 均价与最优质几乎一样时（只吃了一档）就不再重复写一遍；
+       * 吃不满时徽标里的价格直接换成成交均价，行尾只留「深度不足」。
        */
       const paintLine = (el, side, best, fill, code, emptyText) => {
         const isBuy = side === 'buy';
-        const label = isBuy ? '买入' : '卖出';
+        const label = isBuy ? '买' : '卖';
 
         if (best == null || fill.avg == null) {
           el.innerHTML =
@@ -3908,22 +3915,35 @@
           : '<b>' + fxQty(fill.currency) + '</b> ' + code + ' → ' + gold;
         // 只吃了一档时均价 == 最优质，没必要再写一遍
         const samePrice = Math.abs(fill.avg - best) / best <= 0.002;
+        // 吃不满（深度不足）时行尾空间紧张：直接把徽标里的价格换成成交均价，
+        // 不再在后面补一个「均价」，否则一行挤两三个价格、读起来太长。
+        const deep = !fill.filled;
+        const tagAvg = deep && !samePrice;
 
         el.innerHTML =
-          `<span class="eh-fx-tag eh-fx-tag--${side}">${label}<b>${fxPrice(best)}</b></span>` +
+          `<span class="eh-fx-tag eh-fx-tag--${side}">${label}` +
+          (tagAvg ? '<span class="eh-fx-tag__avg">均价</span>' : '') +
+          `<b>${fxPrice(tagAvg ? fill.avg : best)}</b></span>` +
           `<span class="eh-fx-flow">${flow}</span>` +
-          (samePrice ? '' : `<span class="eh-fx-avg">均价 <b>${fxPrice(fill.avg)}</b></span>`) +
-          (fill.filled ? '' : '<span class="eh-fx-deep">深度不足</span>');
+          (deep || samePrice ? '' : `<span class="eh-fx-avg">均价 <b>${fxPrice(fill.avg)}</b></span>`) +
+          (deep ? '<span class="eh-fx-deep">深度不足</span>' : '');
 
         el.title =
           label +
-          '：最优 ' +
-          fxPrice(best) +
-          (mode === 'currency'
-            ? '，换 ' + fxQty(target) + ' 单位的成交均价 '
-            : '，目标额度成交均价 ') +
-          fxPrice(fill.avg) +
-          (fill.filled ? '' : '（挂单不够，只成交了一部分）');
+          '：' +
+          (tagAvg
+            ? '成交均价 ' +
+              fxPrice(fill.avg) +
+              '（最优 ' +
+              fxPrice(best) +
+              '，挂单不够，只成交了一部分）'
+            : '最优 ' +
+              fxPrice(best) +
+              (mode === 'currency'
+                ? '，换 ' + fxQty(target) + ' 单位的成交均价 '
+                : '，目标额度成交均价 ') +
+              fxPrice(fill.avg) +
+              (deep ? '（挂单不够，只成交了一部分）' : ''));
       };
 
       const paintView = (view, quote) => {
@@ -4231,17 +4251,27 @@
         ctx.ui.reposition();
       };
 
-      /** 把输入框里的数字落定（可能还在防抖里），不发请求。 */
+      /**
+       * 把输入框里的数字落定（可能还在防抖里），不发请求。
+       * 空串 / 0 / 只打了个负号时**不落定、也不改写输入框**：玩家清空多半是准备重打，
+       * 这时塞回「10」会逼着他先删掉再输入。返回是否拿到了新的有效值。
+       */
       const commitTarget = () => {
         const value = Number(targetInput.value);
-        const valid = Number.isFinite(value) && value > 0;
-        target = valid ? value : 10;
-        if (!valid) targetInput.value = String(target);
+        if (!Number.isFinite(value) || value <= 0) return false;
+        target = value;
         ctx.storage.set('target', target);
+        return true;
+      };
+
+      /** 空着 / 不合法时才在收尾时机（失焦、回车、切口径）把上一次的有效值补回去。 */
+      const restoreTarget = () => {
+        if (commitTarget()) return;
+        targetInput.value = String(target);
       };
 
       const applyTarget = () => {
-        commitTarget();
+        if (!commitTarget()) return; // 还没输完就保持现状，别用旧值重算、更别改输入框
         repaintAll();
       };
 
@@ -4249,7 +4279,13 @@
         clearTimeout(targetTimer);
         targetTimer = window.setTimeout(applyTarget, 220);
       });
-      on(targetInput, 'change', applyTarget);
+      // change 在失焦 / 回车时触发：这时才把留空的输入框补回有效值
+      on(targetInput, 'change', () => {
+        clearTimeout(targetTimer);
+        restoreTarget();
+        repaintAll();
+      });
+      on(targetInput, 'blur', restoreTarget);
 
       // 面板在 Shadow DOM 内，游戏若在 document 上监听事件，拿到的 target 会被重定向成宿主元素，
       // 很容易被当成「在页面里按键」；这里把输入框的按键拦在组件内部，避免打字误触游戏快捷键。
@@ -4258,9 +4294,10 @@
       });
 
       on(modeBtn, 'click', () => {
-        // 先落定输入框里可能还在防抖中的数字，再换口径重算，避免界面上是 20 却按 10 算
+        // 先落定输入框里可能还在防抖中的数字（空着就补回上一次的有效值），
+        // 再换口径重算，避免界面上是 20 却按 10 算
         clearTimeout(targetTimer);
-        commitTarget();
+        restoreTarget();
         mode = mode === 'gold' ? 'currency' : 'gold';
         ctx.storage.set('mode', mode);
         applyModeUi();
