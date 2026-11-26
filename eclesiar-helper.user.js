@@ -3766,6 +3766,396 @@
     return byItem;
   }
 
+  /* -------- 9.3a 全球商品行情快照：面板与自动比价共用 -------- */
+
+  /** 行情快照的有效期：与汇率一致（10 分钟）；自动模式据此决定什么时候重拉。 */
+  const GOODS_CACHE_MS = 10 * 60 * 1000;
+
+  /**
+   * 全球商品行情快照：面板「商品」页与「商品市场自动加载比价数据」共用同一份。
+   * 统一负责抓取、并发去重、TTL 判断与过期重拉；抓完自动 publish 给 goodsFeed，
+   * 游戏市场页的金价标注据此算「比全球最低贵多少」。
+   *
+   * 订阅回调签名 (kind, payload)：
+   *   reset —— 新一轮开始，entries 重建为待抓清单；
+   *   entry —— 某个市场拉完（payload 为该 entry，items 已就绪）；
+   *   drop  —— 该市场拉取失败（payload 为该 entry）；
+   *   done  —— 本轮结束，entries 只保留拉成功的市场；
+   *   error —— 整轮失败（payload 为 err），已回滚上一份结果；
+   *   state —— 加载状态 / 进度 / 错误变化。
+   */
+  const goodsSnapshot = (() => {
+    const listeners = new Set();
+    /** 抓取中：全部国家（含 pending / error）；结束后只保留成功的市场。 */
+    let entries = [];
+    let updatedAt = 0;
+    let loading = false;
+    let error = null;
+    /** 上一次失败的时间：面板反复切标签时不要每次都重打一轮。 */
+    let errorAt = 0;
+    let progress = { done: 0, total: 0 };
+    let failures = 0;
+    let landFailures = 0;
+    let limited = false;
+    let controller = null;
+    let promise = null;
+
+    const notify = (kind, payload) => {
+      [...listeners].forEach((fn) => {
+        try {
+          fn(kind, payload);
+        } catch (err) {
+          warn('商品行情订阅回调异常', err);
+        }
+      });
+    };
+
+    /**
+     * 领土检查：/country/regions 没有 data（或返回空数组）即流亡政府（已失去全部领土）。
+     * 只查有挂单的国家——没挂单的市场本来就不进列表，没必要多打请求。
+     * 请求本身失败（超时 / 4xx / 429）才按「有领土」处理，宁可留在主列表也不误判。
+     */
+    const checkLand = async (entry, signal) => {
+      const cached = GOODS_LAND.get(String(entry.id));
+      if (cached && Date.now() - cached.at < LAND_CACHE_MS) {
+        entry.exiled = cached.exiled;
+        return;
+      }
+      const list = await goodsFetchRegions(entry.id, signal);
+      // 已失去全部领土的国家只回 { code: 200, description: '成功' }：没有 data 就是没有领土
+      const exiled = list == null || (Array.isArray(list) && list.length === 0);
+      GOODS_LAND.set(String(entry.id), { exiled, at: Date.now() });
+      entry.exiled = exiled;
+    };
+
+    /**
+     * 凭据晚到的场景：面板可能在游戏还没发过任何接口请求时就打开了，
+     * 这时先挂一次 market.onAuth，等登录凭据被捕获后自动补一轮，
+     * 而不是让面板停在空列表上等玩家手动点「刷新行情」。
+     * （与「商品市场自动加载比价数据」无关：那个开关只管游戏市场页的自动刷新。）
+     */
+    let offAuthRetry = null;
+    const armAuthRetry = () => {
+      if (offAuthRetry) return;
+      offAuthRetry = market.onAuth(() => {
+        offAuthRetry = null;
+        if (!loading && !updatedAt) load();
+      });
+    };
+
+    /** 拉一轮全球行情；并发调用共享同一个请求。 */
+    function load() {
+      if (loading) return promise;
+      if (market.state !== 'ok') {
+        error = { code: 'NO_TOKEN' };
+        errorAt = Date.now();
+        armAuthRetry();
+        notify('state');
+        return Promise.resolve(null);
+      }
+
+      // 真正开始抓了：之前挂着的「等凭据」回调可以摘掉了
+      if (offAuthRetry) {
+        offAuthRetry();
+        offAuthRetry = null;
+      }
+
+      loading = true;
+      error = null;
+      failures = 0;
+      landFailures = 0;
+      limited = false;
+      progress = { done: 0, total: 0 };
+      // 本次失败时放回去，别让已有结果凭空消失
+      const previous = entries.filter((entry) => entry.status === 'ok');
+      if (controller) {
+        try {
+          controller.abort();
+        } catch (err) {
+          /* ignore */
+        }
+      }
+      controller = new AbortController();
+      const signal = controller.signal;
+      notify('state');
+
+      promise = (async () => {
+        try {
+          // 汇率与市场并行：汇率优先吃缓存，只有缓存过期才真的去拉
+          fxFeed.ensure(FX_CACHE_MS).catch(() => null);
+          const countries = await fxFeed.ensureCountries();
+          if (signal.aborted) return;
+
+          const list = (Array.isArray(countries) ? countries : [])
+            .filter((country) => {
+              const currency = country && country.currency;
+              if (!currency || !currency.id || !currency.name) return false;
+              if (String(currency.name).toLowerCase() === 'gold') return false;
+              return country.is_available !== 0;
+            })
+            .map((country) => ({
+              id: country.id,
+              name: String(country.name || ''),
+              avatar: country.avatar == null ? '' : String(country.avatar),
+              currency: { id: country.currency.id, code: String(country.currency.name) },
+              items: null,
+              status: 'pending',
+              exiled: false // 领土检查结果：true = 已失去全部领土
+            }));
+
+          if (!list.length) {
+            const empty = new Error('没有可用的国家清单');
+            empty.code = 'EMPTY_COUNTRIES';
+            throw empty;
+          }
+
+          entries = list;
+          progress = { done: 0, total: list.length };
+          notify('reset');
+
+          let cursor = 0;
+          const worker = async () => {
+            while (cursor < entries.length) {
+              if (signal.aborted) return;
+              const entry = entries[cursor];
+              cursor += 1;
+
+              try {
+                // 不带 type/quality 时接口一次返回该国全部商品，一个市场只需一次请求
+                const data = await market.call('/market/get', {
+                  form: { countryid: entry.id },
+                  object: true,
+                  signal
+                });
+                entry.items = goodsIndex(data && data.offers);
+                entry.status = 'ok';
+              } catch (err) {
+                if (err && err.name === 'AbortError') return;
+                if (err && err.code === 'UNAUTHORIZED') throw err;
+                if (err && err.code === 'HTTP' && String(err.message) === 'HTTP_429') limited = true;
+                entry.status = 'error';
+                failures += 1;
+              }
+
+              // 市场拉回来之后再核对领土：没挂单的国家根本不进列表，省一次请求
+              if (entry.status === 'ok' && entry.items && entry.items.size) {
+                try {
+                  await checkLand(entry, signal);
+                } catch (err) {
+                  if (err && err.name === 'AbortError') return;
+                  if (err && err.code === 'UNAUTHORIZED') throw err;
+                  if (err && err.code === 'HTTP' && String(err.message) === 'HTTP_429') limited = true;
+                  landFailures += 1;
+                  log(
+                    '领土读取失败',
+                    entry.name + ' · ' + ((err && err.code) || 'ERROR') + ' ' + ((err && err.message) || '')
+                  );
+                }
+              }
+
+              progress = { done: progress.done + 1, total: progress.total };
+              notify(entry.status === 'ok' ? 'entry' : 'drop', entry);
+              await fxSleep(FX_GAP);
+            }
+          };
+
+          await Promise.all(
+            Array.from({ length: Math.min(FX_CONCURRENCY, entries.length) }, () => worker())
+          );
+          if (signal.aborted) return;
+
+          // 领土查不到不影响结果展示（这些国家按「有领土」留在主列表），只在调试日志里留个汇总
+          if (landFailures) log('领土检查部分失败', landFailures + ' 个国家按「有领土」处理');
+
+          updatedAt = Date.now();
+          errorAt = 0;
+          entries = entries.filter((entry) => entry.status === 'ok');
+          // 共享给游戏市场页的金价标注：它要拿这份数据算「比全球最低贵多少」
+          goodsFeed.publish(entries);
+        } catch (err) {
+          if (err && err.name === 'AbortError') return;
+          entries = previous;
+          if (err && err.code === 'UNAUTHORIZED') {
+            try {
+              controller.abort();
+            } catch (ignore) {
+              /* ignore */
+            }
+          }
+          error = {
+            code: (err && err.code) || 'ERROR',
+            message: err && err.message,
+            limited
+          };
+          errorAt = Date.now();
+        } finally {
+          loading = false;
+          promise = null;
+          // 中止（destroy / 新一轮接管）不算结束：只更新状态，不发 done
+          if (!signal.aborted) notify(error ? 'error' : 'done');
+          notify('state');
+        }
+      })();
+
+      return promise;
+    }
+
+    return {
+      get entries() {
+        return entries;
+      },
+      get updatedAt() {
+        return updatedAt;
+      },
+      get loading() {
+        return loading;
+      },
+      get error() {
+        return error;
+      },
+      get progress() {
+        return progress;
+      },
+      get failures() {
+        return failures;
+      },
+      get landFailures() {
+        return landFailures;
+      },
+      get limited() {
+        return limited;
+      },
+      subscribe(fn) {
+        if (typeof fn !== 'function') return () => {};
+        listeners.add(fn);
+        return () => listeners.delete(fn);
+      },
+      /** 缓存还在有效期内就直接用，否则拉一轮；并发调用共享同一个请求。 */
+      ensure(maxAge) {
+        if (loading) return promise;
+        const age = maxAge == null ? GOODS_CACHE_MS : maxAge;
+        const now = Date.now();
+        if (updatedAt && now - updatedAt < age && entries.length) return Promise.resolve(entries);
+        // 刚失败过：一分钟内不自动重试（手动点「刷新行情」走 load，不受此限）
+        if (error && errorAt && now - errorAt < 60 * 1000) return Promise.resolve(null);
+        return load();
+      },
+      load,
+      cancel() {
+        if (offAuthRetry) {
+          offAuthRetry();
+          offAuthRetry = null;
+        }
+        if (!controller) return;
+        try {
+          controller.abort();
+        } catch (err) {
+          /* ignore */
+        }
+      }
+    };
+  })();
+
+  /* -------- 9.3b 自动比价：启动即抓、按缓存有效期自动更新 -------- */
+
+  /**
+   * 「商品市场自动加载比价数据」开关（默认关闭）。
+   * 开启后插件启动就抓一次全球汇率与商品行情，之后每分钟在本地看一次快照年龄，
+   * 超过 GOODS_CACHE_MS 才真正重拉；后台标签页不刷新，凭据没到手时等 onAuth 再补。
+   * 一轮要 45 个国家的市场 + 换汇 + 领土请求，所以默认关闭，
+   * 开启前会在「商品」页明确提示请求量与启动变慢的风险。
+   * 它只负责游戏市场页的「不打开面板也能比价」，面板本身始终会自己抓取行情。
+   */
+  const goodsAuto = (() => {
+    /** 本地检查间隔：只比时间戳，不发请求。 */
+    const CHECK_MS = 60 * 1000;
+    /** 启动后稍等再抓：先让游戏自己的首屏请求跑完，避免明显拖慢加载。 */
+    const BOOT_DELAY_MS = 3000;
+    /** 失败退避：接口异常时别每分钟都打一轮上百次请求。 */
+    const RETRY_MS = 5 * 60 * 1000;
+
+    const listeners = new Set();
+    let enabled = storage.read('autoCompare', false) === true;
+    let timer = 0;
+    let kick = 0;
+    let lastAttemptAt = 0;
+    let offAuth = null;
+
+    const notify = () => {
+      [...listeners].forEach((fn) => {
+        try {
+          fn(enabled);
+        } catch (err) {
+          warn('自动比价订阅回调异常', err);
+        }
+      });
+    };
+
+    const sync = () => {
+      if (!enabled || destroyed || !booted) return;
+      if (document.visibilityState === 'hidden') return;
+      // 凭据还没捕获到时先不动，由 market.onAuth 触发一次
+      if (market.state !== 'ok') return;
+      if (goodsSnapshot.loading) return;
+
+      const now = Date.now();
+      // 缓存还没过期：什么都不做（下次检查继续等）
+      if (goodsSnapshot.updatedAt && now - goodsSnapshot.updatedAt < GOODS_CACHE_MS) return;
+      // 上一轮失败过：至少隔 5 分钟再试，避免烧光额度
+      if (lastAttemptAt && now - lastAttemptAt < RETRY_MS) return;
+      lastAttemptAt = now;
+      goodsSnapshot.load();
+    };
+
+    function start(immediate) {
+      if (!enabled || destroyed) return;
+      if (!offAuth) offAuth = market.onAuth(sync);
+      if (!timer) timer = window.setInterval(sync, CHECK_MS);
+      clearTimeout(kick);
+      kick = window.setTimeout(sync, immediate ? 0 : BOOT_DELAY_MS);
+    }
+
+    function stop() {
+      clearTimeout(kick);
+      clearInterval(timer);
+      kick = 0;
+      timer = 0;
+      if (offAuth) {
+        offAuth();
+        offAuth = null;
+      }
+    }
+
+    // 从后台切回来时补一次：浏览器可能已经把定时器节流了
+    on(document, 'visibilitychange', () => {
+      if (document.visibilityState === 'visible') sync();
+    });
+
+    return {
+      get enabled() {
+        return enabled;
+      },
+      setEnabled(next) {
+        const value = next === true;
+        if (value === enabled) return value;
+        enabled = value;
+        storage.write('autoCompare', value);
+        if (value) start(true);
+        else stop();
+        notify();
+        return value;
+      },
+      subscribe(fn) {
+        if (typeof fn !== 'function') return () => {};
+        listeners.add(fn);
+        return () => listeners.delete(fn);
+      },
+      start,
+      stop,
+      sync
+    };
+  })();
+
   /** 当地货币金额：去掉没意义的尾随 0（0.190 → 0.19）。 */
   function goodsAmount(value) {
     if (!Number.isFinite(value) || value <= 0) return '—';
@@ -3808,6 +4198,16 @@
             <input type="checkbox" data-role="badge">
             <span>商品市场与上架表单显示金价</span>
           </label>
+          <label class="eh-gd-switch"
+            title="只影响游戏自己的商品市场页：不打开面板也能看到与全球最低价的对比。插件面板始终会自行抓取行情，不受这个开关影响">
+            <input type="checkbox" data-role="auto-compare">
+            <span>商品市场自动加载比价数据</span>
+          </label>
+          <p class="eh-note is-warn" data-role="auto-note" hidden></p>
+          <div class="eh-row" data-role="auto-confirm" hidden>
+            <button class="eh-btn" type="button" data-role="auto-yes">仍然开启</button>
+            <button class="eh-btn eh-btn--ghost" type="button" data-role="auto-no">取消</button>
+          </div>
         </div>
         <div class="eh-section">
           <div class="eh-h3" data-role="listtitle">各国市场 · 黄金单价</div>
@@ -4125,16 +4525,8 @@
         ctx.ui.reposition();
       };
 
-      let markets = [];  // 只保留拉取成功的市场：[{ id, name, avatar, currency, items }]
-      let snapshotAt = 0;
-      let loading = false;
+      // 行情与状态全部来自共享快照：面板关着时「商品市场自动加载比价数据」也会用它抓
       let alive = true;
-      let done = 0;
-      let total = 0;
-      let failures = 0;
-      let landFailures = 0; // 领土查不到的国家数（这些国家仍留在主列表）
-      let limited = false;
-      let controller = null;
 
       const setStatus = (text, tone) => {
         if (!alive) return;
@@ -4148,17 +4540,21 @@
       const paintStatus = () => {
         if (!alive) return;
 
-        if (loading) {
-          if (!total) {
+        const snap = goodsSnapshot;
+        refreshBtn.disabled = snap.loading;
+
+        if (snap.loading) {
+          const step = snap.progress;
+          if (!step.total) {
             setStatus('正在读取国家清单…');
             return;
           }
           const parts = [];
           if (fxFeed.loading) {
-            const step = fxFeed.progress;
-            parts.push('汇率 ' + (step.total ? step.done + '/' + step.total : '…'));
+            const fx = fxFeed.progress;
+            parts.push('汇率 ' + (fx.total ? fx.done + '/' + fx.total : '…'));
           }
-          parts.push('市场 ' + done + '/' + total);
+          parts.push('市场 ' + step.done + '/' + step.total);
           setStatus('正在拉取 ' + parts.join(' · ') + '…');
           return;
         }
@@ -4167,20 +4563,35 @@
           setStatus(tokenHint(), 'warn');
           return;
         }
-        if (!snapshotAt) {
+
+        if (snap.error) {
+          const err = snap.error;
+          if (err.code === 'NO_TOKEN' || err.code === 'UNAUTHORIZED') {
+            setStatus(tokenHint(), err.code === 'UNAUTHORIZED' ? 'error' : 'warn');
+          } else if (err.code === 'TIMEOUT') {
+            setStatus('请求超时，请稍后重试。', 'error');
+          } else if (quotaHint(err) || err.limited) {
+            setStatus(quotaHint(err) || '接口返回 429（请求过多或已达当日查询上限），请稍后再试。', 'error');
+          } else {
+            setStatus('拉取失败：' + (err.message || '未知错误'), 'error');
+          }
+          return;
+        }
+
+        if (!snap.updatedAt) {
           setStatus('还没有市场行情，点「刷新行情」抓取一次。');
           return;
         }
 
         const fxNote = fxFeed.updatedAt ? ' · 汇率 ' + formatClock(fxFeed.updatedAt) : ' · 暂无汇率';
-        const exiledCount = markets.filter((entry) => entry.exiled).length;
+        const exiledCount = snap.entries.filter((entry) => entry.exiled).length;
         const exileNote = exiledCount ? `（含 ${exiledCount} 个流亡政府）` : '';
-        const suffix = failures
-          ? ` · ${failures} 个市场拉取失败` + (limited ? '（含 429，可到「设置」页生成专用密钥）' : '')
+        const suffix = snap.failures
+          ? ` · ${snap.failures} 个市场拉取失败` + (snap.limited ? '（含 429，可到「设置」页生成专用密钥）' : '')
           : '';
         setStatus(
-          `${markets.length} 个市场${exileNote}\n更新于 ${formatClock(snapshotAt)}${fxNote}${suffix}`,
-          limited ? 'error' : undefined
+          `${snap.entries.length} 个市场${exileNote}\n更新于 ${formatClock(snap.updatedAt)}${fxNote}${suffix}`,
+          snap.limited ? 'error' : undefined
         );
       };
 
@@ -4306,7 +4717,7 @@
         const entries = [];
         const selling = mode === 'sell';
 
-        markets.forEach((entry) => {
+        goodsSnapshot.entries.forEach((entry) => {
           const best = entry.items && entry.items.get(item.key);
           if (!best) return;
 
@@ -4374,198 +4785,33 @@
         exiled.forEach((row, index) => exileListEl.appendChild(buildRow(row, index)));
         exileEl.hidden = exiled.length === 0;
 
-        if (snapshotAt) {
+        if (goodsSnapshot.updatedAt) {
           emptyEl.textContent = `所有市场都没有「${item.label}」的挂单。`;
         } else {
           emptyEl.textContent = '还没有市场行情，点「刷新行情」抓取一次。';
         }
-        emptyEl.hidden = entries.length > 0 || loading;
+        emptyEl.hidden = entries.length > 0 || goodsSnapshot.loading;
         // 可抵达的国家全都没货、只剩流亡政府的存档报价时，主列表也要说一声
-        if (!loading && !active.length && exiled.length) {
+        if (!goodsSnapshot.loading && !active.length && exiled.length) {
           emptyEl.textContent = `所有可抵达的国家都没有「${item.label}」的挂单，只有流亡政府还留着报价。`;
           emptyEl.hidden = false;
         }
       };
 
       /**
-       * 领土检查：/country/regions 没有 data（或返回空数组）即流亡政府（已失去全部领土）。
-       * 只查有挂单的国家——没挂单的市场本来就不进列表，没必要多打请求。
-       * 请求本身失败（超时 / 4xx / 429）才按「有领土」处理，宁可留在主列表也不误判。
+       * 抓一轮行情。状态、进度与结果都在 goodsSnapshot 里：
+       * 「商品市场自动加载比价数据」可能已经在抓，这里直接复用同一轮请求。
        */
-      const checkLand = async (entry, signal) => {
-        const cached = GOODS_LAND.get(String(entry.id));
-        if (cached && Date.now() - cached.at < LAND_CACHE_MS) {
-          entry.exiled = cached.exiled;
-          return;
-        }
-        const list = await goodsFetchRegions(entry.id, signal);
-        // 已失去全部领土的国家只回 { code: 200, description: '成功' }：没有 data 就是没有领土，
-        // 与「返回空数组」等价（真实接口两种都可能出现，都按流亡政府处理）
-        const exiled = list == null || (Array.isArray(list) && list.length === 0);
-        GOODS_LAND.set(String(entry.id), { exiled, at: Date.now() });
-        entry.exiled = exiled;
-      };
-
-      const load = async () => {
-        if (loading) return;
-
-        if (market.state !== 'ok') {
-          setStatus(tokenHint(), 'warn');
-          return;
-        }
-
-        loading = true;
-        done = 0;
-        total = 0;
-        failures = 0;
-        landFailures = 0;
-        limited = false;
-        const previous = markets; // 本次失败时放回去，别让已有结果凭空消失
-        refreshBtn.disabled = true;
-        if (controller) {
-          try {
-            controller.abort();
-          } catch (err) {
-            /* ignore */
-          }
-        }
-        controller = new AbortController();
-        const signal = controller.signal;
-
-        // 汇率与市场并行：汇率优先吃缓存，只有缓存过期才真的去拉
-        fxFeed.ensure(FX_CACHE_MS).catch(() => null);
-        paintStatus();
-
-        try {
-          const countries = await fxFeed.ensureCountries();
-          if (signal.aborted) return;
-
-          const entries = (Array.isArray(countries) ? countries : [])
-            .filter((country) => {
-              const currency = country && country.currency;
-              if (!currency || !currency.id || !currency.name) return false;
-              if (String(currency.name).toLowerCase() === 'gold') return false;
-              return country.is_available !== 0;
-            })
-            .map((country) => ({
-              id: country.id,
-              name: String(country.name || ''),
-              avatar: country.avatar == null ? '' : String(country.avatar),
-              currency: { id: country.currency.id, code: String(country.currency.name) },
-              items: null,
-              status: 'pending',
-              exiled: false // 领土检查结果：true = 已失去全部领土
-            }));
-
-          if (!entries.length) {
-            const empty = new Error('没有可用的国家清单');
-            empty.code = 'EMPTY_COUNTRIES';
-            throw empty;
-          }
-
-          markets = entries;
-          total = entries.length;
-          paintStatus();
-          syncTaxHint(); // 国家清单到位后补上国籍中文名
-          render();
-
-          let cursor = 0;
-          const worker = async () => {
-            while (cursor < entries.length) {
-              if (signal.aborted) return;
-              const entry = entries[cursor];
-              cursor += 1;
-
-              try {
-                // 不带 type/quality 时接口一次返回该国全部商品，一个市场只需一次请求
-                const data = await market.call('/market/get', {
-                  form: { countryid: entry.id },
-                  object: true,
-                  signal
-                });
-                entry.items = goodsIndex(data && data.offers);
-                entry.status = 'ok';
-                // 逐市场补商品图：第一个市场回来就能把按钮上的 emoji 换掉，不用等全部拉完
-                paintIcons();
-              } catch (err) {
-                if (err && err.name === 'AbortError') return;
-                if (err && err.code === 'UNAUTHORIZED') throw err;
-                if (err && err.code === 'HTTP' && String(err.message) === 'HTTP_429') limited = true;
-                entry.status = 'error';
-                failures += 1;
-              }
-
-              // 市场拉回来之后再核对领土：没挂单的国家根本不进列表，省一次请求
-              if (entry.status === 'ok' && entry.items && entry.items.size) {
-                try {
-                  await checkLand(entry, signal);
-                } catch (err) {
-                  if (err && err.name === 'AbortError') return;
-                  if (err && err.code === 'UNAUTHORIZED') throw err;
-                  if (err && err.code === 'HTTP' && String(err.message) === 'HTTP_429') limited = true;
-                  landFailures += 1;
-                  ctx.log('领土读取失败', entry.name + ' · ' + ((err && err.code) || 'ERROR') + ' ' + ((err && err.message) || ''));
-                }
-              }
-
-              done += 1;
-              paintStatus();
-              await fxSleep(FX_GAP);
-            }
-          };
-
-          await Promise.all(
-            Array.from({ length: Math.min(FX_CONCURRENCY, entries.length) }, () => worker())
-          );
-          if (signal.aborted) return;
-
-          // 领土查不到不影响结果展示（这些国家按「有领土」留在主列表），只在调试日志里留个汇总
-          if (landFailures) ctx.log('领土检查部分失败', landFailures + ' 个国家按「有领土」处理');
-
-          snapshotAt = Date.now();
-          markets = entries.filter((entry) => entry.status === 'ok');
-          // 共享给游戏市场页的金价标注：它要拿这份数据算「比全球最低贵多少」
-          goodsFeed.publish(markets);
-        } catch (err) {
-          if (err && err.name === 'AbortError') return;
-          markets = previous;
-          const code = err && err.code;
-          if (code === 'NO_TOKEN') {
-            setStatus(tokenHint(), 'warn');
-          } else if (code === 'UNAUTHORIZED') {
-            try {
-              controller.abort();
-            } catch (ignore) {
-              /* ignore */
-            }
-            setStatus(tokenHint(), 'error');
-          } else if (code === 'TIMEOUT') {
-            setStatus('请求超时，请稍后重试。', 'error');
-          } else if (quotaHint(err)) {
-            setStatus(quotaHint(err), 'error');
-          } else {
-            setStatus('拉取失败：' + (err && err.message ? err.message : '未知错误'), 'error');
-          }
-        } finally {
-          if (alive) {
-            loading = false;
-            refreshBtn.disabled = false;
-            paintStatus();
-            paintIcons(); // 收尾再补一次，兜住最后一批市场的图
-            syncTaxHint();
-            render();
-            ctx.ui.reposition();
-          }
-        }
-      };
-
-      on(refreshBtn, 'click', () => {
+      const load = () => {
+        if (!alive) return;
         if (mode === 'sell') {
           loadPlayer();
           loadTaxes();
         }
-        load();
-      });
+        goodsSnapshot.load();
+      };
+
+      on(refreshBtn, 'click', () => load());
 
       // 市场页面上的金价标注：开关只影响游戏 DOM，不影响本面板
       const badgeToggle = pane.querySelector('[data-role="badge"]');
@@ -4575,34 +4821,112 @@
         ctx.log('市场列表金价标注', badgeToggle.checked ? '开' : '关');
       });
 
+      // 自动比价：默认关闭。关闭时不显示任何说明，勾选时才提示请求量并等玩家确认
+      const autoToggle = pane.querySelector('[data-role="auto-compare"]');
+      const autoNote = pane.querySelector('[data-role="auto-note"]');
+      const autoConfirm = pane.querySelector('[data-role="auto-confirm"]');
+      const autoYes = pane.querySelector('[data-role="auto-yes"]');
+      const autoNo = pane.querySelector('[data-role="auto-no"]');
+      const AUTO_WARN = '开启后会在游戏启动时自动获取全球行情，数据请求量比较大，可能拖慢游戏启动速度。该选项关闭时，也可以在当前面板获取完整数据后正常展示比价。';
+
+      const syncAuto = () => {
+        autoToggle.checked = goodsAuto.enabled;
+        autoConfirm.hidden = true;
+        autoNote.hidden = true;
+        autoNote.textContent = '';
+      };
+
+      on(autoToggle, 'change', () => {
+        if (!autoToggle.checked) {
+          goodsAuto.setEnabled(false);
+          syncAuto();
+          ctx.ui.reposition();
+          return;
+        }
+        // 先不生效：勾选只用来展开提醒，点「仍然开启」才真正开启
+        autoToggle.checked = false;
+        autoConfirm.hidden = false;
+        autoNote.textContent = AUTO_WARN;
+        autoNote.hidden = false;
+        ctx.ui.reposition();
+      });
+
+      on(autoYes, 'click', () => {
+        goodsAuto.setEnabled(true);
+        syncAuto();
+        ctx.ui.reposition();
+      });
+
+      on(autoNo, 'click', () => {
+        syncAuto();
+        ctx.ui.reposition();
+      });
+
+      // 「清除本地设置」等其它入口也会改开关，勾选状态跟着同步
+      const offAuto = goodsAuto.subscribe(() => {
+        syncAuto();
+        if (alive) ctx.ui.reposition();
+      });
+
+      syncAuto();
+
       const off = fxFeed.subscribe((kind) => {
         if (!alive) return;
         if (kind === 'done') {
           // 汇率到位（或刷新完）后补上黄金单价
           paintStatus();
           render();
-          if (!loading) ctx.ui.reposition();
+          if (!goodsSnapshot.loading) ctx.ui.reposition();
         } else if (kind === 'state') {
           paintStatus();
         }
+      });
+
+      // 快照抓取 → 面板：逐市场只补商品图与进度，整表重建留到本轮结束，避免抓取中反复重排
+      const offSnap = goodsSnapshot.subscribe((kind) => {
+        if (!alive) return;
+        if (kind === 'entry' || kind === 'drop') {
+          paintIcons();
+          paintStatus();
+          return;
+        }
+        if (kind === 'reset') {
+          paintStatus();
+          syncTaxHint(); // 国家清单到位后补上国籍中文名
+          render();
+          return;
+        }
+        if (kind === 'done' || kind === 'error') {
+          paintStatus();
+          paintIcons(); // 收尾再补一次，兜住最后一批市场的图
+          syncTaxHint();
+          render();
+          ctx.ui.reposition();
+          return;
+        }
+        paintStatus();
       });
 
       syncPicker();
       syncMode();
       paintStatus();
       render();
-      load();
+      // 面板自己做主：有新鲜快照就直接复用，否则拉一轮。与「商品市场自动加载比价数据」无关
+      goodsSnapshot.ensure(GOODS_CACHE_MS);
+
+      // 每次切回本页也检查一次：快照过期就补一轮，不需要玩家记得点「刷新行情」
+      const watchPane = new MutationObserver(() => {
+        if (!alive || pane.hidden) return;
+        goodsSnapshot.ensure(GOODS_CACHE_MS);
+      });
+      watchPane.observe(pane, { attributes: true, attributeFilter: ['hidden'] });
 
       ctx.onDestroy(() => {
         alive = false;
         off();
-        if (controller) {
-          try {
-            controller.abort();
-          } catch (err) {
-            /* ignore */
-          }
-        }
+        offSnap();
+        offAuto();
+        watchPane.disconnect();
       });
     }
   });
@@ -5287,6 +5611,8 @@
       grossPainted = false;
       listingRoot = findListingRoot();
       ensureCurrencyMap();
+      // 「商品市场自动加载比价数据」开启时，市场页自己也要保证行情新鲜：过期就补一轮
+      goodsAuto.sync();
       // 上架面板按「所在国家」的本币计价：进页面时确保拿到（有缓存就不再请求）
       playerFeed.ensure().then(
         () => {
@@ -5833,7 +6159,10 @@
 
       on(pane.querySelector('[data-role="reset-all"]'), 'click', () => {
         ctx.ui.resetAll();
+        // 自动比价也回到默认关闭，同时停掉后台的自动刷新（商品页的勾选状态由订阅同步）
+        goodsAuto.setEnabled(false);
         say('已清除本地设置，界面恢复默认');
+        ctx.ui.reposition();
       });
 
       // 「设置」页常驻：进入本页时核对凭据状态并刷新一次用量（切标签、重新打开面板都会触发）
@@ -6018,6 +6347,8 @@
       renderTabs();
       applyBall();
       marketBadge.sync();
+      // 「商品市场自动加载比价数据」开启时，启动就预抓一次行情（延迟几秒，先让游戏首屏跑完）
+      goodsAuto.start(false);
 
       window.EclesiarHelper = api;
       log('已启动 v' + VERSION);
@@ -6038,7 +6369,9 @@
     clearTimeout(statusTimer);
     clearTimeout(suppressClickTimer);
     if (hostObserver) hostObserver.disconnect();
-    // 先摘掉游戏页面上的徽标，再断开路由与接口
+    // 先停自动刷新与页面上的徽标，再断开路由与接口
+    goodsAuto.stop();
+    goodsSnapshot.cancel();
     marketBadge.stop();
     route.destroy();
     fxFeed.cancel();
