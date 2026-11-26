@@ -1301,10 +1301,22 @@
     background: rgba(255, 255, 255, .022);
   }
 
+  /* 第一名：绿色系，和「当前所在国」的橙色拉开距离 */
   .eh-gd-row.is-best {
-    border-color: rgba(201, 165, 74, .38);
-    background: rgba(201, 165, 74, .07);
+    border-color: rgba(111, 191, 155, .4);
+    background: rgba(111, 191, 155, .08);
   }
+
+  /* 玩家当前所在国家：只换一套配色并加标签，不置顶、不改排序 */
+  .eh-gd-row.is-here {
+    border-color: rgba(217, 163, 94, .42);
+    background: rgba(217, 163, 94, .08);
+  }
+
+  .eh-gd-row.is-here .eh-gd-place b { color: #f0d3ab; }
+
+  /* 既是第一名又是当前所在国：橙色底色保留，描边换成绿色，两种状态都看得出来 */
+  .eh-gd-row.is-best.is-here { border-color: rgba(111, 191, 155, .5); }
 
   .eh-gd-row.is-idle { opacity: .62; }
 
@@ -1315,7 +1327,7 @@
     text-align: right;
   }
 
-  .eh-gd-row.is-best .eh-gd-rank { color: #c9a54a; }
+  .eh-gd-row.is-best .eh-gd-rank { color: #7fc9a8; }
 
   .eh-gd-place {
     display: flex;
@@ -1326,18 +1338,23 @@
   }
 
   .eh-gd-place b {
+    flex: none;
     font-size: 11.5px;
     font-weight: 500;
     color: #e7dfcd;
     white-space: nowrap;
   }
 
-  .eh-gd-place em {
-    font-family: var(--eh-mono);
+  /* 英文国名：紧跟中文名的小字，空间不够时自己截断，不挤掉后面的标签 */
+  .eh-gd-en {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
     font-size: 9.5px;
-    font-style: normal;
-    letter-spacing: .04em;
-    color: #7d8ba0;
+    line-height: 1.5;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #6d7c92;
   }
 
   .eh-gd-gold {
@@ -1358,7 +1375,7 @@
 
   .eh-gd-gold .eh-gold-ico { margin-right: 0; vertical-align: 0; }
 
-  .eh-gd-row.is-best .eh-gd-gold b { color: #e8cd8f; }
+  .eh-gd-row.is-best .eh-gd-gold b { color: #a7e0c4; }
 
   .eh-gd-meta {
     grid-column: 1 / -1;
@@ -1383,6 +1400,19 @@
     font-size: 9.5px;
     white-space: nowrap;
     color: #d9a35e;
+  }
+
+  /* 「当前所在国」标签：与上面的本国标签同色系但更实一点，两者同时出现也能分清 */
+  .eh-gd-here-tag {
+    flex: none;
+    margin-left: 2px;
+    padding: 0 5px;
+    border: 1px solid rgba(217, 163, 94, .34);
+    border-radius: 4px;
+    background: rgba(217, 163, 94, .16);
+    font-size: 9.5px;
+    white-space: nowrap;
+    color: #e0b47c;
   }
 
   .eh-gd-tax {
@@ -3760,7 +3790,7 @@
         const here = info && info.countryId ? fxFeed.currencyOfCountry(info.countryId) : null;
 
         const entries = [];
-        if (home) entries.push({ key: 'home', cls: 'eh-fx-row--pin-home', label: '国籍', currency: home });
+        if (home) entries.push({ key: 'home', cls: 'eh-fx-row--pin-home', label: '玩家国籍', currency: home });
         if (here) {
           // 国籍与所在国是同一种货币时合成一行，别并排显示两遍
           if (home && String(home.id) === String(here.id)) {
@@ -4651,6 +4681,9 @@
       let mode = ctx.storage.get('mode', 'buy') === 'sell' ? 'sell' : 'buy';
       // 玩家国籍：从 /account 的 nationality_id 读，只用于判断本国销售免进口税
       let myCountryId = 0;
+      // 当前所在国家：只用来给列表里对应国家换一套配色，不置顶、不改排序、不参与计算
+      let hereCountryId = 0;
+      let hereLoading = false;
       let playerLoading = false;
       let playerFailed = false;
       let playerError = null;
@@ -4767,6 +4800,39 @@
             if (!alive) return;
             playerLoading = false;
             syncTaxHint();
+            render();
+            ctx.ui.reposition();
+          });
+      };
+
+      /**
+       * 当前所在国家（playerFeed 的 countryId）：
+       * 只取 id、只存内存，用来给列表里对应国家换一套配色（不置顶、不改排序）。
+       * 采购模式也要标，所以挂载就读一次；与「销售」的国籍读取共用同一份缓存（2 分钟）。
+       */
+      const loadHere = () => {
+        if (!alive || hereLoading) return;
+        hereLoading = true;
+        let changed = false;
+        playerFeed
+          .ensure()
+          .then((info) => {
+            if (!alive) return;
+            const next = (info && info.countryId) || 0;
+            if (next !== hereCountryId) {
+              hereCountryId = next;
+              changed = true;
+            }
+          })
+          .catch((err) => {
+            if (!alive) return;
+            // 读不到就静默不标，只在调试日志里留一条
+            ctx.log('当前所在国家读取失败', err && err.message ? err.message : err);
+          })
+          .then(() => {
+            if (!alive) return;
+            hereLoading = false;
+            if (!changed) return;
             render();
             ctx.ui.reposition();
           });
@@ -4987,6 +5053,9 @@
         // 流亡政府单独成栏：不参与主列表排名，也不抢「最优」高亮
         if (row.exiled) el.classList.add('is-exile');
         else if (index === 0 && row.sortGold != null) el.classList.add('is-best');
+        // 玩家当前所在国家：只换配色 + 加标签，名字与位置仍按行情排序，不置顶
+        const isHere = Boolean(hereCountryId) && Number(row.entry.id) === hereCountryId;
+        if (isHere) el.classList.add('is-here');
 
         const locale = fxLocale(row.entry.currency.code);
 
@@ -4999,13 +5068,27 @@
 
         const place = document.createElement('span');
         place.className = 'eh-gd-place';
+        const englishName = String(row.entry.name || '');
         const nameEl = document.createElement('b');
-        nameEl.textContent = locale ? locale[0] : row.entry.name;
-        nameEl.title = locale ? locale[0] + ' · ' + row.entry.name : row.entry.name;
+        nameEl.textContent = locale ? locale[0] : englishName;
+        nameEl.title = locale ? locale[0] + ' · ' + englishName : englishName;
         place.appendChild(nameEl);
-        const codeEl = document.createElement('em');
-        codeEl.textContent = row.entry.currency.code;
-        place.appendChild(codeEl);
+        // 中文名后面补英文国名；没有中文对照时上面显示的就是英文，不重复
+        if (locale && englishName && englishName !== locale[0]) {
+          const enEl = document.createElement('span');
+          enEl.className = 'eh-gd-en';
+          enEl.textContent = englishName;
+          enEl.title = englishName;
+          place.appendChild(enEl);
+        }
+        // 「当前所在国」跟在国名后面（货币代码已经在下方的数据行里，这里不再重复）
+        if (isHere) {
+          const hereTag = document.createElement('span');
+          hereTag.className = 'eh-gd-here-tag';
+          hereTag.textContent = '当前所在国';
+          hereTag.title = '你当前所在的国家，该市场的价格按本国货币计价';
+          place.appendChild(hereTag);
+        }
         el.appendChild(place);
 
         const goldEl = document.createElement('span');
@@ -5189,6 +5272,8 @@
        */
       const load = () => {
         if (!alive) return;
+        // 人可能已经换了国家：刷新时顺手重读一次（playerFeed 自带 2 分钟缓存）
+        loadHere();
         if (mode === 'sell') {
           loadPlayer();
           loadTaxes();
@@ -5296,6 +5381,12 @@
       syncMode();
       paintStatus();
       render();
+      // 当前所在国家：挂载就读一次，读到后给对应行换配色（采购 / 销售都标）
+      loadHere();
+      // 凭据晚到（面板先开、游戏还没发过请求）：读到账号后再补一次高亮
+      const offAuth = market.onAuth(() => {
+        if (alive && !hereCountryId) loadHere();
+      });
       // 面板自己做主：有新鲜快照就直接复用，否则拉一轮。与「商品市场自动加载比价数据」无关
       goodsSnapshot.ensure(GOODS_CACHE_MS);
 
@@ -5311,6 +5402,7 @@
         off();
         offSnap();
         offAuto();
+        offAuth();
         watchPane.disconnect();
       });
     }
