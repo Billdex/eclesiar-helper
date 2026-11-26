@@ -2,9 +2,9 @@
 // @name         Eclesiar 助手
 // @name:en      Eclesiar Helper
 // @namespace    https://github.com/Billdex/eclesiar-helper
-// @version      0.1.9
-// @description  Eclesiar 经济 / 政治计算辅助插件：悬浮球面板 + 全球汇率总览 + 各国市场商品金价比价与销售税后收益估算，商品市场列表与上架表单直接标注折算金价，并可一键跳转该国的地区页面。
-// @description:en Eclesiar helper: floating panel + exchange rates + cross-market goods pricing and after-tax sale revenue in gold, plus one-click jumps to a country's regions.
+// @version      0.2.0
+// @description  Eclesiar 经济 / 政治计算辅助插件：悬浮球面板 + 全球汇率总览 + 各国市场商品金价比价与销售税后收益估算 + 各国地区工业数据总览，商品市场列表与上架表单直接标注折算金价，并可一键跳转该国的地区页面。
+// @description:en Eclesiar helper: floating panel + exchange rates + cross-market goods pricing and after-tax sale revenue in gold + a sortable overview of every region's industry data, plus one-click jumps to a country's regions.
 // @author       billdex
 // @match        https://app.eclesiar.com/*
 // @run-at       document-idle
@@ -27,7 +27,7 @@
  * 结构：
  *   1. 外壳 —— Shadow DOM 隔离样式，宿主挂在 document.body 上（0×0，不挡页面）
  *   2. 悬浮球 —— 可拖拽、位置记忆、点击开合面板
- *   3. 面板 —— 标签页容器 + 内置「汇率 / 商品 / 设置」
+ *   3. 面板 —— 标签页容器 + 内置「汇率 / 商品 / 工商（工业）/ 设置」
  *   4. 功能注册表 —— window.EclesiarHelper.features.register({ ... })
  *   5. SPA 路由钩子 —— 包装 history.pushState / replaceState，供功能订阅
  *
@@ -43,7 +43,7 @@
    * 1. 常量与工具
    * ========================================================================= */
 
-  const VERSION = '0.1.9';
+  const VERSION = '0.2.0';
   const REPO_URL = 'https://github.com/Billdex/eclesiar-helper';
   /** jsDelivr 的 GitHub 镜像：国内可达，更新检查与安装都以它为主。 */
   const CDN_RAW = 'https://cdn.jsdelivr.net/gh/Billdex/eclesiar-helper@main/';
@@ -464,6 +464,8 @@
   /* ---------- 内容区 ---------- */
 
   .eh-body {
+    display: flex;
+    flex-direction: column;
     flex: 1 1 auto;
     min-height: 0;
     padding: 14px;
@@ -908,12 +910,20 @@
     text-overflow: ellipsis;
   }
 
+  /* 标题行最右侧的一组：跳转箭头 + 加载转圈 */
+  .eh-fx-tail {
+    flex: none;
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
   /* 该货币还在拉取：行右侧的小转圈 */
   .eh-fx-spin {
     flex: none;
     width: 11px;
     height: 11px;
-    margin-left: 2px;
     border: 1.5px solid rgba(201, 165, 74, .22);
     border-top-color: #e8cd8f;
     border-radius: 50%;
@@ -924,15 +934,15 @@
     to { transform: rotate(1turn); }
   }
 
-  /* 行内右下角的跳转按钮：汇率 → 货币市场，商品 → 该国商品市场 */
+  /* 标题行最右侧的跳转按钮：汇率 → 货币市场，商品 → 该国商品市场，工业 → 地区页。
+     做成行内元素跟着标题走，不用绝对定位，行高变了也不会飘。 */
   .eh-go {
-    position: absolute;
-    right: 5px;
-    bottom: 4px;
+    flex: none;
+    margin-left: auto;
     display: inline-grid;
     place-items: center;
-    width: 26px;
-    height: 26px;
+    width: 24px;
+    height: 24px;
     padding: 0;
     border: 0;
     border-radius: 8px;
@@ -1019,8 +1029,6 @@
     align-items: baseline;
     gap: 5px;
     margin-top: 4px;
-    /* 右下角要放跳转按钮，文字别顶到那里 */
-    padding-right: 30px;
     min-width: 0;
     font-size: 10.5px;
     line-height: 1.6;
@@ -1349,7 +1357,7 @@
   .eh-gd-row {
     position: relative;
     display: grid;
-    grid-template-columns: 14px 18px minmax(0, 1fr) auto;
+    grid-template-columns: 18px minmax(0, 1fr) auto 24px;
     align-items: center;
     gap: 3px 7px;
     padding: 6px 9px;
@@ -1377,14 +1385,13 @@
 
   .eh-gd-row.is-idle { opacity: .62; }
 
-  .eh-gd-rank {
-    font-family: var(--eh-mono);
-    font-size: 9.5px;
-    color: #5f6e85;
-    text-align: right;
+  .eh-gd-row .eh-go {
+    grid-column: 4;
+    grid-row: 1;
+    align-self: center;
+    justify-self: end;
+    margin-left: 0;
   }
-
-  .eh-gd-row.is-best .eh-gd-rank { color: #7fc9a8; }
 
   .eh-gd-place {
     display: flex;
@@ -1436,9 +1443,6 @@
 
   .eh-gd-meta {
     grid-column: 1 / -1;
-    padding-left: 21px;
-    /* 右下角留给跳转按钮 */
-    padding-right: 34px;
     font-size: 10px;
     line-height: 1.6;
     color: #7d8ba0;
@@ -1512,14 +1516,251 @@
     border-style: dashed;
   }
 
-  .eh-gd-row.is-exile .eh-gd-rank { color: #6b5b52; }
-
   .eh-gd-exile-tag {
     margin-left: 4px;
     font-size: 9.5px;
     white-space: nowrap;
     color: #b07a5c;
   }
+
+  /* ---------- 工商：子面板 + 工业地区列表 ---------- */
+
+  /* 整页撑满内容区：子标签固定在上面，只有下面的列表滚动，也不会多出一条色带 */
+  .eh-biz-shell {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .eh-biz-tabs {
+    flex: none;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    margin: 0 0 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px dashed rgba(255, 255, 255, .09);
+  }
+
+  .eh-biz-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(201, 165, 74, .35) transparent;
+  }
+
+  .eh-biz-body::-webkit-scrollbar { width: 8px; }
+
+  .eh-biz-body::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 8px;
+    background: rgba(201, 165, 74, .25);
+    background-clip: content-box;
+  }
+
+  /* 二级标签：比一级标签再小一号，配色用青绿系，和顶栏的金色区分开 */
+  .eh-biz-tab {
+    flex: none;
+    padding: 2px 8px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: #8b9bb0;
+    font-family: inherit;
+    font-size: 10.5px;
+    line-height: 1.55;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: color .15s, background .15s, border-color .15s;
+  }
+
+  .eh-biz-tab:hover {
+    color: var(--eh-ivory);
+    background: rgba(255, 255, 255, .05);
+  }
+
+  .eh-biz-tab.is-active {
+    color: #a8d8c4;
+    background: rgba(111, 191, 155, .12);
+    border-color: rgba(111, 191, 155, .34);
+  }
+
+  .eh-biz-pane[hidden] { display: none; }
+
+  /* 排序：一列一个标签，点一次换列、再点一次切换升降序 */
+  .eh-biz-sorts {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px;
+    margin-bottom: 7px;
+  }
+
+  .eh-biz-sorts__cap {
+    flex: none;
+    font-size: 10px;
+    letter-spacing: .12em;
+    color: #7d8ba0;
+  }
+
+  .eh-biz-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .eh-biz-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 1px 7px;
+    border: 1px solid rgba(255, 255, 255, .1);
+    border-radius: 999px;
+    background: transparent;
+    color: #9fadc2;
+    font-family: inherit;
+    font-size: 10px;
+    line-height: 1.7;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: color .15s, background .15s, border-color .15s;
+  }
+
+  .eh-biz-chip:hover {
+    color: #c7d3e3;
+    border-color: rgba(255, 255, 255, .2);
+  }
+
+  .eh-biz-chip.is-active {
+    color: #f0d9a4;
+    background: rgba(201, 165, 74, .13);
+    border-color: rgba(201, 165, 74, .42);
+  }
+
+  .eh-biz-chip__dir {
+    font-size: 9px;
+    line-height: 1;
+    opacity: .9;
+  }
+
+  .eh-biz-bar {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 7px;
+  }
+
+  .eh-biz-bar .eh-fx-status {
+    margin: 0;
+    flex: 1 1 auto;
+    min-width: 0;
+    white-space: pre-line;
+  }
+
+  .eh-biz-bar .eh-btn {
+    flex: none;
+    padding: 4px 10px;
+    font-size: 11.5px;
+  }
+
+  .eh-biz-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 8px;
+  }
+
+  .eh-biz-row {
+    position: relative;
+    padding: 5px 9px 5px;
+    border: 1px solid rgba(255, 255, 255, .06);
+    border-radius: 9px;
+    background: rgba(255, 255, 255, .022);
+  }
+
+  /* 默认综合排序下的第一名：绿色系，和其它面板保持一致 */
+  .eh-biz-row.is-best {
+    border-color: rgba(111, 191, 155, .38);
+    background: rgba(111, 191, 155, .07);
+  }
+
+  .eh-biz-head {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+  }
+
+  .eh-biz-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    overflow: hidden;
+  }
+
+  .eh-biz-name b {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: #e7dfcd;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .eh-biz-country {
+    flex: none;
+    max-width: 45%;
+    overflow: hidden;
+    font-size: 9.5px;
+    color: #6d7c92;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .eh-biz-meta {
+    margin-top: 2px;
+    font-size: 9.5px;
+    line-height: 1.7;
+    color: #7d8ba0;
+  }
+
+  /* 一组「标签 + 数值」不要被换行拆开，只在组与组之间换行 */
+  .eh-biz-cell {
+    display: inline-block;
+    margin-right: 9px;
+    white-space: nowrap;
+  }
+
+  /* 物产可能有好几种，允许它自己换行，别把一行撑爆 */
+  .eh-biz-cell--wrap { white-space: normal; }
+
+  .eh-biz-cell:last-child { margin-right: 0; }
+
+  .eh-biz-meta em {
+    margin-right: 3px;
+    font-style: normal;
+    color: #64738a;
+  }
+
+  .eh-biz-meta b {
+    font-family: var(--eh-mono);
+    font-size: 10px;
+    font-weight: 600;
+    color: #b6c0cf;
+  }
+
+  .eh-biz-meta b[data-tone="warn"] { color: #d9a35e; }
 
   /* ---------- 底栏 ---------- */
 
@@ -3862,14 +4103,17 @@
 
         // 去货币市场：URL 直接带货币 id（/monetary-market/{currency_id}）
         // 这行还在加载时先不露箭头，数据到了再显示
+        const tail = document.createElement('span');
+        tail.className = 'eh-fx-tail';
         const go = buildGoButton('去货币市场（' + quote.code + '）', '/monetary-market/' + quote.id);
         go.hidden = quote.status === 'pending';
-        head.appendChild(go);
+        tail.appendChild(go);
 
         const spin = document.createElement('span');
         spin.className = 'eh-fx-spin';
         spin.setAttribute('aria-hidden', 'true');
-        head.appendChild(spin);
+        tail.appendChild(spin);
+        head.appendChild(tail);
 
         const buyLine = document.createElement('div');
         buyLine.className = 'eh-fx-line';
@@ -4463,9 +4707,6 @@
   /** 领土检查结果的缓存时长：战争不会每分钟易手，但刷新时也该能看到新结果。 */
   const LAND_CACHE_MS = 5 * 60 * 1000;
 
-  /** 国家 id → { exiled, at }：记录该国是否有领土，跨面板开关复用，避免重复请求。 */
-  const GOODS_LAND = new Map();
-
   /**
    * 领土：GET /country/regions?country_id=…，返回该国目前实际占有的地区。
    * 已失去全部领土的国家不会返回空数组，而是只有 { code: 200, description: '成功' }、没有 data，
@@ -4478,6 +4719,67 @@
     const path = '/country/regions?country_id=' + encodeURIComponent(String(countryId));
     return market.call(path, { signal, noMethodRetry: true, allowEmpty: true });
   }
+
+  /**
+   * 地区清单的共享缓存（GET /country/regions?country_id=…）。
+   * 「商品」的领土检查、市场页的地区快捷跳转、工商面板的工业列表都用这一份：
+   * 同一国家 5 分钟内只请求一次，并发调用共享同一个请求，避免三个模块各拉一遍。
+   */
+  const regionFeed = (() => {
+    /** 国家 id → { at, list }；list 为空数组表示该国已失去全部领土。 */
+    const cache = new Map();
+    /** 国家 id → Promise：同一国家并发只发一次请求。 */
+    const pending = new Map();
+
+    /** 已缓存且未过期时返回清单，否则 null（同步读取，界面可以先用旧数据顶上）。 */
+    function get(countryId) {
+      const entry = cache.get(String(countryId));
+      if (!entry) return null;
+      return Date.now() - entry.at < LAND_CACHE_MS ? entry.list : null;
+    }
+
+    /**
+     * 拉一个国家的地区清单；同一国家并发只发一次请求。
+     * 已失去全部领土的国家接口不带 data，这里统一成空数组；失败不缓存，下次还能重试。
+     * force 忽略有效期（玩家主动点「刷新」时用）。
+     */
+    function ensure(countryId, options) {
+      const key = String(countryId);
+      const force = Boolean(options && options.force);
+      if (!force) {
+        const cached = get(key);
+        if (cached) return Promise.resolve(cached);
+      }
+      const running = pending.get(key);
+      if (running) return running;
+
+      const promise = goodsFetchRegions(key)
+        .then((data) => {
+          const list = Array.isArray(data) ? data : [];
+          cache.set(key, { at: Date.now(), list });
+          return list;
+        })
+        .finally(() => {
+          if (pending.get(key) === promise) pending.delete(key);
+        });
+      pending.set(key, promise);
+      return promise;
+    }
+
+    return {
+      get,
+      ensure,
+      /** 领土已知且为空 = 流亡政府；还没查过时返回 null，由调用方决定怎么处理。 */
+      exiled(countryId) {
+        const list = get(countryId);
+        return list ? list.length === 0 : null;
+      },
+      clear() {
+        cache.clear();
+        pending.clear();
+      }
+    };
+  })();
 
   /**
    * 一个市场里同一件商品可能有多档挂单，只留最便宜的一档。
@@ -4551,21 +4853,14 @@
     };
 
     /**
-     * 领土检查：/country/regions 没有 data（或返回空数组）即流亡政府（已失去全部领土）。
+     * 领土检查：地区清单为空即流亡政府（已失去全部领土）。
      * 只查有挂单的国家——没挂单的市场本来就不进列表，没必要多打请求。
+     * 走 regionFeed 缓存，与地区快捷跳转、工商面板共用，同一国家 5 分钟只请求一次；
      * 请求本身失败（超时 / 4xx / 429）才按「有领土」处理，宁可留在主列表也不误判。
      */
-    const checkLand = async (entry, signal) => {
-      const cached = GOODS_LAND.get(String(entry.id));
-      if (cached && Date.now() - cached.at < LAND_CACHE_MS) {
-        entry.exiled = cached.exiled;
-        return;
-      }
-      const list = await goodsFetchRegions(entry.id, signal);
-      // 已失去全部领土的国家只回 { code: 200, description: '成功' }：没有 data 就是没有领土
-      const exiled = list == null || (Array.isArray(list) && list.length === 0);
-      GOODS_LAND.set(String(entry.id), { exiled, at: Date.now() });
-      entry.exiled = exiled;
+    const checkLand = async (entry) => {
+      const list = await regionFeed.ensure(entry.id);
+      entry.exiled = list.length === 0;
     };
 
     /**
@@ -4680,7 +4975,7 @@
               // 市场拉回来之后再核对领土：没挂单的国家根本不进列表，省一次请求
               if (entry.status === 'ok' && entry.items && entry.items.size) {
                 try {
-                  await checkLand(entry, signal);
+                  await checkLand(entry);
                 } catch (err) {
                   if (err && err.name === 'AbortError') return;
                   if (err && err.code === 'UNAUTHORIZED') throw err;
@@ -5385,11 +5680,6 @@
         if (isHere) el.classList.add('is-here');
 
         const locale = fxLocale(row.entry.currency.code);
-
-        const rank = document.createElement('span');
-        rank.className = 'eh-gd-rank';
-        rank.textContent = row.exiled ? '—' : String(index + 1);
-        el.appendChild(rank);
 
         el.appendChild(buildFlagEl(row.entry.currency.code, row.entry.avatar));
 
@@ -6545,7 +6835,7 @@
    * 只有玩家不在该国家（页面上出现「你当前不在该国家」提示）时才补一行该国的地区按钮，
    * 点一下直接打开游戏自己的 /region/{region_id}，不用再从世界地图里一层层找。
    *
-   * 数据：GET /country/regions?country_id=…（与商品比价的领土检查同一个接口），
+   * 数据：GET /country/regions?country_id=…（与商品比价的领土检查、工商面板共用 regionFeed），
    * 每个国家缓存 5 分钟；没有 data 说明该国已失去全部领土（流亡政府），照实提示。
    *
    * DOM：只往页面追加一个带 data-eh-regions 的宿主节点，界面全在自己的 Shadow DOM 里，
@@ -6553,7 +6843,6 @@
    */
   const regionJump = (() => {
     const ATTR = 'data-eh-regions';
-    const TTL = 5 * 60 * 1000;
     const RETRY = 30 * 1000;
     const SCAN_DELAY = 200;
     const WARMUP_GAP = 800;
@@ -6581,9 +6870,6 @@
     /** 横幅里那段文字所在的节点：它消失就说明提示没了，宿主也要跟着摘掉。 */
     let warningNode = null;
     let paintedKey = '';
-
-    /** 国家 id → { at, list }：同一国家短时间反复进出不重复打接口。 */
-    const cache = new Map();
 
     /** /market/{国家 id}；不是这个形状（例如 /market 当前国家）返回 0。 */
     function marketCountryId(path) {
@@ -6811,10 +7097,11 @@
     function ensureData() {
       if (!running || !countryId) return;
       const id = countryId;
-      const cached = cache.get(id);
-      if (cached && Date.now() - cached.at < TTL) {
-        if (list !== cached.list) {
-          list = cached.list;
+      // 与商品比价的领土检查、工商面板共用一份地区缓存：同一国家 5 分钟只请求一次
+      const cached = regionFeed.get(id);
+      if (cached) {
+        if (list !== cached) {
+          list = cached;
           paintedKey = '';
         }
         return;
@@ -6823,11 +7110,10 @@
       if (failedAt && Date.now() - failedAt < RETRY) return;
       if (market.state !== 'ok') return;
 
-      pending = goodsFetchRegions(id)
-        .then((data) => {
-          const regions = Array.isArray(data) ? data : [];
+      pending = regionFeed
+        .ensure(id)
+        .then((regions) => {
           failed = false;
-          cache.set(id, { at: Date.now(), list: regions });
           if (running && countryId === id) {
             list = regions;
             paintedKey = '';
@@ -6923,8 +7209,7 @@
       failed = false;
       failedAt = 0;
       paintedKey = '';
-      const cached = cache.get(id);
-      list = cached && Date.now() - cached.at < TTL ? cached.list : null;
+      list = regionFeed.get(id);
 
       // 不在这里发请求：等 paint 确认页面上确实有「你当前不在该国家」提示再拉地区
       warmUp();
@@ -7275,7 +7560,650 @@
     };
   })();
 
-  /* -------- 9.5 设置与版本检查 -------- */
+  /* -------- 9.5 工商：子面板（目前只有「工业」） -------- */
+
+  /**
+   * 「工商」标签下挂的子面板表。目前只有「工业」；以后加别的子面板
+   * （比如原材料、物流）只要再写一个 registerBusinessPane 调用，
+   * 顶层的「工商」标签与内部的子标签栏都不需要改。
+   */
+  const businessPanes = [];
+
+  function registerBusinessPane(definition) {
+    if (!definition || typeof definition.id !== 'string' || !definition.id.trim()) return null;
+    if (typeof definition.title !== 'string' || !definition.title.trim()) return null;
+    if (typeof definition.mount !== 'function') return null;
+    if (businessPanes.some((item) => item.id === definition.id)) {
+      warn('工商子面板 id 重复，已忽略：' + definition.id);
+      return null;
+    }
+    businessPanes.push(definition);
+    return definition;
+  }
+
+  /** 地区物产（bonus）的中文名：接口给的是英文枚举，未知类型直接显示原文。 */
+  const REGION_BONUS_LABELS = {
+    FOOD: '食物',
+    WEAPONS: '武器',
+    TICKETS: '票券',
+    GRAIN: '谷物',
+    IRON: '铁',
+    OIL: '石油',
+    TITANIUM: '钛',
+    AIRCRAFT: '飞机'
+  };
+
+  /**
+   * 工业：按国家拉一遍全部地区（GET /country/regions，与商品比价的领土检查共用 regionFeed，
+   * 同一国家 5 分钟内只请求一次），把建筑等级、物产、污染与 NPC 数量列成一张可排序的表。
+   *
+   * 只做展示：不提交、不下单；每行右侧的跳转按钮走 route.goto('/region/{id}')。
+   */
+  registerBusinessPane({
+    id: 'industry',
+    title: '工业',
+    order: 10,
+    mount(pane, ctx) {
+      /**
+       * 可排序的列；score 是默认的综合规则，其余各自对应列表里的一项数据。
+       * 资源产区 / 工业区最高只有 5 级，单独排序区分度太低（同级的会占掉一大片），
+       * 所以不放进手动排序，需要时看「综合」即可。
+       */
+      const SORTS = [
+        { key: 'score', label: '综合', dir: -1, hint: '默认：工业区 + 资源产区 + 物产 的综合水平（污染按扣减计）' },
+        { key: 'bonus', label: '物产', dir: -1, hint: '按主物产分组、组内按加成总和从高到低' },
+        { key: 'pollution', label: '污染', dir: 1, hint: '按污染度从低到高（污染越低越好）' },
+        { key: 'npc', label: 'NPC', dir: -1, hint: '按 NPC 数量从多到少' }
+      ];
+
+      pane.innerHTML = `
+        <div class="eh-section">
+          <div class="eh-biz-sorts">
+            <span class="eh-biz-sorts__cap">排序</span>
+            <div class="eh-biz-chips" data-role="sorts"></div>
+          </div>
+          <div class="eh-biz-bar">
+            <p class="eh-fx-status" data-role="status">…</p>
+            <button class="eh-btn" type="button" data-role="refresh">刷新地区</button>
+          </div>
+          <div class="eh-biz-list" data-role="list"></div>
+          <p class="eh-empty" data-role="empty" hidden>还没有地区数据，点「刷新」抓取一次。</p>
+        </div>
+      `;
+
+      const sortsEl = pane.querySelector('[data-role="sorts"]');
+      const listEl = pane.querySelector('[data-role="list"]');
+      const emptyEl = pane.querySelector('[data-role="empty"]');
+      const statusEl = pane.querySelector('[data-role="status"]');
+      const refreshBtn = pane.querySelector('[data-role="refresh"]');
+
+      let alive = true;
+      let loading = false;
+      let error = null;
+      let failures = 0;
+      let limited = false;
+      let progress = { done: 0, total: 0 };
+      let updatedAt = 0;
+      let rows = [];
+      let countryById = new Map();
+
+      // 排序方式记在功能自己的 storage 里（eclesiar-helper:business:industry:sort）
+      const saved = ctx.storage.get('sort', null);
+      let sortKey = 'score';
+      let sortDir = -1;
+      if (saved && typeof saved === 'object' && SORTS.some((item) => item.key === saved.key)) {
+        sortKey = saved.key;
+        sortDir = saved.dir === 1 ? 1 : -1;
+      }
+
+      /** 污染 / 物产这类百分数：整数就不带小数，36.05 这类留一位。 */
+      const bizPercent = (value) => {
+        const num = Number(value);
+        if (!Number.isFinite(num)) return '—';
+        return Number(num.toFixed(1)) + '%';
+      };
+
+      const saveSort = () => ctx.storage.set('sort', { key: sortKey, dir: sortDir });
+
+      /* ---------- 排序标签 ---------- */
+
+      const chipEls = new Map();
+      SORTS.forEach((item) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'eh-biz-chip';
+        btn.title = item.hint;
+        const label = document.createElement('span');
+        label.textContent = item.label;
+        const arrow = document.createElement('span');
+        arrow.className = 'eh-biz-chip__dir';
+        btn.appendChild(label);
+        btn.appendChild(arrow);
+        on(btn, 'click', () => {
+          if (sortKey === item.key) {
+            sortDir = -sortDir;
+          } else {
+            sortKey = item.key;
+            sortDir = item.dir > 0 ? 1 : -1;
+          }
+          saveSort();
+          paintSort();
+          renderList();
+          ctx.ui.reposition();
+        });
+        sortsEl.appendChild(btn);
+        chipEls.set(item.key, btn);
+      });
+
+      function paintSort() {
+        chipEls.forEach((btn, key) => {
+          const active = key === sortKey;
+          btn.classList.toggle('is-active', active);
+          const arrow = btn.querySelector('.eh-biz-chip__dir');
+          if (arrow) arrow.textContent = active ? (sortDir > 0 ? '↑' : '↓') : '';
+        });
+      }
+
+      /* ---------- 数据 ---------- */
+
+      /**
+       * 默认排序的档位：三类数据齐全 > 有工业区 + 资源产区 / 物产 > 只有工业区 > 只有资源产区 > 只有物产。
+       * 用「凑齐几项」加上「有没有工业区」编码，保证 工业区 > 资源产区 的优先级，
+       * 同级再比综合分，这样物产多的地区不会因为等级低就被压到最后。
+       */
+      function tierOf(row) {
+        const hasIndustry = row.industry > 0;
+        const hasProduction = row.production > 0;
+        const hasBonus = row.bonusPoints > 0;
+        const parts = (hasIndustry ? 1 : 0) + (hasProduction ? 1 : 0) + (hasBonus ? 1 : 0);
+        return parts * 2 + (hasIndustry ? 1 : 0);
+      }
+
+      /** 接口的一条地区 → 列表的一行；缺字段一律按 0 处理，不因为个别字段丢了整行。 */
+      function buildDataRow(country, region) {
+        if (!region || typeof region !== 'object') return null;
+        const rawId = region.id != null ? region.id : region.region_id;
+        const id = Number(rawId);
+        if (!Number.isFinite(id) || id <= 0) return null;
+
+        const buildings = region.buildings || {};
+        const levelOf = (key) => {
+          const item = buildings[key];
+          const level = Number(item && item.level);
+          return Number.isFinite(level) && level > 0 ? level : 0;
+        };
+
+        const bonus = (Array.isArray(region.bonus) ? region.bonus : [])
+          .map((item) => {
+            if (!item || typeof item !== 'object') return null;
+            const type = String(item.type || '').toUpperCase();
+            const value = Number(item.value);
+            if (!type || !Number.isFinite(value) || value <= 0) return null;
+            return { type, label: REGION_BONUS_LABELS[type] || type, value };
+          })
+          .filter(Boolean);
+
+        const pollution = Math.max(0, Math.min(100, Number(region.pollution) || 0));
+        const npcs = Number(region.nb_npcs);
+
+        // 占领后 region.country_id 才是当前所属国：旗子跟着现主人走
+        const ownerId = region.country_id != null ? String(region.country_id) : String(country.id);
+        const owner = countryById.get(ownerId) || country;
+        const locale = fxLocale(owner.code);
+
+        const row = {
+          id,
+          name: String(region.name || region.title || '地区 ' + id),
+          production: levelOf('production_fields'),
+          industry: levelOf('industrial_zone'),
+          bonus,
+          // 物产是百分比加成（5 / 15 / 30），折算成和建筑等级同一量级的分数（0.5 / 1.5 / 3）
+          bonusPoints: bonus.reduce((sum, item) => sum + item.value, 0) / 10,
+          pollution,
+          npcs: Number.isFinite(npcs) && npcs > 0 ? npcs : 0,
+          countryId: owner.id,
+          countryName: owner.name,
+          countryZh: locale ? locale[0] : '',
+          countryCode: owner.code,
+          countryAvatar: owner.avatar
+        };
+        row.tier = tierOf(row);
+        // 主物产：加成最高的那一项（并列取先出现的），「物产」排序按它把同类产地聚到一起
+        row.primary = bonus.reduce((best, item) => (best && best.value >= item.value ? best : item), null);
+        row.primaryLabel = row.primary ? row.primary.label : '';
+        // 污染按扣减计：三项之和 × （1 − 污染%），同档位里污染越低越靠前
+        row.score = (row.production + row.industry + row.bonusPoints) * (1 - pollution / 100);
+        return row;
+      }
+
+      const sortValue = (row, key) => {
+        if (key === 'bonus') return row.bonusPoints;
+        if (key === 'pollution') return row.pollution;
+        if (key === 'npc') return row.npcs;
+        return row.score;
+      };
+
+      const byName = (a, b) => a.name.localeCompare(b.name, 'zh-Hans');
+
+      /**
+       * 当前列 + 方向；同值时依次看综合档位、综合分、污染（低的在前），最后按地区名。
+       * 「物产」排序：先按加成总和，总和相同时再按主物产聚拢——同类的产地连成一片，
+       * 但不同总和之间仍按数值排，30% 的谷物不会跑到 5% 的铁后面。
+       */
+      function comparator() {
+        const key = sortKey;
+        const dir = sortDir;
+        return (a, b) => {
+          // 综合排序里档位是硬性优先级，翻转方向也只影响同一档位内部
+          if (key === 'score' && a.tier !== b.tier) return b.tier - a.tier;
+
+          const left = sortValue(a, key);
+          const right = sortValue(b, key);
+          if (left !== right) return dir > 0 ? left - right : right - left;
+
+          // 同类物产连在一起（分组不跟随升降序反转，永远按类型名排）
+          if (key === 'bonus' && a.primaryLabel !== b.primaryLabel) {
+            return a.primaryLabel.localeCompare(b.primaryLabel, 'zh-Hans');
+          }
+
+          if (key !== 'score' && a.tier !== b.tier) return b.tier - a.tier;
+          if (key !== 'score' && a.score !== b.score) return b.score - a.score;
+          if (a.pollution !== b.pollution) return a.pollution - b.pollution;
+          return byName(a, b);
+        };
+      }
+
+      /* ---------- 渲染 ---------- */
+
+      function buildRow(row, index) {
+        const el = document.createElement('div');
+        el.className = 'eh-biz-row';
+        // 只有默认综合排序的第一名标绿：换成按污染排序时「第一名」不代表最优
+        if (sortKey === 'score' && index === 0) el.classList.add('is-best');
+
+        const head = document.createElement('div');
+        head.className = 'eh-biz-head';
+
+        head.appendChild(buildFlagEl(row.countryCode, row.countryAvatar));
+
+        const nameWrap = document.createElement('span');
+        nameWrap.className = 'eh-biz-name';
+        const nameEl = document.createElement('b');
+        nameEl.textContent = row.name;
+        nameEl.title = row.name;
+        nameWrap.appendChild(nameEl);
+
+        const countryEl = document.createElement('span');
+        countryEl.className = 'eh-biz-country';
+        countryEl.textContent = row.countryZh || row.countryName;
+        countryEl.title = row.countryZh ? row.countryZh + ' · ' + row.countryName : row.countryName;
+        nameWrap.appendChild(countryEl);
+        head.appendChild(nameWrap);
+        // 标题行最右侧的跳转：打开游戏自己的地区页面（只跳转，不做任何游戏内操作）
+        head.appendChild(buildGoButton('前往「' + row.name + '」的地区页面', '/region/' + row.id));
+        el.appendChild(head);
+
+        const meta = document.createElement('div');
+        meta.className = 'eh-biz-meta';
+        const cell = (label, value, tone, wrap) =>
+          '<span class="eh-biz-cell' +
+          (wrap ? ' eh-biz-cell--wrap' : '') +
+          '"><em>' +
+          label +
+          '</em><b' +
+          (tone ? ' data-tone="' + tone + '"' : '') +
+          '>' +
+          value +
+          '</b></span>';
+        const bonusText = row.bonus.length
+          ? row.bonus.map((item) => item.label + ' ' + bizPercent(item.value)).join('、')
+          : '—';
+        meta.innerHTML =
+          cell('资源产区', row.production) +
+          cell('工业区', row.industry) +
+          cell('物产', escapeHtml(bonusText), '', true) +
+          cell('污染', bizPercent(row.pollution), row.pollution >= 50 ? 'warn' : '') +
+          cell('NPC', row.npcs);
+        meta.title =
+          '综合分 = （资源产区 ' +
+          row.production +
+          ' + 工业区 ' +
+          row.industry +
+          ' + 物产 ' +
+          Number(row.bonusPoints.toFixed(2)) +
+          '）×（1 − 污染 ' +
+          bizPercent(row.pollution) +
+          '）= ' +
+          Number(row.score.toFixed(2));
+        el.appendChild(meta);
+        return el;
+      }
+
+      function renderList() {
+        if (!alive) return;
+        const items = rows.slice().sort(comparator());
+        listEl.textContent = '';
+        items.forEach((row, index) => listEl.appendChild(buildRow(row, index)));
+
+        if (items.length) {
+          emptyEl.hidden = true;
+          return;
+        }
+        // 凭据还没到手时状态栏已经说明原因，别在下面再写一句「点刷新抓取」
+        const blocked =
+          (error && (error.code === 'NO_TOKEN' || error.code === 'UNAUTHORIZED')) ||
+          (market.state !== 'ok' && !updatedAt);
+        emptyEl.hidden = Boolean(loading) || Boolean(blocked);
+        emptyEl.textContent = updatedAt
+          ? '这次没有读到任何地区数据，稍后可以点「刷新地区」再试。'
+          : '还没有地区数据，点「刷新地区」抓取一次。';
+      }
+
+      /** 共用提示里写的是「刷新行情」，这页的按钮叫「刷新地区」，换一下别让玩家找不到。 */
+      const tokenHint = () => authHint().replace('刷新行情', '刷新地区');
+
+      function paintStatus() {
+        if (!alive) return;
+        refreshBtn.disabled = loading;
+
+        if (loading) {
+          if (!progress.total) {
+            statusEl.textContent = '正在读取国家清单…';
+            return;
+          }
+          statusEl.textContent =
+            '正在读取 ' + progress.done + '/' + progress.total + ' 个国家的地区…';
+          return;
+        }
+
+        if (market.state !== 'ok' && !updatedAt) {
+          statusEl.textContent = tokenHint();
+          statusEl.dataset.tone = 'warn';
+          return;
+        }
+
+        if (error) {
+          const code = error.code;
+          if (code === 'NO_TOKEN' || code === 'UNAUTHORIZED') {
+            statusEl.textContent = tokenHint();
+            statusEl.dataset.tone = code === 'UNAUTHORIZED' ? 'error' : 'warn';
+          } else if (code === 'TIMEOUT') {
+            statusEl.textContent = '请求超时，请稍后重试。';
+            statusEl.dataset.tone = 'error';
+          } else if (quotaHint(error) || error.limited) {
+            statusEl.textContent =
+              quotaHint(error) || '接口返回 429（请求过多或已达当日查询上限），请稍后再试。';
+            statusEl.dataset.tone = 'error';
+          } else {
+            statusEl.textContent = '读取失败：' + (error.message || '未知错误');
+            statusEl.dataset.tone = 'error';
+          }
+          return;
+        }
+
+        delete statusEl.dataset.tone;
+        if (!updatedAt) {
+          statusEl.textContent = '还没有地区数据，点「刷新地区」抓取一次。';
+          return;
+        }
+        const countries = new Set(rows.map((row) => String(row.countryId))).size;
+        let suffix = failures ? ' · ' + failures + ' 个国家读取失败' : '';
+        // 个别国家被 429 拦下时整轮还是能出结果的，单独提醒一句额度
+        if (limited) suffix += '（含 429，可到「设置」页生成专用密钥）';
+        statusEl.textContent =
+          rows.length + ' 个地区 · ' + countries + ' 个国家\n更新于 ' + formatClock(updatedAt) + suffix;
+      }
+
+      const paint = () => {
+        paintStatus();
+        renderList();
+      };
+
+      /* ---------- 抓取 ---------- */
+
+      let offAuth = null;
+      /** 凭据晚到（面板先开、游戏还没发过请求）时补一轮，不用玩家手动刷新。 */
+      const armAuthRetry = () => {
+        if (offAuth) return;
+        offAuth = market.onAuth(() => {
+          offAuth = null;
+          if (!loading && !updatedAt) load(false);
+        });
+      };
+
+      /**
+       * 拉一遍所有国家的地区。
+       * force 只影响「有没有过期」，实际的请求次数由 regionFeed 的缓存兜着：
+       * 刚拉过的国家直接命中缓存，不会因为重新打开面板就再打一遍接口。
+       */
+      function load(force) {
+        if (!alive || loading) return;
+        if (market.state !== 'ok') {
+          error = { code: market.state === 'expired' ? 'UNAUTHORIZED' : 'NO_TOKEN' };
+          paint();
+          armAuthRetry();
+          return;
+        }
+
+        loading = true;
+        error = null;
+        failures = 0;
+        limited = false;
+        progress = { done: 0, total: 0 };
+        paint();
+
+        (async () => {
+          try {
+            const countries = await fxFeed.ensureCountries();
+            if (!alive) return;
+
+            const targets = (Array.isArray(countries) ? countries : [])
+              .filter((country) => country && country.id != null)
+              .map((country) => ({
+                id: country.id,
+                name: String(country.name || ''),
+                avatar: country.avatar,
+                code: country.currency ? String(country.currency.name || '') : ''
+              }));
+
+            if (!targets.length) {
+              const empty = new Error('没有可用的国家清单');
+              empty.code = 'EMPTY_COUNTRIES';
+              throw empty;
+            }
+
+            countryById = new Map(targets.map((country) => [String(country.id), country]));
+            progress = { done: 0, total: targets.length };
+            paintStatus();
+
+            const next = [];
+            let cursor = 0;
+            const worker = async () => {
+              while (cursor < targets.length) {
+                if (!alive) return;
+                const country = targets[cursor];
+                cursor += 1;
+                try {
+                  const regions = await regionFeed.ensure(country.id, { force });
+                  regions.forEach((region) => {
+                    const row = buildDataRow(country, region);
+                    if (row) next.push(row);
+                  });
+                } catch (err) {
+                  if (err && err.code === 'UNAUTHORIZED') throw err;
+                  if (err && err.code === 'HTTP' && String(err.message) === 'HTTP_429') limited = true;
+                  failures += 1;
+                  ctx.log('地区读取失败', country.name + ' · ' + ((err && err.code) || 'ERROR'));
+                }
+                progress = { done: progress.done + 1, total: progress.total };
+                if (alive) paintStatus();
+                await fxSleep(FX_GAP);
+              }
+            };
+
+            await Promise.all(
+              Array.from({ length: Math.min(FX_CONCURRENCY, targets.length) }, () => worker())
+            );
+            if (!alive) return;
+
+            rows = next;
+            updatedAt = Date.now();
+          } catch (err) {
+            if (err && err.name === 'AbortError') return;
+            error = {
+              code: (err && err.code) || 'ERROR',
+              message: err && err.message,
+              limited
+            };
+            // 凭据过期后玩家重新登录（游戏发出新凭据）时自动补一轮
+            if (error.code === 'UNAUTHORIZED' || error.code === 'NO_TOKEN') armAuthRetry();
+          } finally {
+            loading = false;
+            if (alive) {
+              paint();
+              // 面板内容高度变了，重新测一次，别沿用旧的
+              ctx.ui.reposition();
+            }
+          }
+        })();
+      }
+
+      on(refreshBtn, 'click', () => load(true));
+
+      ctx.onDestroy(() => {
+        alive = false;
+        if (offAuth) {
+          offAuth();
+          offAuth = null;
+        }
+      });
+
+      paintSort();
+      paint();
+      // 打开「工业」就先抓一轮：已拉过的国家命中 regionFeed 缓存，不会重复打接口
+      load(false);
+    }
+  });
+
+  registerFeature({
+    id: 'business',
+    title: '工商',
+    order: 40,
+    mount(pane, ctx) {
+      pane.classList.add('eh-biz-shell');
+      pane.innerHTML = `
+        <div class="eh-biz-tabs" role="tablist" aria-label="工商子面板" data-role="tabs"></div>
+        <div class="eh-biz-body" data-role="body"></div>
+      `;
+
+      const tabsEl = pane.querySelector('[data-role="tabs"]');
+      const bodyEl = pane.querySelector('[data-role="body"]');
+      const items = businessPanes
+        .slice()
+        .sort((a, b) => (a.order == null ? 100 : a.order) - (b.order == null ? 100 : b.order));
+
+      if (!items.length) {
+        const empty = document.createElement('p');
+        empty.className = 'eh-empty';
+        empty.textContent = '还没有注册任何子面板。';
+        bodyEl.appendChild(empty);
+        return;
+      }
+
+      const buttons = new Map();
+      const holders = new Map();
+
+      /**
+       * 子面板拿到的 ctx：storage 再按子面板 id 分一层，别的子面板不会和它抢同一个键；
+       * 日志也带上子面板 id，排查时能看出是哪一个。
+       */
+      const subContext = (paneId) => ({
+        version: ctx.version,
+        id: ctx.id + ':' + paneId,
+        shadow: ctx.shadow,
+        ui: ctx.ui,
+        route: ctx.route,
+        storage: {
+          get: (key, fallback) => ctx.storage.get(paneId + ':' + key, fallback),
+          set: (key, value) => ctx.storage.set(paneId + ':' + key, value),
+          remove: (key) => ctx.storage.remove(paneId + ':' + key)
+        },
+        onDestroy: (fn) => ctx.onDestroy(fn),
+        log: (...args) => ctx.log('[' + paneId + ']', ...args)
+      });
+
+      /** 懒加载：子面板只在第一次切到它时 mount。 */
+      const activate = (id) => {
+        const target = items.find((item) => item.id === id) || items[0];
+        ctx.storage.set('pane', target.id);
+
+        buttons.forEach((btn, key) => {
+          const active = key === target.id;
+          btn.classList.toggle('is-active', active);
+          btn.setAttribute('aria-selected', String(active));
+          btn.tabIndex = active ? 0 : -1;
+        });
+        holders.forEach((holder, key) => {
+          holder.hidden = key !== target.id;
+        });
+
+        let holder = holders.get(target.id);
+        if (!holder) {
+          holder = document.createElement('div');
+          holder.className = 'eh-biz-pane';
+          holder.setAttribute('role', 'tabpanel');
+          holder.setAttribute('aria-label', target.title);
+          bodyEl.appendChild(holder);
+          holders.set(target.id, holder);
+          try {
+            target.mount(holder, subContext(target.id));
+          } catch (err) {
+            warn('工商子面板「' + target.title + '」初始化失败', err);
+            holder.textContent = '';
+            const failed = document.createElement('p');
+            failed.className = 'eh-empty';
+            failed.textContent =
+              '子面板初始化失败：' + (err && err.message ? err.message : String(err));
+            holder.appendChild(failed);
+          }
+        }
+        holder.hidden = false;
+        ctx.ui.reposition();
+      };
+
+      items.forEach((item) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'eh-biz-tab';
+        btn.dataset.pane = item.id;
+        btn.setAttribute('role', 'tab');
+        btn.setAttribute('aria-selected', 'false');
+        btn.tabIndex = -1;
+        btn.textContent = item.title;
+        on(btn, 'click', () => activate(item.id));
+        tabsEl.appendChild(btn);
+        buttons.set(item.id, btn);
+      });
+
+      // 子标签之间左右方向键切换（与顶层标签一致，只在子标签栏内生效）
+      on(tabsEl, 'keydown', (event) => {
+        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+        const list = [...tabsEl.querySelectorAll('.eh-biz-tab')];
+        const index = list.indexOf(ctx.shadow.activeElement);
+        if (index < 0) return;
+        event.preventDefault();
+        const step = event.key === 'ArrowRight' ? 1 : -1;
+        const next = list[(index + step + list.length) % list.length];
+        next.focus();
+        activate(next.dataset.pane);
+      });
+
+      const saved = ctx.storage.get('pane', null);
+      activate(typeof saved === 'string' && items.some((item) => item.id === saved) ? saved : items[0].id);
+    }
+  });
+
+  /* -------- 9.6 设置与版本检查 -------- */
 
   const UPDATE_CHECK_TIMEOUT = 4000;
 
@@ -7950,6 +8878,8 @@
     marketJump.destroy();
     route.destroy();
     fxFeed.cancel();
+    // 地区缓存只存内存，销毁时一并丢掉；在途请求会自己结束，不会留下轮询
+    regionFeed.clear();
     market.uninstall();
 
     features.forEach((feature) => {
