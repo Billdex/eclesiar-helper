@@ -1391,19 +1391,8 @@
     color: #b6c0cf;
   }
 
-  .eh-gd-tag {
-    margin-left: 4px;
-    padding: 0 5px;
-    border: 1px solid rgba(217, 163, 94, .24);
-    border-radius: 4px;
-    background: rgba(217, 163, 94, .1);
-    font-size: 9.5px;
-    white-space: nowrap;
-    color: #d9a35e;
-  }
-
-  /* 「当前所在国」标签：与上面的本国标签同色系但更实一点，两者同时出现也能分清 */
-  .eh-gd-here-tag {
+  /* 国名右侧的状态标签：玩家国籍 / 当前位置，两者重合时合成一个 */
+  .eh-gd-mark {
     flex: none;
     margin-left: 2px;
     padding: 0 5px;
@@ -3794,9 +3783,9 @@
         if (here) {
           // 国籍与所在国是同一种货币时合成一行，别并排显示两遍
           if (home && String(home.id) === String(here.id)) {
-            entries[0].label = '国籍 · 当前所在国';
+            entries[0].label = '玩家国籍 · 当前位置';
           } else {
-            entries.push({ key: 'here', cls: 'eh-fx-row--pin-here', label: '当前所在国', currency: here });
+            entries.push({ key: 'here', cls: 'eh-fx-row--pin-here', label: '当前位置', currency: here });
           }
         }
 
@@ -5081,13 +5070,22 @@
           enEl.title = englishName;
           place.appendChild(enEl);
         }
-        // 「当前所在国」跟在国名后面（货币代码已经在下方的数据行里，这里不再重复）
-        if (isHere) {
-          const hereTag = document.createElement('span');
-          hereTag.className = 'eh-gd-here-tag';
-          hereTag.textContent = '当前所在国';
-          hereTag.title = '你当前所在的国家，该市场的价格按本国货币计价';
-          place.appendChild(hereTag);
+        // 国名后面的状态标签：玩家国籍 / 当前位置；两者重合时合成一个，同一行不说两遍
+        const ownCountry = row.channel === 'sell' && Boolean(row.own);
+        const marks = [];
+        if (ownCountry) marks.push('玩家国籍');
+        if (isHere) marks.push('当前位置');
+        if (marks.length) {
+          const markEl = document.createElement('span');
+          markEl.className = 'eh-gd-mark';
+          markEl.textContent = marks.join(' · ');
+          markEl.title =
+            ownCountry && isHere
+              ? '你的国籍国，也是你当前所在的国家'
+              : ownCountry
+                ? '你的国籍国：在本国销售免进口税'
+                : '你当前所在的国家：该市场的价格按本国货币计价';
+          place.appendChild(markEl);
         }
         el.appendChild(place);
 
@@ -5112,9 +5110,7 @@
               ? '<span class="eh-gd-tax">该国货币暂无换汇买单</span>'
               : !row.taxKnown
                 ? '<span class="eh-gd-tax">税率未知，按 0 税估算</span>'
-                : row.own
-                  ? '<span class="eh-gd-tag">本国</span>'
-                  : '') +
+                : '') +
             (row.depthShort ? '<span class="eh-gd-tax">换汇深度不足</span>' : '') +
             (row.exiled ? '<span class="eh-gd-exile-tag">流亡政府 · 无法抵达</span>' : '');
           meta.title =
