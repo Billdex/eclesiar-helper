@@ -2,9 +2,9 @@
 // @name         Eclesiar 助手
 // @name:en      Eclesiar Helper
 // @namespace    https://github.com/Billdex/eclesiar-helper
-// @version      0.1.8
-// @description  Eclesiar 经济 / 政治计算辅助插件：悬浮球面板 + 全球汇率总览 + 各国市场商品金价比价与销售税后收益估算，商品市场列表与上架表单直接标注折算金价。
-// @description:en Eclesiar helper: floating panel + exchange rates + cross-market goods pricing and after-tax sale revenue in gold.
+// @version      0.1.9
+// @description  Eclesiar 经济 / 政治计算辅助插件：悬浮球面板 + 全球汇率总览 + 各国市场商品金价比价与销售税后收益估算，商品市场列表与上架表单直接标注折算金价，并可一键跳转该国的地区页面。
+// @description:en Eclesiar helper: floating panel + exchange rates + cross-market goods pricing and after-tax sale revenue in gold, plus one-click jumps to a country's regions.
 // @author       billdex
 // @match        https://app.eclesiar.com/*
 // @run-at       document-idle
@@ -43,7 +43,7 @@
    * 1. 常量与工具
    * ========================================================================= */
 
-  const VERSION = '0.1.8';
+  const VERSION = '0.1.9';
   const REPO_URL = 'https://github.com/Billdex/eclesiar-helper';
   /** jsDelivr 的 GitHub 镜像：国内可达，更新检查与安装都以它为主。 */
   const CDN_RAW = 'https://cdn.jsdelivr.net/gh/Billdex/eclesiar-helper@main/';
@@ -4939,6 +4939,11 @@
             <span>商品市场与上架表单显示金价</span>
           </label>
           <label class="eh-gd-switch"
+            title="在游戏自己的商品市场页，按国家显示该国的地区按钮，点一下直接打开该地区页面。只追加插件自己的节点，不改游戏原有内容">
+            <input type="checkbox" data-role="regions">
+            <span>商品市场显示该国地区快捷入口</span>
+          </label>
+          <label class="eh-gd-switch"
             title="只影响游戏自己的商品市场页：不打开面板也能看到与全球最低价的对比。插件面板始终会自行抓取行情，不受这个开关影响">
             <input type="checkbox" data-role="auto-compare">
             <span>商品市场自动加载比价数据</span>
@@ -5637,6 +5642,14 @@
       on(badgeToggle, 'change', () => {
         marketBadge.setEnabled(badgeToggle.checked);
         ctx.log('市场列表金价标注', badgeToggle.checked ? '开' : '关');
+      });
+
+      // 市场页的地区快捷入口：同样只影响游戏 DOM，不影响本面板
+      const regionToggle = pane.querySelector('[data-role="regions"]');
+      regionToggle.checked = regionJump.enabled;
+      on(regionToggle, 'change', () => {
+        regionJump.setEnabled(regionToggle.checked);
+        ctx.log('地区快捷跳转', regionToggle.checked ? '开' : '关');
       });
 
       // 自动比价：默认关闭。关闭时不显示任何说明，勾选时才提示请求量并等玩家确认
@@ -6520,6 +6533,464 @@
         if (value === enabled) return value;
         enabled = value;
         storage.write('marketBadge', value);
+        sync();
+        return value;
+      },
+      start,
+      stop,
+      sync
+    };
+  })();
+
+  /* -------- 9.4a2 市场页地区快捷跳转 -------- */
+
+  /**
+   * 只有玩家不在该国家（页面上出现「你当前不在该国家」提示）时才补一行该国的地区按钮，
+   * 点一下直接打开游戏自己的 /region/{region_id}，不用再从世界地图里一层层找。
+   *
+   * 数据：GET /country/regions?country_id=…（与商品比价的领土检查同一个接口），
+   * 每个国家缓存 5 分钟；没有 data 说明该国已失去全部领土（流亡政府），照实提示。
+   *
+   * DOM：只往页面追加一个带 data-eh-regions 的宿主节点，界面全在自己的 Shadow DOM 里，
+   * 不改游戏原有节点、不接管它们的点击；离开市场页 / 关掉开关 / destroy() 时整块移除。
+   */
+  const regionJump = (() => {
+    const ATTR = 'data-eh-regions';
+    const TTL = 5 * 60 * 1000;
+    const RETRY = 30 * 1000;
+    const SCAN_DELAY = 200;
+    const WARMUP_GAP = 800;
+    const WARMUP_TRIES = 12;
+    /** 页面上那条黄色横幅的文本；英文界面再试一次英文写法。 */
+    const WARN_ZH = '你当前不在该国家';
+    const WARN_EN = /not\s+(?:currently\s+)?in\s+(?:this|that)\s+country/i;
+
+    let enabled = storage.read('regionJump', true) !== false;
+    let running = false;
+    let observer = null;
+    let timer = 0;
+    let warmTimer = 0;
+    let warmTries = 0;
+    let countryId = 0;
+    /** null = 还没拿到（请求中 / 无凭据）；[] = 该国没有领土。 */
+    let list = null;
+    let pending = null;
+    let failed = false;
+    let failedAt = 0;
+    let host = null;
+    let shadow = null;
+    let chipsEl = null;
+    let anchor = null;
+    /** 横幅里那段文字所在的节点：它消失就说明提示没了，宿主也要跟着摘掉。 */
+    let warningNode = null;
+    let paintedKey = '';
+
+    /** 国家 id → { at, list }：同一国家短时间反复进出不重复打接口。 */
+    const cache = new Map();
+
+    /** /market/{国家 id}；不是这个形状（例如 /market 当前国家）返回 0。 */
+    function marketCountryId(path) {
+      const clean = String(path || '').split(/[?#]/)[0];
+      const match = /(?:^|\/)market\/(\d+)(?:\/|$)/.exec(clean);
+      return match ? Number(match[1]) : 0;
+    }
+
+    const normText = (el) => String((el && el.textContent) || '').replace(/\s+/g, ' ').trim();
+
+    /** 只取直接文字节点：祖先块里混着整个列表，按它筛不会把整页都算进来。 */
+    function directText(el) {
+      let out = '';
+      for (let node = el && el.firstChild; node; node = node.nextSibling) {
+        if (node.nodeType === 3) out += node.nodeValue;
+      }
+      return out.replace(/\s+/g, ' ').trim();
+    }
+
+    function isVisible(el) {
+      if (!el || !el.getClientRects) return false;
+      return el.getClientRects().length > 0;
+    }
+
+    function regionIdOf(region) {
+      if (!region || typeof region !== 'object') return 0;
+      const raw =
+        region.id != null ? region.id : region.region_id != null ? region.region_id : region.regionId;
+      const id = Number(raw);
+      if (Number.isFinite(id) && id > 0) return id;
+      // 兜底：{ region: { id, name } } 这种包了一层的形态
+      const nested = region.region;
+      return nested && typeof nested === 'object' && nested !== region ? regionIdOf(nested) : 0;
+    }
+
+    function regionNameOf(region, id) {
+      // 只认字符串字段：个别接口会把 region 塞成对象，直接 String() 会得到 [object Object]
+      const fields = region ? [region.name, region.title, region.city] : [];
+      for (let i = 0; i < fields.length; i += 1) {
+        const value = fields[i];
+        if (typeof value === 'string' && value.trim()) return value.trim();
+        if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+      }
+      const nested = region && region.region;
+      if (nested && typeof nested === 'object' && nested !== region) return regionNameOf(nested, id);
+      return '地区 ' + id;
+    }
+
+    /**
+     * 页面上那条「你当前不在该国家」横幅。按「直接文字」找文案容器
+     * （文字可能是一整段、也可能混在图标旁边的子节点里），再往上找到整块横幅
+     * （父节点只比它多图标之类的少量文字就继续往上）。
+     */
+    function findWarning() {
+      if (!document.body) return null;
+      const nodes = document.body.querySelectorAll('span, p, div');
+      let hit = null;
+      for (let i = 0; i < nodes.length; i += 1) {
+        const el = nodes[i];
+        const direct = directText(el);
+        if (!direct || direct.length > 120) continue;
+        if (direct.indexOf(WARN_ZH) < 0 && !WARN_EN.test(direct)) continue;
+        // 文案容器本身不该带着整块列表的文字
+        if (normText(el).length > 120) continue;
+        if (!isVisible(el)) continue;
+        hit = el;
+      }
+      if (!hit) return null;
+
+      let banner = hit;
+      for (let i = 0; i < 4; i += 1) {
+        const parent = banner.parentElement;
+        if (!parent || parent === document.body) break;
+        // 父节点只多了图标 / 关闭按钮这类零星文字，才算同一块横幅；
+        // 一旦混进表头、商品行，就直接停在当前这层
+        if (normText(parent).length > normText(banner).length + 16) break;
+        // 同一横条：高度不能明显变大（列表、表头都在下面，会把高度撑起来）。
+        // 放宽 40px 给横幅自己的内边距 / 边框；再往外一层就会带上表头或商品行
+        const rect = parent.getBoundingClientRect();
+        const cur = banner.getBoundingClientRect();
+        if (!rect.height || rect.height > cur.height + 40) break;
+        banner = parent;
+      }
+      return { banner, text: hit };
+    }
+
+    /** 只在「你当前不在该国家」提示出现时显示；没有这条横幅就不画。 */
+    const findAnchor = () => findWarning();
+
+    const STYLE = `
+      :host { all: initial; display: block; }
+      * { box-sizing: border-box; }
+      .eh-rj {
+        display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+        padding: 8px 12px;
+        border-bottom: 1px solid rgba(255, 255, 255, .06);
+        background: rgba(255, 255, 255, .02);
+        font: 500 12px/1.4 -apple-system, BlinkMacSystemFont, "PingFang SC",
+          "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+        color: #cbd5e1;
+      }
+      .eh-rj-cap {
+        flex: none; color: #8b98ab; font-size: 11px; letter-spacing: .08em;
+        white-space: nowrap;
+      }
+      .eh-rj-chips { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+      .eh-rj-chip {
+        appearance: none; max-width: 14em; padding: 2px 10px;
+        border: 1px solid rgba(201, 165, 74, .35); border-radius: 999px;
+        background: rgba(201, 165, 74, .1); color: #f0d9a4;
+        font: inherit; line-height: 1.5; white-space: nowrap; cursor: pointer;
+        overflow: hidden; text-overflow: ellipsis;
+        transition: background .15s, border-color .15s, color .15s;
+      }
+      .eh-rj-chip:hover {
+        background: rgba(201, 165, 74, .22);
+        border-color: rgba(232, 205, 143, .7);
+        color: #f6e6bb;
+      }
+      .eh-rj-chip:focus-visible { outline: 1px solid rgba(201, 165, 74, .7); outline-offset: 1px; }
+      .eh-rj-note { color: #7d8ba0; font-size: 11.5px; }
+      .eh-rj-note.is-warn { color: #d9a35e; }
+    `;
+
+    function ensureHost() {
+      if (host) return host;
+      host = document.createElement('div');
+      host.setAttribute(ATTR, '');
+      host.style.cssText = 'display:block;box-sizing:border-box;width:100%;max-width:100%;';
+      shadow = host.attachShadow({ mode: 'open' });
+      shadow.innerHTML =
+        '<style>' +
+        STYLE +
+        '</style><div class="eh-rj"><span class="eh-rj-cap">地区</span>' +
+        '<div class="eh-rj-chips" data-role="chips"></div></div>';
+      chipsEl = shadow.querySelector('[data-role="chips"]');
+      shadow.addEventListener('click', (event) => {
+        const target = event.target;
+        const btn =
+          target && target.closest ? target.closest('button[data-region]') : null;
+        if (!btn) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const id = Number(btn.getAttribute('data-region')) || 0;
+        if (!id) return;
+        log('地区快捷跳转', '前往地区 ' + id);
+        route.goto('/region/' + id);
+      });
+      return host;
+    }
+
+    function paintContent() {
+      if (!chipsEl) return;
+      const key =
+        countryId +
+        '|' +
+        (list ? list.map((region) => regionIdOf(region)).join(',') : failed ? 'failed' : 'loading');
+      if (key === paintedKey) return;
+      paintedKey = key;
+
+      chipsEl.textContent = '';
+      const note = (text, warn) => {
+        const el = document.createElement('span');
+        el.className = warn ? 'eh-rj-note is-warn' : 'eh-rj-note';
+        el.textContent = text;
+        chipsEl.appendChild(el);
+      };
+
+      if (!list) {
+        note(failed ? '地区信息读取失败' : '正在读取地区…', Boolean(failed));
+        return;
+      }
+      if (!list.length) {
+        note('该国已失去全部领土，无法前往', true);
+        return;
+      }
+
+      let count = 0;
+      list.forEach((region) => {
+        const id = regionIdOf(region);
+        if (!id) return;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'eh-rj-chip';
+        btn.setAttribute('data-region', String(id));
+        btn.textContent = regionNameOf(region, id);
+        chipsEl.appendChild(btn);
+        count += 1;
+      });
+      if (!count) note('该国暂时没有可前往的地区', false);
+    }
+
+    /** 把宿主节点放到横幅下方；页面上没有这条横幅就摘掉宿主并返回 false。 */
+    function place() {
+      const el = ensureHost();
+      const info = findAnchor();
+      if (!info) {
+        if (el.isConnected) el.remove();
+        anchor = null;
+        warningNode = null;
+        return false;
+      }
+
+      const next = info.banner;
+      if (
+        el.isConnected &&
+        anchor === next &&
+        anchor.isConnected &&
+        warningNode &&
+        warningNode.isConnected &&
+        el.previousElementSibling === anchor
+      ) {
+        return true;
+      }
+
+      const parent = next.parentNode;
+      if (!parent) return false;
+      if (el.parentNode) el.remove();
+      parent.insertBefore(el, next.nextSibling);
+      anchor = next;
+      warningNode = info.text;
+      return true;
+    }
+
+    function ensureData() {
+      if (!running || !countryId) return;
+      const id = countryId;
+      const cached = cache.get(id);
+      if (cached && Date.now() - cached.at < TTL) {
+        if (list !== cached.list) {
+          list = cached.list;
+          paintedKey = '';
+        }
+        return;
+      }
+      if (pending) return;
+      if (failedAt && Date.now() - failedAt < RETRY) return;
+      if (market.state !== 'ok') return;
+
+      pending = goodsFetchRegions(id)
+        .then((data) => {
+          const regions = Array.isArray(data) ? data : [];
+          failed = false;
+          cache.set(id, { at: Date.now(), list: regions });
+          if (running && countryId === id) {
+            list = regions;
+            paintedKey = '';
+            schedule();
+          }
+        })
+        .catch((err) => {
+          failed = true;
+          failedAt = Date.now();
+          paintedKey = '';
+          log('地区快捷跳转：地区清单读取失败', err && (err.message || err.code));
+        })
+        .then(() => {
+          pending = null;
+          if (running) schedule();
+        });
+    }
+
+    function paint() {
+      if (!running || !enabled) return;
+      // 还没有凭据、也没有缓存数据：静默不画，等凭据到位或下一轮扫描，别在页面上留半条空栏
+      if (!list && market.state !== 'ok') {
+        if (host && host.isConnected) host.remove();
+        anchor = null;
+        warningNode = null;
+        return;
+      }
+      // 先确认页面上确实有这条提示，再发请求：玩家就在该国时不打这个接口
+      if (!place()) return;
+      ensureData();
+      paintContent();
+    }
+
+    function schedule() {
+      if (!running || timer) return;
+      timer = setTimeout(() => {
+        timer = 0;
+        paint();
+      }, SCAN_DELAY);
+    }
+
+    /**
+     * 只关心「宿主还在不在 / 锚点还在不在」：在的话直接返回，不跟着价格跳动重扫；
+     * 游戏重渲染把横幅或我们的节点换掉时，把它补回去。
+     */
+    function onMutations() {
+      if (!running) return;
+      if (host && host.isConnected) {
+        // 横幅文字还在且可见才算提示还在；容器本身被复用时也要重扫，不能只看锚点
+        if (
+          anchor &&
+          anchor.isConnected &&
+          warningNode &&
+          warningNode.isConnected &&
+          isVisible(warningNode)
+        ) {
+          return;
+        }
+        host.remove();
+        anchor = null;
+        warningNode = null;
+      }
+      schedule();
+    }
+
+    /** 进页面时游戏还在渲染，锚点可能几秒后才出现：本地重扫到放上去为止。 */
+    function warmUp() {
+      if (warmTimer) return;
+      warmTries = 0;
+      warmTimer = setInterval(() => {
+        if (!running) {
+          clearInterval(warmTimer);
+          warmTimer = 0;
+          return;
+        }
+        warmTries += 1;
+        schedule();
+        if (warmTries >= WARMUP_TRIES || (host && host.isConnected)) {
+          clearInterval(warmTimer);
+          warmTimer = 0;
+        }
+      }, WARMUP_GAP);
+    }
+
+    function start(id) {
+      if (running && countryId === id) {
+        schedule();
+        return;
+      }
+      stop();
+      running = true;
+      countryId = id;
+      failed = false;
+      failedAt = 0;
+      paintedKey = '';
+      const cached = cache.get(id);
+      list = cached && Date.now() - cached.at < TTL ? cached.list : null;
+
+      // 不在这里发请求：等 paint 确认页面上确实有「你当前不在该国家」提示再拉地区
+      warmUp();
+      if (typeof MutationObserver === 'function') {
+        observer = new MutationObserver(onMutations);
+        observer.observe(document.body, { childList: true, subtree: true });
+      }
+      schedule();
+    }
+
+    function stop() {
+      running = false;
+      countryId = 0;
+      if (observer) {
+        observer.disconnect();
+        observer = null;
+      }
+      clearTimeout(timer);
+      clearInterval(warmTimer);
+      timer = 0;
+      warmTimer = 0;
+      warmTries = 0;
+      anchor = null;
+      warningNode = null;
+      list = null;
+      failed = false;
+      paintedKey = '';
+      // 只删自己加的宿主，游戏原有节点一个不动
+      if (host) {
+        host.remove();
+        host = null;
+        shadow = null;
+        chipsEl = null;
+      }
+    }
+
+    /** 开关与路由都走这里：不在 /market/{国家 id} 就整块摘掉。 */
+    function sync() {
+      const id = marketCountryId(route.current);
+      if (!enabled || !booted || destroyed || !id) {
+        stop();
+        return;
+      }
+      start(id);
+    }
+
+    // 凭据晚到（面板先开、游戏还没发过请求）时补一轮，不用玩家手动刷新
+    market.onAuth(() => {
+      if (!running) return;
+      failedAt = 0;
+      schedule();
+    });
+    route.subscribe(sync);
+
+    return {
+      get enabled() {
+        return enabled;
+      },
+      setEnabled(next) {
+        const value = next === true;
+        if (value === enabled) return value;
+        enabled = value;
+        storage.write('regionJump', value);
         sync();
         return value;
       },
@@ -7450,6 +7921,7 @@
       renderTabs();
       applyBall();
       marketBadge.sync();
+      regionJump.sync();
       // 整页跳进来时（SPA 没接住的那一档）地址里还带着商品 / 品质意图，补一次消费
       marketJump.start();
       // 「商品市场自动加载比价数据」开启时，启动就预抓一次行情（延迟几秒，先让游戏首屏跑完）
@@ -7478,6 +7950,7 @@
     goodsAuto.stop();
     goodsSnapshot.cancel();
     marketBadge.stop();
+    regionJump.stop();
     marketJump.destroy();
     route.destroy();
     fxFeed.cancel();
