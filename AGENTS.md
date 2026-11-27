@@ -89,7 +89,9 @@
    允许的自动行为只有下面两个，且必须同时满足「玩家显式触发或确认、只读公开接口、有硬上限、可随时关闭、`destroy()` 清理」：
    - `goodsAuto`（`localStorage` 键 `autoCompare`，**默认关闭**）：必须在设置页「功能开关」勾选并在提示「一轮上百次请求、可能拖慢启动并消耗额度」后点「仍然开启」才生效；按 `GOODS_CACHE_MS`（10 分钟）过期才重拉，只在前台标签页跑，失败退避 5 分钟。
    - `marketJump`：只在玩家从面板点「去市场」后运行，落地时读 `sessionStorage` 意图并点一次游戏自己的筛选按钮；只认文本或图标 `alt` 完全相等的可点控件（`button` / `role=button|tab|option` / `cursor:pointer`，不认 `div` / `span`——顶栏资源位也有同名文字；带 `href` 的链接一律不点），最多重试 10 秒，点不到就放弃并清掉意图。
-   新增周期性请求或自动点击前，先改本节。
+   另有第三种、**不属于「自动行为」**的读取入口：`ctx.onShow`（面板每次打开 / 切到某标签时补读一次，命中 TTL 就不发请求）。它由玩家操作触发、与点一次「刷新」等价，没有定时器，也不在后台跑；不要拿它当「定期刷新」用，更不要在它之外再加轮询。面板静止时的数据更新由玩家切标签 / 点刷新 / `marketBadge` 的 30 秒复核（仅商品市场页）驱动。
+
+  新增周期性请求或自动点击前，先改本节。
 
 7. **扩展只走功能注册表**：新模块用 `features.register()`（工商子面板用 `registerBusinessPane()`），不要改面板外壳或硬编码标签页。
 
@@ -165,11 +167,21 @@ scripts/release.sh                     # 合并推送后刷新 jsDelivr 缓存�
 ### 5.4 数据访问层
 
 - 请求层缓存只有 `apiCache` 一层：key 由 `apiCache.key(path, params)` 生成（接口 + 排序后的参数），数据层只保存由载荷派生的结构，功能层不再自己写接口缓存。
-- 两个动作不能混用：按钮 / 手动刷新一律 `refresh` / `refreshMany` / `refreshPrefix`（绕过 TTL，失败保留旧值并标 `stale`）；只有凭据变化（生成 / 移除密钥、401）、`destroy()` 与「明确丢弃旧数据」才 `invalidate(prefix)` / `clear()`。
-- 不加 `force` 布尔：功能层直接调用 `refresh*`，不要把「要不要绕过 TTL」包装成参数往数据层透传。
+- 两个动作不能混用：按钮 / 手动刷新一律 `refresh`（绕过 TTL，失败保留旧值并标 `stale`），批量的进度与失败计数由功能层自己按并发跑（`apiCache` 不提供批量入口）；只有凭据变化（生成 / 移除密钥、401）、`destroy()` 与「明确丢弃旧数据」才 `invalidate(prefix)` / `clear()`。
+- 判「要不要发请求」一律用 `apiCache.fresh(key)`：`peek` 只看「有没有这条」，过期条目会被它当成命中，硬上限计数、要不要重拉的判断都会失真。
+- 不加 `force` 布尔：功能层直接调用 `refresh`，不要把「要不要绕过 TTL」包装成参数往数据层透传。页面级 key（国家清单 / 税率）由 `fxFeed.loadCountries(mode)` / `ensureTaxes` / `refreshTaxes` 两个入口分派。
+- `refresh` 不传 `opts` 时沿用该 key 上次登记的 `ttl` / `empty` 谓词 / `namespace`；新增 key 时仍然要显式传 `opts`。
+- 「更新于」一律取**这屏里最旧的一份数据时间**（`coinBook.oldestAt` / `regionFeed.atOf` / `goodsSnapshot.updatedAt`），不要用「本轮结束时刻」冒充新鲜度；`goodsSnapshot.checkedAt` 只用于「多久后再自动拉一轮」的调度。
 - 共享请求不透传调用方 `signal`：取消只表示「不再发起新 key」，已发出的请求不 abort（超时由 `apiClient.call` 的 10 秒负责）。
 - 空结果（无挂单 / 无地区 / 空岗位页）是有效缓存，用 `opts.empty` 标记；错误不写入缓存，只记失败时间用于冷却（`NO_TOKEN` / `UNAUTHORIZED` 不冷却，429 冷却 5 分钟，其余 60 秒）。
 - `apiCache` 不轮询、不起定时器，只被动响应 `ensure` / `refresh`；调试统计用 `?eh-debug=1` 或控制台 `EclesiarHelper.cache.stats()`。
+- **数据变更通知**：`apiCache.watch(test, fn)` 是 key 级订阅（`test` 为前缀字符串或谓词），写入 / `invalidate` / `clear` 后按帧合并派发；数据源各自暴露值级订阅（`playerFeed.watch(fn)` 给解析后的结构）。约定：
+  - 界面只订阅 + 重绘，不再自己在多个时机 `ensure()`（那正是「各页刷新时机不一致」的来源）；
+  - 回调里**只读数据**，不要再发起请求，否则容易自己触发自己（`render` 只读）；
+  - 高频写入（如一轮 45 国 × 2 侧）靠 `emitKey` 的 rAF 合并，不要绕过它直接调 `fn`；
+  - 订阅一律挂到 `ctx.onDestroy`（页面级注入挂到 `stop()`），`destroy()` 后 `stats().watchers` 必须为 0。
+  - 通知解决「数据变了告诉谁」，不解决「什么时候去问」。**「什么时候问」只允许三个入口**：`ctx.onShow`（标签被显示，命中 TTL 就不发请求）、面板上的刷新按钮、`marketBadge` 的 30 秒复核；不要在 mount 之外再零散 `ensure()`。
+  - `ctx.onShow` 会在面板每次打开与每次切标签时触发，回调里靠 TTL / `fresh()` 兜住，不要每次调用都真的发请求。
 - 每个数据源只保存「由载荷派生的结构」（如 `coinBook` 的挂单档位、`goodsSnapshot` 的 `items` Map、税率的 `Map`），并用**缓存条目对象本身**做版本：条目换了就重新解析，不要用 `at` / 时间戳比较（同毫秒内会漏判）。
 - `destroy()` 要同时 `apiCache.clear()` 与 `coinBook.reset()`；`apiCache` 用「失效代数」丢弃失效期间回来的在途结果，避免换凭据后旧数据写回缓存。
 
@@ -198,6 +210,7 @@ EclesiarHelper.features.register({
 | `ctx.ui` | `open / close / toggle / isOpen / resetBall / resetPanel / reposition` |
 | `ctx.storage` | 按功能 id 自动加前缀的 `get / set / remove` |
 | `ctx.route` | `current` 与 `onChange(fn)`，返回取消订阅函数 |
+| `ctx.onShow(fn)` | 这个标签每次被显示（面板打开 / 切到它）时调用一次，用来补读数据 |
 | `ctx.onDestroy(fn)` | 注册清理回调，`destroy()` 时执行 |
 | `ctx.log(...)` | 带功能前缀的调试日志 |
 

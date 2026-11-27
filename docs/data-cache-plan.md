@@ -40,7 +40,7 @@ apiClient.call（凭据 / 超时 / 错误分类）→ fetch
 
 | 对象 | 职责 | 生命周期 |
 | --- | --- | --- |
-| `coinBook` | 单币种买卖两侧挂单簿：`quote(id)` → `{ asks, bids, at, empty }`、`ensureMany(ids)`、`load(targets)`；另存一份 `lastBatch = { startedAt, okKeys }`（最近一次批量刷新的成功集合，覆盖式更新，仅在内存） | 随 `apiCache` 的 10 分钟 |
+| `coinBook` | 单币种买卖两侧挂单簿：`quote(id)` → `{ asks, bids, at, empty, partial, stale }`、`ensureMany(ids)`、`load(targets)`；另存一份 `lastBatch = { startedAt, okKeys, okAt }`（本轮**成功**的那些货币，覆盖式更新；整批全失败时保留上一次，仅在内存） | 随 `apiCache` 的 10 分钟 |
 | 批量加载句柄（原 `fxRound`） | 一次 `coinBook.load(targets)` 的返回值：目标 id 集合、`startedAt`、`progress { done, total, phase, retryIndex, retryTotal }`、`failedKeys`、`limited(429)` | 面板持有引用，批结束即丢弃；**不常驻** |
 | `regionIndex` | 国家 → 地区清单索引，判定流亡政府（无 `data` / 空数组） | 随 10 分钟 key |
 | `goodsSnapshot` | 各国市场挂单快照，抓完 `publish` 给 `goodsFeed` | 随 10 分钟 key |
@@ -76,13 +76,13 @@ apiClient.call（凭据 / 超时 / 错误分类）→ fetch
 
 ```js
 apiCache.key(path, params)                 // 参数排序后拼接，作为唯一键
-apiCache.peek(key)                         // 只读，不触发请求；命中返回 { value, at, empty }
+apiCache.peek(key)                         // 只读，不触发请求；命中返回 { value, at, empty, stale }
+apiCache.fresh(key)                        // 只读：该 key 是否有**未过期**缓存（判要不要发请求用它）
 apiCache.ensure(key, loader, opts)         // 命中即 resolve；in-flight 合并；冷却期 reject(COOLDOWN)
-apiCache.refresh(key, loader, opts)        // 忽略 TTL，但仍复用 in-flight；失败不删旧值
-apiCache.refreshMany(keys, loader, opts)   // 批量 refresh（汇率整轮、岗位整轮）
-apiCache.refreshPrefix(prefix, opts)       // 按 key 前缀批量 refresh（/country/regions、/market/get）
+apiCache.refresh(key, loader, opts)        // 忽略 TTL，但仍复用 in-flight；失败不删旧值；缺 opts 时沿用上次登记的口径
+apiCache.watch(test, fn)                   // key 级订阅（前缀或谓词），写入 / 失效后按帧合并通知；返回退订
 apiCache.invalidate(prefix)                // 按前缀**删除**（如全部 /market/coin/get），下次 ensure 重新请求
-apiCache.clear()                           // destroy / 凭据切换
+apiCache.clear(keepPage)                   // destroy / 凭据切换（keepPage 保留页面级条目）
 apiCache.stats()                           // 调试：hit / join / miss / cooldown / refresh 计数
 ```
 
@@ -111,11 +111,11 @@ apiCache.stats()                           // 调试：hit / join / miss / coold
 
 | 按钮 | 现状 | 改造后 | 单次请求量 |
 | --- | --- | --- | --- |
-| 汇率「刷新行情」 | `fxFeed.load()` 整轮重抓全部币种买卖两侧 | `coinBook.load(全部币种 × {SELL, BUY})`（内部 `refresh` 各 key），进度读返回的批次句柄 | 币种数 × 2 |
-| 市场「刷新行情」 | `goodsSnapshot.load()` 无条件整轮重抓 | `apiCache.refreshPrefix('/market/get')` 后重算 entries | 国家数 |
-| 工业「刷新数据」 | `load(true)` → `regionFeed.ensure(id, { force })` 逐国绕过 TTL | `apiCache.refreshPrefix('/country/regions')` | 国家数 |
-| 税费「刷新数据」 | `load(true)`：先汇率后领土，两步都 force | 汇率走 `coinBook.ensureMany`（TTL 内不重拉）+ 领土 `refreshPrefix` | 同工业 |
-| 工作「刷新岗位」 | `fetchJobs(true)` 丢弃整轮缓存 | `invalidate` 该轮页 key 后逐页 `ensure`（改门槛**不** invalidate，只补缺失页） | 国家数 × 页数 |
+| 汇率「刷新行情」 | `fxFeed.load()` 整轮重抓全部币种买卖两侧 | `coinBook.load(全部币种 × {SELL, BUY})`（内部 `refresh` 各 key），进度读返回的批次句柄；国家清单走 `refreshCountries` | 币种数 × 2 + 1 |
+| 市场「刷新行情」 | `goodsSnapshot.load()` 无条件整轮重抓 | 逐国 `refresh('/market/get…')`，失败保留旧值；国家清单 / 税率走 `fxFeed.refreshCountries` / `refreshTaxes` | 国家数（+ 清单 / 税率各 1） |
+| 工业「刷新数据」 | `load(true)` → `regionFeed.ensure(id, { force })` 逐国绕过 TTL | 逐国 `regionFeed.refresh`；国家清单走 `fxFeed.loadCountries('refresh')` | 国家数 + 1 |
+| 税费「刷新数据」 | `load(true)`：先汇率后领土，两步都 force | 汇率走 `fxFeed.ensure`（TTL 内不重拉）+ 领土逐国 `refresh` + 清单 / 税率走 refresh 入口 | 同工业 |
+| 工作「刷新岗位」 | `fetchJobs(true)` 丢弃整轮缓存 | 逐页 `refresh`（页 key 不删，旧值仍在），门槛只决定读到第几页（改门槛**不** invalidate） | 国家数 × 页数 |
 | 设置「检查更新」 | 3 源并行 + 时间戳 | 不进层，保持现状 | 3 |
 
 配套约束：
@@ -181,7 +181,7 @@ apiCache.stats()                           // 调试：hit / join / miss / coold
 ### 阶段 1：准备
 
 - [x] 确认本期版本号（当前分支 `v0.2.6`，不额外递增）
-- [x] 新增 `apiCache` 骨架：key 规范化、`peek / ensure / refresh / refreshMany / refreshPrefix / invalidate / clear / stats`
+- [x] 新增 `apiCache` 骨架：key 规范化、`peek / fresh / ensure / refresh / invalidate / clear / stats`
 - [x] `refresh` 失败保留旧值并打 `stale` 标记（不是删除），与 §4.3 一致
 - [x] `?eh-debug=1` 下输出每轮真实请求数与 `hit / join / miss / cooldown / refresh` 计数
 - [x] `AGENTS.md`：§2.2 数据源表新增「请求层」一行，§5 代码组织新增 `9.0 数据访问层`
@@ -208,7 +208,7 @@ apiCache.stats()                           // 调试：hit / join / miss / coold
 - [x] 新增 `coinBook`：单币种买卖两侧独立缓存、`empty` 标记、`ensureMany` 并发合并
 - [x] 新增 `coinBook.load(targets)`：返回批次句柄（`progress` / `failedKeys` / `limited`），内部对每个 key 走 `refresh`，失败项串行补一轮
 - [x] 汇率面板不再持有轮级状态：数据状态与「更新于」读 `coinBook`（可用性看 `empty` / `asks` / `bids`，时间取 `lastBatch.okAt ∩ 当前目标` 里**最旧**的 `at`，删掉轮级 `updatedAt = Date.now()`）
-- [x] `lastBatch` 失败时不覆盖：整批失败或部分失败都保留上一次成功集合，只把本轮失败数交给状态栏；国家清单变化时按交集过滤；凭据变化时随 `coinBook.reset()` 清空
+- [x] `lastBatch` 按本轮成功集合覆盖式更新（失败项剔除，长期失败的币种不会冻结「更新于」）；整批全失败时保留上一次集合；凭据变化时随 `coinBook.reset()` 清空
 - [x] 状态栏口径不变：`N 种货币有挂单 · 更新于 HH:MM`，有失败时补 `M 个拉取失败（显示旧数据）`
 - [x] `rateFor` / `sellRateFor` / `sellCapacityFor` 改读 `coinBook`
 - [x] `marketBadge` 删除自建缓存与 `fetchRate`（连带自建的国家清单重试计时），改读 `coinBook`
@@ -234,8 +234,8 @@ apiCache.stats()                           // 调试：hit / join / miss / coold
 - [x] 同一 key 10 并发调用只发 1 个请求
 - [x] 缓存有效期内的标签切换、页面往返均 0 请求（数据源层：`fxFeed` / `goodsSnapshot` / `coinBook` 均已验证）
 - [x] 失败后冷却期内不重试；手动「刷新」可绕过 TTL 但不跳过 in-flight
-- [x] 五个刷新按钮只重抓自己域内的 key，不会 `invalidate` 别的面板正在用的缓存（`refreshPrefix` 前缀隔离已验证，按钮本身待浏览器点选）
-- [x] `refreshMany` / `refreshPrefix` 逐 key 复用 in-flight，同一 key 不会出现两次并发
+- [x] 五个刷新按钮只重抓自己域内的 key，不会 `invalidate` 别的面板正在用的缓存（按钮本身待浏览器点选）
+- [x] 逐 key 刷新复用 in-flight，同一 key 不会出现两次并发；国家清单 / 税率也各有 refresh 入口，刷新键不会再被页面级 TTL 或冷却挡住
 - [x] 刷新失败时旧值仍在，状态栏明确标注「本次刷新失败 / 下方为 M 分钟前的数据」
 - [x] `NO_TOKEN` / `UNAUTHORIZED` 不写入缓存，冷却期不生效
 - [x] 切换专用密钥后不返回旧凭据的数据（`dropSessionCache` + 失效代数丢弃在途回写；密钥切换本身待浏览器点选）
@@ -263,3 +263,27 @@ apiCache.stats()                           // 调试：hit / join / miss / coold
 - 本文档随 `v0.2.6` 分支推进；每完成一个阶段勾掉对应 TODO。
 - 阶段 0 先改 `AGENTS.md` §2.2 的两条 `market.call`；阶段 1 开工时补 §2.2 请求层与 §5 代码组织；阶段 6 再统一校对。
 - 版本号仅在插件本体改动要发版时递增，本文档改动不动四处版本号。
+
+## 11. 上线后评审修正（`v0.2.6` 分支，不递增版本号）
+
+阶段 0–6 完成后按实现做了一轮评审，修掉的问题（原因 → 处理）：
+
+- **岗位硬上限失效**：`peek` 不判 TTL，过期页既不计入 300 上限又真会发请求 → 新增 `apiCache.fresh(key)`，计数改用它。
+- **页面级 key 刷不动**：国家清单 / 税率只有 `ensure`，首次失败后所有「刷新」按钮都会撞上冷却 → 补 `refreshCountries` / `refreshTaxes` / `loadCountries(mode)`，五个面板的刷新入口与岗位刷新都改走 refresh 口径；`COOLDOWN` 也不再原样显示，统一翻成「冷却中，约 N 秒后可重试」。
+- **市场页标注不再更新**：`marketBadge` 只判「有没有条目」不判过期 → 按 `API_TTL.coin` 判过期并在过期时补一次（60 秒节流）；上架表单的所在国改为 30 秒复核一次。
+- **ensure 模式的补跑无效**：冷却会立刻拒绝第二次 ensure → 补跑改用 `refresh`（绕过冷却），并跳过 429（额度已满不重试）。
+- **批次句柄可能卡死**：`batch = null` 不在 `finally`，异常逃逸后 `load()` 永远返回旧句柄；`reset()` 期间旧批次还会回写 `lastBatch` → 复位放进 `finally` + `batch === handle` 身份守卫；`lastBatch` 改成按本轮成功集合覆盖（整批全失败才保留旧值）。
+- **「更新于」口径不一**：市场 / 税费 / 工业原本都写 `Date.now()` → 统一为「这屏里最旧的数据时间」（`goodsSnapshot.updatedAt` / `regionFeed.atOf`），调度另用 `goodsSnapshot.checkedAt`；`formatClock(0)` 返回「—」。
+- **凭据变化后的混合状态**：`dropSessionCache` 现在一并 `fxFeed.reset()` / `playerFeed.reset()` / `profileFeed.reset()`。
+- **其他**：`ensure` 返回 `null` 时市场不再当成「空市场」；页面级 key 的空清单会被丢掉以便重试；`regionFeed` 补 `empty` 谓词（失土国家的 `undefined` 载荷）；`refresh` 缺省沿用上次登记的 `ttl` / `empty` / `namespace`；删掉没有调用点的批量刷新入口（`refreshMany` / `refreshPrefix` / `runPool`）。
+
+### 11.1 响应式订阅（试验性）
+
+「每页各自挑时机读账号 / 汇率」导致同一份数据在不同页面的更新时间不一致，按 SWR（cache 订阅）+ TanStack Query（派生状态通知）的零件补了两级通知：
+
+- **缓存层**：`apiCache.watch(test, fn)`，写入 / `invalidate` / `clear` 后 `emitKey` 按 `requestAnimationFrame` 合并派发（同一帧 90 个 key 只叫一次；无 rAF 时退回 `setTimeout`）。`stats()` 增加 `watchers` 便于验收「destroy 后无残留订阅」。
+- **派生层**：`playerFeed.watch(fn)`，在「条目对象换了 → 重新解析」的那一处通知，给的是解析后的 `{ accountId, nationalityId, countryId }`；`reset()` 会推 `null`。
+- **消费方**：汇率置顶、市场高亮、税费高亮、工作岗位高亮改为订阅；`marketBadge` 额外订阅 `/market/coin/get`，汇率被任何一处刷新后标注立刻重算。
+- **订阅统一在请求层**：`playerFeed.watch` 直接挂在 `/account/getuser` 这个 key 上（所有写入都经它），不再自建 listeners，`cache.stats().watchers` 因此能反映全部账号订阅。
+- **「什么时候去问」收在 `ctx.onShow`**：面板每次打开 / 切标签都会触发，各页回调里只 `ensure` 一次（账号 10 秒 TTL、行情 10 分钟、岗位 2 分钟、领土 10 分钟都由 TTL 兜住，命中就不发请求）。子面板通过 `subContext.onShow` 拿到同样的语义，且只在「切回已挂载的子标签」时触发，首次仍由 mount 自己读。
+- **仍未做**：`visibilitychange` / 路由变化时的重验（SWR 的 `revalidateOnFocus`）。它对「玩家在游戏里旅行后切回来」有用，但属于新增自动行为，按 `AGENTS.md` §3.6 要先登记再写。
