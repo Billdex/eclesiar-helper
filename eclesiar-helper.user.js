@@ -2088,10 +2088,12 @@
     white-space: nowrap;
   }
 
+  /* 雇主行与地区行是同一块底部信息：标记 11px + 标识 14px + 5px 间距，
+     两处间距必须一致，文字列才会落在同一条竖线上（改一处要同步改另一处） */
   .eh-job-line {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 5px;
     min-width: 0;
     margin-top: 3px;
     font-size: 9.5px;
@@ -2102,7 +2104,7 @@
     display: inline-flex;
     flex: 0 1 auto;
     align-items: center;
-    gap: 4px;
+    gap: 5px;
     max-width: 100%;
     min-width: 0;
     color: #7d8ba0;
