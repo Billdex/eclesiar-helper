@@ -3329,8 +3329,21 @@
     /** key → promise */
     const inflight = new Map();
     const counters = { hit: 0, join: 0, miss: 0, cooldown: 0, refresh: 0, fail: 0, request: 0 };
-    /** clear 时自增：整体清空后，旧请求的结果不许再落回缓存。 */
-    let generation = 0;
+    /**
+     * 失效代数：`invalidate(prefix)` 给该前缀加一代，`clear()` 把 epoch 整体加一。
+     * 请求发出时记下当时的代数，回来时对不上就把结果丢掉——
+     * 否则「换凭据 / 丢弃旧数据」之后，在途的旧请求会把自己的结果又写回缓存。
+     * 按前缀记而不是按 key 记：在途请求的 key 还没进缓存，按 key 记不上。
+     */
+    let epoch = 0;
+    const prefixStamps = new Map();
+    const stampOf = (item) => {
+      let signature = String(epoch);
+      prefixStamps.forEach((value, prefix) => {
+        if (item.indexOf(prefix) === 0) signature += '|' + prefix + '@' + value;
+      });
+      return signature;
+    };
 
     /** 参数按名排序后拼接，保证同样的调用得到同一个 key。 */
     function key(path, params) {
@@ -3397,7 +3410,7 @@
      * 失败不写缓存；已有旧值时只标 stale，不删除（面板继续显示上次成功的数据）。
      */
     function run(key, loader, opts, mode) {
-      const mine = generation;
+      const mine = stampOf(key);
       counters.request += 1;
       if (DEBUG) log('apiCache', mode, key, '请求 #' + counters.request);
 
@@ -3407,15 +3420,15 @@
         .then(
           (value) => {
             settle(key, pending);
-            // 缓存已被整体清空（换凭据 / destroy）：结果作废，别写回去
-            if (mine !== generation) return null;
+            // 期间被 invalidate / clear 过（换凭据 / destroy）：结果作废，别写回去
+            if (mine !== stampOf(key)) return null;
             const entry = writeEntry(key, value, loader, opts);
             if (DEBUG) log('apiCache', mode, key, '成功', entry.empty ? '（空结果）' : '');
             return entry;
           },
           (err) => {
             settle(key, pending);
-            if (mine !== generation) throw err;
+            if (mine !== stampOf(key)) throw err;
             const wait = cooldownOf(err, opts);
             if (wait > 0) {
               const now = Date.now();
@@ -3551,6 +3564,9 @@
     function invalidate(prefix) {
       const wanted = prefix == null || prefix === '' ? null : String(prefix);
       let removed = 0;
+      // 先换代：在途请求回来时会因此丢弃结果，否则会把刚删掉的数据写回缓存
+      if (wanted) prefixStamps.set(wanted, (prefixStamps.get(wanted) || 0) + 1);
+      else epoch += 1;
       [...entries.keys()].forEach((item) => {
         if (wanted && item.indexOf(wanted) !== 0) return;
         entries.delete(item);
@@ -3566,7 +3582,8 @@
 
     /** 整体清空：凭据变化（生成 / 移除密钥、401）与 destroy() 用。 */
     function clear() {
-      generation += 1;
+      epoch += 1;
+      prefixStamps.clear();
       entries.clear();
       failures.clear();
       inflight.clear();
@@ -3577,6 +3594,11 @@
       const entry = entries.get(item);
       if (!entry) return null;
       return { value: entry.value, at: entry.at, empty: entry.empty, stale: entry.stale };
+    }
+
+    /** 该 key 是否已有在途请求（「刷新」想在它结束后补一次时用）。 */
+    function busy(item) {
+      return inflight.has(item);
     }
 
     function stats() {
@@ -3625,6 +3647,7 @@
     return {
       key,
       peek,
+      busy,
       ensure,
       refresh,
       refreshMany,
@@ -5611,9 +5634,6 @@
   /** api 名 → 商品图地址：从挂单里顺手收集，同一件商品各国各品质共用一个图标。 */
   const GOODS_AVATARS = new Map();
 
-  /** 领土检查结果的缓存时长：战争不会每分钟易手，但刷新时也该能看到新结果。 */
-  const LAND_CACHE_MS = 5 * 60 * 1000;
-
   /**
    * 领土：GET /country/regions?country_id=…，返回该国目前实际占有的地区。
    * 已失去全部领土的国家不会返回空数组，而是只有 { code: 200, description: '成功' }、没有 data，
@@ -5622,68 +5642,79 @@
    * noMethodRetry 挡掉通用逻辑里「GET 404/405 就改发空表单 POST」的兜底，
    * 失败直接上报，由调用方按「领土未知」处理，不浪费额度也不制造假的 POST。
    */
-  async function goodsFetchRegions(countryId, signal) {
+  async function goodsFetchRegions(countryId) {
     const path = '/country/regions?country_id=' + encodeURIComponent(String(countryId));
-    return apiClient.call(path, { signal, noMethodRetry: true, allowEmpty: true });
+    return apiClient.call(path, { noMethodRetry: true, allowEmpty: true });
   }
 
   /**
-   * 地区清单的共享缓存（GET /country/regions?country_id=…）。
-   * 「市场」的领土检查、市场页的地区快捷跳转、工商面板的工业列表都用这一份：
-   * 同一国家 5 分钟内只请求一次，并发调用共享同一个请求，避免三个模块各拉一遍。
+   * 地区清单的唯一数据源（GET /country/regions?country_id=…），底层走 apiCache：
+   * 「市场」的领土检查、市场页的地区快捷跳转、工商面板的工业 / 税费都用这一份，
+   * 同一国家 10 分钟内只请求一次，并发调用由 apiCache 合并成同一个请求。
+   * 失效只有两个入口：`refresh`（绕过 TTL，失败保留旧值）与 `clear`（destroy）。
    */
   const regionFeed = (() => {
-    /** 国家 id → { at, list }；list 为空数组表示该国已失去全部领土。 */
-    const cache = new Map();
-    /** 国家 id → Promise：同一国家并发只发一次请求。 */
-    const pending = new Map();
+    const PREFIX = '/country/regions';
+    /** 领土 10 分钟：战争不会每分钟易手，但面板上的「刷新」能立刻看到新结果。 */
+    const OPTS = { ttl: 'regions', namespace: 'regions' };
+
+    const cacheKey = (countryId) => apiCache.key(PREFIX, { country_id: String(countryId) });
+    const loaderFor = (countryId) => () => goodsFetchRegions(countryId);
+
+    /**
+     * 载荷归一：没有 data（已失去全部领土）与空数组都算空清单。
+     * 拿到 null 说明缓存被整体清空（换凭据 / destroy），本轮结果作废、按失败上报，
+     * 不能当成「没有领土」，否则会把国家误判成流亡政府。
+     */
+    const toList = (entry) => {
+      if (!entry) {
+        const error = new Error('DROPPED');
+        error.code = 'DROPPED';
+        throw error;
+      }
+      return Array.isArray(entry.value) ? entry.value : [];
+    };
 
     /** 已缓存且未过期时返回清单，否则 null（同步读取，界面可以先用旧数据顶上）。 */
     function get(countryId) {
-      const entry = cache.get(String(countryId));
-      if (!entry) return null;
-      return Date.now() - entry.at < LAND_CACHE_MS ? entry.list : null;
+      const entry = apiCache.peek(cacheKey(countryId));
+      if (!entry || Date.now() - entry.at >= API_TTL.regions) return null;
+      return Array.isArray(entry.value) ? entry.value : [];
+    }
+
+    /** 拉一个国家的地区清单：10 分钟内命中缓存，并发共享同一请求，失败 60 秒内不重试。 */
+    function ensure(countryId) {
+      return apiCache.ensure(cacheKey(countryId), loaderFor(countryId), OPTS).then(toList);
     }
 
     /**
-     * 拉一个国家的地区清单；同一国家并发只发一次请求。
-     * 已失去全部领土的国家接口不带 data，这里统一成空数组；失败不缓存，下次还能重试。
-     * force 忽略有效期（玩家主动点「刷新」时用）。
+     * 忽略 TTL 重抓一个国家（面板上的「刷新」）。已有在途请求时先等它结束，
+     * 再补一次真正的刷新，不会因为 in-flight 而把这次刷新静默吞掉。
      */
-    function ensure(countryId, options) {
-      const key = String(countryId);
-      const force = Boolean(options && options.force);
-      if (!force) {
-        const cached = get(key);
-        if (cached) return Promise.resolve(cached);
+    async function refresh(countryId) {
+      const key = cacheKey(countryId);
+      const loader = loaderFor(countryId);
+      if (apiCache.busy(key)) {
+        try {
+          await apiCache.ensure(key, loader, OPTS);
+        } catch (err) {
+          /* 在途那轮失败也要补一次刷新 */
+        }
       }
-      const running = pending.get(key);
-      if (running) return running;
-
-      const promise = goodsFetchRegions(key)
-        .then((data) => {
-          const list = Array.isArray(data) ? data : [];
-          cache.set(key, { at: Date.now(), list });
-          return list;
-        })
-        .finally(() => {
-          if (pending.get(key) === promise) pending.delete(key);
-        });
-      pending.set(key, promise);
-      return promise;
+      return toList(await apiCache.refresh(key, loader, OPTS));
     }
 
     return {
       get,
       ensure,
+      refresh,
       /** 领土已知且为空 = 流亡政府；还没查过时返回 null，由调用方决定怎么处理。 */
       exiled(countryId) {
         const list = get(countryId);
         return list ? list.length === 0 : null;
       },
       clear() {
-        cache.clear();
-        pending.clear();
+        apiCache.invalidate(PREFIX);
       }
     };
   })();
@@ -5762,7 +5793,7 @@
     /**
      * 领土检查：地区清单为空即流亡政府（已失去全部领土）。
      * 只查有挂单的国家——没挂单的市场本来就不进列表，没必要多打请求。
-     * 走 regionFeed 缓存，与地区快捷跳转、工商面板共用，同一国家 5 分钟只请求一次；
+     * 走 regionFeed 缓存，与地区快捷跳转、工商面板共用，同一国家 10 分钟内只请求一次；
      * 请求本身失败（超时 / 4xx / 429）才按「有领土」处理，宁可留在主列表也不误判。
      */
     const checkLand = async (entry) => {
@@ -7916,7 +7947,7 @@
     function ensureData() {
       if (!running || !countryId) return;
       const id = countryId;
-      // 与商品比价的领土检查、工商面板共用一份地区缓存：同一国家 5 分钟只请求一次
+      // 与商品比价的领土检查、工商面板共用一份地区缓存：同一国家 10 分钟内只请求一次
       const cached = regionFeed.get(id);
       if (cached) {
         if (list !== cached) {
@@ -8807,16 +8838,17 @@
         if (offAuth) return;
         offAuth = apiClient.onAuth(() => {
           offAuth = null;
-          if (!loading && !updatedAt) load(false);
+          if (!loading && !updatedAt) load();
         });
       };
 
       /**
        * 拉一遍所有国家的地区。
-       * force 只影响「有没有过期」，实际的请求次数由 regionFeed 的缓存兜着：
-       * 刚拉过的国家直接命中缓存，不会因为重新打开面板就再打一遍接口。
+       * pull 决定「命中缓存还是绕过 TTL」，由下面的 load / refresh 两个入口选：
+       * 打开面板走 regionFeed.ensure（刚拉过的国家直接命中 10 分钟缓存），
+       * 点「刷新数据」走 regionFeed.refresh（重抓，失败保留旧值）。
        */
-      function load(force) {
+      function run(pull) {
         if (!alive || loading) return;
         if (apiClient.state !== 'ok') {
           error = { code: apiClient.state === 'expired' ? 'UNAUTHORIZED' : 'NO_TOKEN' };
@@ -8864,7 +8896,7 @@
                 const country = targets[cursor];
                 cursor += 1;
                 try {
-                  const regions = await regionFeed.ensure(country.id, { force });
+                  const regions = await pull(country.id);
                   regions.forEach((region) => {
                     const row = buildDataRow(country, region);
                     if (row) next.push(row);
@@ -8908,7 +8940,12 @@
         })();
       }
 
-      on(refreshBtn, 'click', () => load(true));
+      /** 打开面板 / 凭据晚到时走缓存。 */
+      const load = () => run((countryId) => regionFeed.ensure(countryId));
+      /** 「刷新数据」：绕过 TTL 重抓，失败保留上一轮的结果。 */
+      const refresh = () => run((countryId) => regionFeed.refresh(countryId));
+
+      on(refreshBtn, 'click', () => refresh());
 
       on(queryEl, 'input', () => {
         query = queryEl.value || '';
@@ -8933,7 +8970,7 @@
       paintSort();
       paint();
       // 打开「工业」就先抓一轮：已拉过的国家命中 regionFeed 缓存，不会重复打接口
-      load(false);
+      load();
     }
   });
 
@@ -8944,7 +8981,7 @@
    *  - 增值税 / 进口税 / 工资税 / 最低工资取自 /countries/summary 的 laws
    *    （个别环境 summary 不带 laws，这时才补一次 /countries，与「销售」共用同一份缓存）；
    *  - 「折金」用 fxFeed 的卖法币换黄金最优价，与「市场」的销售口径一致；
-   *  - 领土检查复用 regionFeed（与「工业」、商品比价的领土检查共用 5 分钟缓存），
+   *  - 领土检查复用 regionFeed（与「工业」、商品比价的领土检查共用 10 分钟缓存），
    *    已失去全部领土的流亡政府单独放到最底下。
    *
    * 只做展示与排序：不发交易请求、不写游戏数据。
@@ -9488,7 +9525,7 @@
         if (offAuth) return;
         offAuth = apiClient.onAuth(() => {
           offAuth = null;
-          if (!loading && !updatedAt) load(false);
+          if (!loading && !updatedAt) load();
         });
       };
 
@@ -9509,11 +9546,16 @@
         myHereId = info && info.countryId ? String(info.countryId) : null;
       }
 
+      /** 命中缓存的一轮：regionFeed.ensure（10 分钟内不重复请求）。 */
+      const pullCached = (countryId) => regionFeed.ensure(countryId);
+      /** 绕过 TTL 的一轮：regionFeed.refresh，失败保留上一轮结果。 */
+      const pullFresh = (countryId) => regionFeed.refresh(countryId);
+
       /**
-       * 领土（流亡政府判断）：逐个国家查 regionFeed。
+       * 领土（流亡政府判断）：逐个国家查 regionFeed，pull 决定命中缓存还是绕过 TTL。
        * 缓存里已有时直接跳过（不计等待），所以先打开「工业」再切过来几乎立刻出结果。
        */
-      async function loadLand(force) {
+      async function loadLand(pull) {
         let cursor = 0;
         const worker = async () => {
           while (cursor < rows.length) {
@@ -9521,7 +9563,7 @@
             const row = rows[cursor];
             cursor += 1;
 
-            const cached = force ? null : regionFeed.get(row.id);
+            const cached = pull === pullCached ? regionFeed.get(row.id) : null;
             if (cached) {
               row.exiled = cached.length === 0;
               progress = { done: progress.done + 1, total: progress.total };
@@ -9530,7 +9572,7 @@
             }
 
             try {
-              const list = await regionFeed.ensure(row.id, { force });
+              const list = await pull(row.id);
               row.exiled = list.length === 0;
             } catch (err) {
               if (err && err.code === 'UNAUTHORIZED') throw err;
@@ -9550,10 +9592,10 @@
 
       /**
        * 拉一遍税费表。汇率与领土各自走共享缓存：
-       * 刚拉过的国家命中 regionFeed 的 5 分钟缓存，行情命中 fxFeed 的 10 分钟缓存，
-       * 重新打开面板不会把上百个请求再打一遍。
+       * 领土由 pull 决定命中 regionFeed 的 10 分钟缓存还是绕过 TTL，
+       * 行情命中 fxFeed 的 10 分钟缓存，重新打开面板不会把上百个请求再打一遍。
        */
-      function load(force) {
+      function run(pull) {
         if (!alive || loading) return;
         if (apiClient.state !== 'ok') {
           error = { code: apiClient.state === 'expired' ? 'UNAUTHORIZED' : 'NO_TOKEN' };
@@ -9621,7 +9663,7 @@
             // 汇率与领土串着跑：两边都冷时各有一串请求，同时开会把并发推到 6，容易被 429
             await Promise.all([lawsJob, rateJob, playerJob]);
             if (!alive) return;
-            await loadLand(force);
+            await loadLand(pull);
             if (!alive) return;
             updatedAt = Date.now();
           } catch (err) {
@@ -9646,7 +9688,12 @@
         })();
       }
 
-      on(refreshBtn, 'click', () => load(true));
+      /** 打开面板 / 凭据晚到：领土走缓存，行情走各行自己的有效期。 */
+      const load = () => run(pullCached);
+      /** 「刷新数据」：领土绕过 TTL 重抓，行情仍按有效期（与「市场」「汇率」共用）。 */
+      const refresh = () => run(pullFresh);
+
+      on(refreshBtn, 'click', () => refresh());
 
       on(queryEl, 'input', () => {
         query = queryEl.value || '';
@@ -9682,7 +9729,7 @@
       paintSort();
       paint();
       // 打开「税费」就先抓一轮：汇率与领土都命中共享缓存时几乎不花请求
-      load(false);
+      load();
     }
   });
 

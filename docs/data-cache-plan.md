@@ -184,15 +184,15 @@ apiCache.stats()                           // 调试：hit / join / miss / coold
 - [x] `refresh` 失败保留旧值并打 `stale` 标记（不是删除），与 §4.3 一致
 - [x] `?eh-debug=1` 下输出每轮真实请求数与 `hit / join / miss / cooldown / refresh` 计数
 - [x] `AGENTS.md`：§2.2 数据源表新增「请求层」一行，§5 代码组织新增 `9.0 数据访问层`
-- [ ] `AGENTS.md`：§2.2 中地区缓存 5 分钟的表述改为 10 分钟（**挪到阶段 2**：`LAND_CACHE_MS` 仍是 5 分钟，等 `regionFeed` 真正接入 `apiCache` 时一起改，避免文档先于代码失真）
+- [x] `AGENTS.md`：§2.2 中地区缓存 5 分钟的表述改为 10 分钟（随阶段 2 一起改，避免文档先于代码失真）
 
 ### 阶段 2：`regionFeed` 迁移（最小闭环）
 
-- [ ] `regionFeed` 内部改调 `apiCache`，删除自建 `cache` / `pending`
-- [ ] `force` 在已有 in-flight 时不再被静默忽略：等当前请求结束后补一次刷新，或返回旧 pending 并标记
-- [ ] 工业 / 税费的 `load(force)` 收成两个入口（`ensure` / `refreshPrefix`），功能层不再传布尔
-- [ ] 修正 `industry.load` 的注释：现在写「force 只影响有没有过期，请求次数由 regionFeed 缓存兜着」，实际 `force: true` 会逐国绕过 TTL 全区重抓，与上一版文案不符
-- [ ] 验收：`goodsSnapshot.checkLand`、`regionJump`、工业、税费五处调用方零改动；同国并发只发 1 请求；失败后 60 秒内不重试；`destroy()` 后 `stats()` 归零
+- [x] `regionFeed` 内部改调 `apiCache`，删除自建 `cache` / `pending`
+- [x] `force` 在已有 in-flight 时不再被静默忽略：先等在途请求结束，再补一次真正的刷新（`regionFeed.refresh`）
+- [x] 工业 / 税费的 `load(force)` 收成 `load()` / `refresh()` 两个入口（内部走 `regionFeed.ensure` / `regionFeed.refresh`），功能层不再传布尔
+- [x] 修正 `industry.load` 的注释：改成「pull 决定命中缓存还是绕过 TTL」，与实现一致
+- [x] 验收：`goodsSnapshot.checkLand`、`regionJump` 两处调用方零改动（工业 / 税费只换 pull 入口）；同国并发只发 1 请求；失败后 60 秒内不重试；`destroy()` 后 `stats()` 归零（离线桩测试 16 条断言全过）
 
 ### 阶段 3：国家清单 / 税率 / 账号 / 资料
 
