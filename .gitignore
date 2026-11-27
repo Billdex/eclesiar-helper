@@ -2,3 +2,5 @@
 *.log
 dev/
 backups/
+.playwright-cli/
+.playwright-cli
