@@ -207,10 +207,10 @@ EclesiarHelper.features.register({
 1. 四处版本号一致（脚本会校验）；更新 README「功能一览」与首部「当前版本」。
 2. 合并推送。
 3. `scripts/release.sh`（每次推送都要跑）。参数：`--verify` 只校验版本与 jsDelivr 当前状态；`--no-wait` 发完刷新请求就退出。
-   - 脚本做的事：校验四处版本 + 两个文件 `node --check`（当前分支不是 `main` 时给警告）→ 刷新 jsDelivr 上两个文件的缓存 → 轮询 `@main` 直到返回新版本。
+   - 脚本做的事：校验四处版本 + 两个文件 `node --check`（当前分支不是 `main` 时给警告）→ 等 GitHub raw 两个文件都返回新版本 → 刷新 jsDelivr 上两个文件的缓存 → 轮询 `@main` 直到返回新版本（轮询期间每约 90 秒自动重刷一次）。
    - **两个目标缺一不可**：只刷 `.meta.js` 会出现「提示有新版本、点安装下来还是旧的」。
    - 刷新方式：`GET https://purge.jsdelivr.net/gh/Billdex/eclesiar-helper@main/<文件名>`，无需密钥，返回 `"status": "finished"` 即成功。
-   - **顺序不能反**：先 push 再 purge（purge 回源到 GitHub raw，raw 自己有 `max-age=300`），刷不到时脚本会重试，实在不行过几分钟再跑 `--verify`。
+   - **顺序不能反，也不能抢在 raw 前面**：先 push 再 purge（purge 回源到 GitHub raw，raw 自己有 `max-age=300`）；推送后 5 分钟内 raw 可能仍是旧内容，此时 purge 会把旧文件重新写进 jsDelivr 边缘缓存（`s-maxage=43200`），必须再刷一次才生效。脚本因此先等 raw 变新（最多约 5 分钟）再刷，并在轮询中按 `REPURGE_EVERY` 重刷。
    - **镜像不主动刷新**：JSDMirror 两个域名与 GitHub raw 等自身缓存过期追上；落后只影响手工安装 / 备用检查，不影响自动更新。发现镜像长时间落后只记录现象，不新增刷新流程。
 4. 对外分享统一发**安装地址**，不要发仓库首页：首选 jsDelivr 的 `.user.js`，国内打不开时给 JSDMirror 镜像（`raw.githubusercontent.com` 在国内多被拦截，只作最后备用）。文案模板见 README 的「分享给朋友」。
 5. **不要**把 `@updateURL` / `@downloadURL` 改成 tag 或 commit 地址：更新地址写死在已安装副本里，指向不可变引用会让该版本永远「已是最新」、之后再也收不到更新。tag / commit 只用于「安装更新」链接与发版自检。
