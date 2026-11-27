@@ -2,7 +2,7 @@
 // @name         Eclesiar 助手
 // @name:en      Eclesiar Helper
 // @namespace    https://github.com/Billdex/eclesiar-helper
-// @version      0.2.2
+// @version      0.2.1
 // @description  Eclesiar 经济 / 政治计算辅助插件：悬浮球面板 + 全球汇率总览 + 各国市场商品金价比价与销售税后收益估算 + 各国地区工业数据总览，商品市场列表与上架表单直接标注折算金价，并可一键跳转该国的地区页面。
 // @description:en Eclesiar helper: floating panel + exchange rates + cross-market goods pricing and after-tax sale revenue in gold + a sortable overview of every region's industry data, plus one-click jumps to a country's regions.
 // @author       billdex
@@ -43,7 +43,7 @@
    * 1. 常量与工具
    * ========================================================================= */
 
-  const VERSION = '0.2.2';
+  const VERSION = '0.2.1';
   const REPO_URL = 'https://github.com/Billdex/eclesiar-helper';
   /** 主源：jsDelivr 官方。自动更新与「安装更新」都以它为准，不接受任何第三方密钥。 */
   const CDN_RAW = 'https://cdn.jsdelivr.net/gh/Billdex/eclesiar-helper@main/';
