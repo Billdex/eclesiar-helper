@@ -2,7 +2,7 @@
 // @name         Eclesiar 助手
 // @name:en      Eclesiar Helper
 // @namespace    https://github.com/Billdex/eclesiar-helper
-// @version      0.2.3
+// @version      0.2.4
 // @description  Eclesiar 经济 / 政治计算辅助插件：悬浮球面板 + 全球汇率总览 + 各国市场商品金价比价与销售税后收益估算 + 各国地区工业数据与税负 / 最低工资总览，商品市场列表与上架表单直接标注折算金价，并可一键跳转该国的地区页面。
 // @description:en Eclesiar helper: floating panel + exchange rates + cross-market goods pricing and after-tax sale revenue in gold + sortable overviews of every region's industry data and every country's taxes and minimum wage, plus one-click jumps to a country's regions.
 // @author       billdex
@@ -27,7 +27,7 @@
  * 结构：
  *   1. 外壳 —— Shadow DOM 隔离样式，宿主挂在 document.body 上（0×0，不挡页面）
  *   2. 悬浮球 —— 可拖拽、位置记忆、点击开合面板
- *   3. 面板 —— 标签页容器 + 内置「汇率 / 商品 / 工商（工业）/ 设置」
+ *   3. 面板 —— 标签页容器 + 内置「汇率 / 市场 / 工商（工业）/ 设置」
  *   4. 功能注册表 —— window.EclesiarHelper.features.register({ ... })
  *   5. SPA 路由钩子 —— 包装 history.pushState / replaceState，供功能订阅
  *
@@ -43,7 +43,7 @@
    * 1. 常量与工具
    * ========================================================================= */
 
-  const VERSION = '0.2.3';
+  const VERSION = '0.2.4';
   const REPO_URL = 'https://github.com/Billdex/eclesiar-helper';
   /** 主源：jsDelivr 官方。自动更新与「安装更新」都以它为准，不接受任何第三方密钥。 */
   const CDN_RAW = 'https://cdn.jsdelivr.net/gh/Billdex/eclesiar-helper@main/';
@@ -504,6 +504,55 @@
   }
 
   .eh-pane[hidden] { display: none; }
+
+  /* ---------- 固定顶部 + 内部滚动（汇率 / 市场 / 工业） ---------- */
+
+  /* display 只写在类上（特异性低于 .eh-pane[hidden]），否则隐藏标签时会被 flex 顶回来 */
+  .eh-pane--stick {
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* 撑满内容区：顶部块固定，下面一整块自己滚，整页不再跟着滚 */
+  .eh-body > .eh-pane.eh-pane--stick {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .eh-stick-head {
+    flex: none;
+    margin-bottom: 14px;
+  }
+
+  /* 滚动区上方的固定小标题（「全球汇率」「各国市场」）：只固定标题，说明与列表照常滚 */
+  .eh-stick-bar {
+    flex: none;
+    margin-bottom: 8px;
+  }
+
+  .eh-stick-scroll {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(201, 165, 74, .35) transparent;
+  }
+
+  /* 滚动区里的内容按自然高度排列，别被 flex 压缩（否则溢出而不是滚动） */
+  .eh-stick-scroll > * { flex: none; }
+
+  .eh-stick-scroll::-webkit-scrollbar { width: 8px; }
+
+  .eh-stick-scroll::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 8px;
+    background: rgba(201, 165, 74, .25);
+    background-clip: content-box;
+  }
 
   .eh-section + .eh-section { margin-top: 16px; }
 
@@ -1252,27 +1301,27 @@
     outline-offset: 1px;
   }
 
-  /* 采购 / 销售 切换 */
+  /* 采购 / 销售 切换：比商品按钮矮一点，别把顶部固定区撑得太高 */
   .eh-gd-modes {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 4px;
-    margin-bottom: 7px;
-    padding: 3px;
+    gap: 3px;
+    margin-bottom: 6px;
+    padding: 2px;
     border: 1px solid var(--eh-line);
-    border-radius: 9px;
+    border-radius: 8px;
     background: rgba(255, 255, 255, .03);
   }
 
   .eh-gd-mode {
-    padding: 4px 0;
+    padding: 1px 0;
     border: 1px solid transparent;
     border-radius: 6px;
     background: transparent;
     color: var(--eh-muted);
     font-family: inherit;
-    font-size: 11.5px;
-    line-height: 1.5;
+    font-size: 11px;
+    line-height: 1.4;
     letter-spacing: .02em;
     cursor: pointer;
     transition: background .16s, color .16s, border-color .16s;
@@ -1294,7 +1343,7 @@
     outline-offset: 1px;
   }
 
-  /* 销售：国籍（决定是否免进口税）与税率提示 */
+  /* 销售：只在税率 / 国籍读取异常时出现（正常态不重复「国籍 / 免进口税」，列表行内已有） */
   .eh-gd-own {
     display: flex;
     flex-wrap: wrap;
@@ -1319,7 +1368,7 @@
 
   .eh-gd-hint[data-tone="warn"] { color: #e0b071; }
 
-  /* ---------- 商品市场列表金价标注开关 ---------- */
+  /* ---------- 功能开关（设置页：市场页金价 / 地区入口 / 自动比价） ---------- */
 
   .eh-gd-switch {
     display: flex;
@@ -1577,8 +1626,13 @@
     scrollbar-color: rgba(201, 165, 74, .35) transparent;
   }
 
-  /* 默认由整块内容一起滚（工业页）；税费页自己接管滚动（见 .eh-tax-pane） */
+  /* 默认由整块内容一起滚；固定头部的子面板（工业 / 税费）自己接管滚动 */
   .eh-biz-body > .eh-biz-pane { flex: none; }
+
+  .eh-biz-body > .eh-biz-pane.eh-pane--stick {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
 
   .eh-biz-body::-webkit-scrollbar { width: 8px; }
 
@@ -1867,13 +1921,13 @@
     color: #c9a54a;
   }
 
-  /* 流亡政府的行：虚线框 + 降透明度，和「商品」页的处理一致 */
+  /* 流亡政府的行：虚线框 + 降透明度，和「市场」页的处理一致 */
   .eh-biz-row.is-exile {
     opacity: .6;
     border-style: dashed;
   }
 
-  /* 税费：玩家国籍国 / 当前所在国就地高亮（不置顶、不干预排序），配色与「汇率」「商品」一致 */
+  /* 税费：玩家国籍国 / 当前所在国就地高亮（不置顶、不干预排序），配色与「汇率」「市场」一致 */
   .eh-biz-row.is-home {
     border-color: rgba(124, 178, 232, .42);
     background: rgba(124, 178, 232, .08);
@@ -3692,7 +3746,7 @@
   const FX_CACHE_MS = 10 * 60 * 1000;
 
   /**
-   * 汇率数据源：全局只保留一份行情，供「汇率」与「商品」共用。
+   * 汇率数据源：全局只保留一份行情，供「汇率」与「市场」共用。
    * 订阅回调签名 (kind, quote)：
    *   reset —— quotes 整体替换，订阅方需要重建列表；
    *   row   —— 单个货币的数据 / 状态变化；
@@ -4138,8 +4192,10 @@
     title: '汇率',
     order: 20,
     mount(pane, ctx) {
+      // 换汇目标固定在顶部，只有下方的全球汇率列表跟着滚
+      pane.classList.add('eh-pane--stick');
       pane.innerHTML = `
-        <div class="eh-section">
+        <div class="eh-section eh-stick-head">
           <div class="eh-h3">换汇目标</div>
           <div class="eh-fx-bar">
             <div class="eh-fx-field">
@@ -4159,18 +4215,20 @@
           <p class="eh-fx-note" data-role="mode-note"></p>
           <p class="eh-fx-status" data-role="status">…</p>
         </div>
-        <div class="eh-section">
+        <div class="eh-stick-bar">
           <div class="eh-h3">全球汇率</div>
+        </div>
+        <div class="eh-stick-scroll">
           <p class="eh-fx-legend">
             买入 = 花黄金买该国法币（吃卖单，价越低越好）；卖出 = 卖法币换黄金（吃买单，价越高越好）。
             价格单位：黄金 / 1 单位法币。
           </p>
           <div class="eh-fx-pin" data-role="pins"></div>
           <div class="eh-fx-list" data-role="list"></div>
+          <p class="eh-disclaimer">
+            数据来自游戏公开挂单接口，仅供参考；实际下单请以游戏内实时行情为准。
+          </p>
         </div>
-        <p class="eh-disclaimer">
-          数据来自游戏公开挂单接口，仅供参考；实际下单请以游戏内实时行情为准。
-        </p>
       `;
 
       const targetInput = pane.querySelector('[data-role="target"]');
@@ -4486,7 +4544,7 @@
       };
 
       /**
-       * 读一次账号的两个 id（与「商品」共用 playerFeed 缓存），
+       * 读一次账号的两个 id（与「市场」共用 playerFeed 缓存），
        * 再把国家换成法币，决定置顶哪两行。
        */
       const readPins = async () => {
@@ -4732,7 +4790,7 @@
 
       applyModeUi();
 
-      // 挂载即同步：已有缓存（例如刚在「商品」里拉过）就直接复用，不再重复请求
+      // 挂载即同步：已有缓存（例如刚在「市场」里拉过）就直接复用，不再重复请求
       const off = fxFeed.subscribe((kind, quote) => {
         sync(kind, quote);
         // 一轮抓取结束后补读账号信息：国籍 / 所在国此时才可读时也能置顶
@@ -4816,7 +4874,7 @@
 
   /**
    * 各国商品行情的共享缓存。
-   * 面板「商品」页抓完后写进这里，游戏市场页的金价标注读它算「比全球最低贵多少」。
+   * 面板「市场」页抓完后写进这里，游戏市场页的金价标注读它算「比全球最低贵多少」。
    * 这里绝不主动发请求：为一个参考值把 45 个国家的市场再拉一遍不划算，
    * 没有数据时标注就只显示本国金价。
    */
@@ -4846,7 +4904,7 @@
         listeners.add(fn);
         return () => listeners.delete(fn);
       },
-      /** 面板商品页拉完后写入（含流亡政府标记，算最低价时要跳过）。 */
+      /** 面板市场页拉完后写入（含流亡政府标记，算最低价时要跳过）。 */
       publish(list) {
         markets = Array.isArray(list) ? list : [];
         notify();
@@ -4894,7 +4952,7 @@
 
   /**
    * 地区清单的共享缓存（GET /country/regions?country_id=…）。
-   * 「商品」的领土检查、市场页的地区快捷跳转、工商面板的工业列表都用这一份：
+   * 「市场」的领土检查、市场页的地区快捷跳转、工商面板的工业列表都用这一份：
    * 同一国家 5 分钟内只请求一次，并发调用共享同一个请求，避免三个模块各拉一遍。
    */
   const regionFeed = (() => {
@@ -4986,7 +5044,7 @@
   const GOODS_CACHE_MS = 10 * 60 * 1000;
 
   /**
-   * 全球商品行情快照：面板「商品」页与「商品市场自动加载比价数据」共用同一份。
+   * 全球商品行情快照：面板「市场」页与「商品市场自动加载比价数据」共用同一份。
    * 统一负责抓取、并发去重、TTL 判断与过期重拉；抓完自动 publish 给 goodsFeed，
    * 游戏市场页的金价标注据此算「比全球最低贵多少」。
    *
@@ -5270,7 +5328,7 @@
    * 开启后插件启动就抓一次全球汇率与商品行情，之后每分钟在本地看一次快照年龄，
    * 超过 GOODS_CACHE_MS 才真正重拉；后台标签页不刷新，凭据没到手时等 onAuth 再补。
    * 一轮要 45 个国家的市场 + 换汇 + 领土请求，所以默认关闭，
-   * 开启前会在「商品」页明确提示请求量与启动变慢的风险。
+   * 开启前会在「市场」页明确提示请求量与启动变慢的风险。
    * 它只负责游戏市场页的「不打开面板也能比价」，面板本身始终会自己抓取行情。
    */
   const goodsAuto = (() => {
@@ -5376,12 +5434,15 @@
 
   registerFeature({
     id: 'goods',
-    title: '商品',
+    title: '市场',
     order: 30,
     mount(pane, ctx) {
+      // 顶部选择区（模式 / 商品 / 品质 / 开关）固定，只有下方各国市场列表跟着滚，
+      // 翻到列表中间也能随时换一个商品看
+      pane.classList.add('eh-pane--stick');
       pane.innerHTML = `
-        <div class="eh-section">
-          <div class="eh-h3">商品与市场</div>
+        <div class="eh-section eh-stick-head">
+          <div class="eh-h3">商品</div>
           <div class="eh-gd-modes" data-role="modes">
             <button class="eh-gd-mode" type="button" data-mode="buy">采购</button>
             <button class="eh-gd-mode" type="button" data-mode="sell">销售</button>
@@ -5400,26 +5461,11 @@
             <p class="eh-fx-status" data-role="status">…</p>
             <button class="eh-btn" type="button" data-role="refresh">刷新行情</button>
           </div>
-          <label class="eh-gd-switch">
-            <input type="checkbox" data-role="badge">
-            <span>商品市场与上架表单显示金价</span>
-          </label>
-          <label class="eh-gd-switch">
-            <input type="checkbox" data-role="regions">
-            <span>商品市场显示该国地区快捷入口</span>
-          </label>
-          <label class="eh-gd-switch">
-            <input type="checkbox" data-role="auto-compare">
-            <span>商品市场自动加载比价数据</span>
-          </label>
-          <p class="eh-note is-warn" data-role="auto-note" hidden></p>
-          <div class="eh-row" data-role="auto-confirm" hidden>
-            <button class="eh-btn" type="button" data-role="auto-yes">仍然开启</button>
-            <button class="eh-btn eh-btn--ghost" type="button" data-role="auto-no">取消</button>
-          </div>
         </div>
-        <div class="eh-section">
+        <div class="eh-stick-bar">
           <div class="eh-h3" data-role="listtitle">各国市场 · 黄金单价</div>
+        </div>
+        <div class="eh-stick-scroll">
           <p class="eh-fx-legend" data-role="legend">
             按 1 件商品的黄金单价从低到高排列。黄金单价 = 该国最低挂单价
             × 用黄金换该国货币的最优价。
@@ -5435,10 +5481,10 @@
             </div>
             <div class="eh-gd-list" data-role="exilelist"></div>
           </div>
+          <p class="eh-disclaimer">
+            报价来自各国市场的公开挂单，未计入可能的手续费；汇率取自「汇率」标签的最近一次结果。
+          </p>
         </div>
-        <p class="eh-disclaimer">
-          报价来自各国市场的公开挂单，未计入可能的手续费；汇率取自「汇率」标签的最近一次结果。
-        </p>
       `;
 
       const listEl = pane.querySelector('[data-role="list"]');
@@ -5492,16 +5538,6 @@
       const SELL_LEGEND =
         '收入 = 该国最低挂单价 ×（100% − 增值税 − 进口税）× 用该国货币换黄金的最优价。';
 
-      /** 国籍对应的中文国名，只用于提示文案。 */
-      const ownCountryLabel = () => {
-        if (!myCountryId) return '';
-        const country = fxFeed.countries.find((row) => Number(row && row.id) === myCountryId);
-        if (!country) return '';
-        const code = country.currency ? String(country.currency.name || '') : '';
-        const locale = code ? fxLocale(code) : null;
-        return locale ? locale[0] : String(country.name || '');
-      };
-
       const syncTaxHint = () => {
         if (!alive || !taxHintEl) return;
         let text = '';
@@ -5535,12 +5571,12 @@
         } else if (!myCountryId) {
           text = '账号没有国籍信息，按外国卖家计税：增值税与进口税都扣。';
           tone = 'warn';
-        } else {
-          text = '国籍：' + (ownCountryLabel() || '已识别') + ' · 本国销售只扣增值税，免进口税。';
         }
+        // 正常态不再重复「国籍 / 免进口税」：列表行里已经按国家标了税率与税后收入
         taxHintEl.textContent = text;
         if (tone) taxHintEl.dataset.tone = tone;
         else delete taxHintEl.dataset.tone;
+        sellOptsEl.hidden = mode !== 'sell' || !text;
       };
 
       /** 税率只在进入「销售」时拉一次（/countries 的 laws），失败可重试。 */
@@ -6095,71 +6131,6 @@
 
       on(refreshBtn, 'click', () => load());
 
-      // 市场页面上的金价标注：开关只影响游戏 DOM，不影响本面板
-      const badgeToggle = pane.querySelector('[data-role="badge"]');
-      badgeToggle.checked = marketBadge.enabled;
-      on(badgeToggle, 'change', () => {
-        marketBadge.setEnabled(badgeToggle.checked);
-        ctx.log('市场列表金价标注', badgeToggle.checked ? '开' : '关');
-      });
-
-      // 市场页的地区快捷入口：同样只影响游戏 DOM，不影响本面板
-      const regionToggle = pane.querySelector('[data-role="regions"]');
-      regionToggle.checked = regionJump.enabled;
-      on(regionToggle, 'change', () => {
-        regionJump.setEnabled(regionToggle.checked);
-        ctx.log('地区快捷跳转', regionToggle.checked ? '开' : '关');
-      });
-
-      // 自动比价：默认关闭。关闭时不显示任何说明，勾选时才提示请求量并等玩家确认
-      const autoToggle = pane.querySelector('[data-role="auto-compare"]');
-      const autoNote = pane.querySelector('[data-role="auto-note"]');
-      const autoConfirm = pane.querySelector('[data-role="auto-confirm"]');
-      const autoYes = pane.querySelector('[data-role="auto-yes"]');
-      const autoNo = pane.querySelector('[data-role="auto-no"]');
-      const AUTO_WARN = '开启后会在游戏启动时自动获取全球行情，数据请求量比较大，可能拖慢游戏启动速度。该选项关闭时，也可以在当前面板获取完整数据后正常展示比价。';
-
-      const syncAuto = () => {
-        autoToggle.checked = goodsAuto.enabled;
-        autoConfirm.hidden = true;
-        autoNote.hidden = true;
-        autoNote.textContent = '';
-      };
-
-      on(autoToggle, 'change', () => {
-        if (!autoToggle.checked) {
-          goodsAuto.setEnabled(false);
-          syncAuto();
-          ctx.ui.reposition();
-          return;
-        }
-        // 先不生效：勾选只用来展开提醒，点「仍然开启」才真正开启
-        autoToggle.checked = false;
-        autoConfirm.hidden = false;
-        autoNote.textContent = AUTO_WARN;
-        autoNote.hidden = false;
-        ctx.ui.reposition();
-      });
-
-      on(autoYes, 'click', () => {
-        goodsAuto.setEnabled(true);
-        syncAuto();
-        ctx.ui.reposition();
-      });
-
-      on(autoNo, 'click', () => {
-        syncAuto();
-        ctx.ui.reposition();
-      });
-
-      // 「清除本地设置」等其它入口也会改开关，勾选状态跟着同步
-      const offAuto = goodsAuto.subscribe(() => {
-        syncAuto();
-        if (alive) ctx.ui.reposition();
-      });
-
-      syncAuto();
-
       const off = fxFeed.subscribe((kind) => {
         if (!alive) return;
         if (kind === 'done') {
@@ -6221,7 +6192,6 @@
         alive = false;
         off();
         offSnap();
-        offAuto();
         offAuth();
         watchPane.disconnect();
       });
@@ -6390,7 +6360,7 @@
 
     /**
      * 货币代码 → 货币 id：只有 /countries/summary 里有这份映射，拉一次就够。
-     * 自己发这一次请求、不借用 fxFeed 的缓存 promise：那份是给汇率 / 商品用的，
+     * 自己发这一次请求、不借用 fxFeed 的缓存 promise：那份是给汇率 / 市场用的，
      * 它失败或挂住时不该连带市场页标注一起失效。
      */
     function ensureCurrencyMap() {
@@ -6510,7 +6480,7 @@
       }
 
       const gold = info.price * rate;
-      // 全球最低价来自面板「商品」页抓过的行情，没有数据就只显示本国折算价
+      // 全球最低价来自面板「市场」页抓过的行情，没有数据就只显示本国折算价
       const best = goodsFeed.bestGold(itemKeyOf(info.row));
       const diff = best ? gold - best.gold : 0;
 
@@ -6530,7 +6500,7 @@
             ? '，本行即全球最低'
             : '，本行' + (diff > 0 ? '贵 ' : '便宜 ') + fxGold(Math.abs(diff)) + ' 金';
       } else if (!goodsFeed.ready) {
-        title += '；在面板「商品」页抓取一次行情后，会显示与全球最低价的对比';
+        title += '；在面板「市场」页抓取一次行情后，会显示与全球最低价的对比';
       }
 
       paintBadge(
@@ -6974,7 +6944,7 @@
     market.onAuth(() => {
       if (running) schedule();
     });
-    // 面板「商品」页抓到新行情后，市场页上的「比全球最低贵多少」跟着刷新
+    // 面板「市场」页抓到新行情后，市场页上的「比全球最低贵多少」跟着刷新
     goodsFeed.subscribe(() => {
       if (running) schedule();
     });
@@ -7788,8 +7758,13 @@
         { key: 'npc', label: 'NPC', dir: -1 }
       ];
 
+      // 排序 / 状态固定在顶部，只有地区列表跟着滚（表头不随列表滚走）
+      pane.classList.add('eh-pane--stick');
       pane.innerHTML = `
-        <div class="eh-section">
+        <div class="eh-stick-head">
+          <div class="eh-biz-search">
+            <input class="eh-input" type="search" data-role="query" placeholder="搜索地区名、国家名（中 / 英）或法币" autocomplete="off" spellcheck="false" aria-label="搜索地区名、国家或法币" />
+          </div>
           <div class="eh-biz-sorts">
             <span class="eh-biz-sorts__cap">排序</span>
             <div class="eh-biz-chips" data-role="sorts"></div>
@@ -7798,6 +7773,8 @@
             <p class="eh-fx-status" data-role="status">…</p>
             <button class="eh-btn" type="button" data-role="refresh">刷新地区</button>
           </div>
+        </div>
+        <div class="eh-stick-scroll">
           <div class="eh-biz-list" data-role="list"></div>
           <p class="eh-empty" data-role="empty" hidden>还没有地区数据，点「刷新」抓取一次。</p>
         </div>
@@ -7808,6 +7785,7 @@
       const emptyEl = pane.querySelector('[data-role="empty"]');
       const statusEl = pane.querySelector('[data-role="status"]');
       const refreshBtn = pane.querySelector('[data-role="refresh"]');
+      const queryEl = pane.querySelector('[data-role="query"]');
 
       let alive = true;
       let loading = false;
@@ -7818,6 +7796,7 @@
       let updatedAt = 0;
       let rows = [];
       let countryById = new Map();
+      let query = '';
 
       // 排序方式记在功能自己的 storage 里（eclesiar-helper:business:industry:sort）
       const saved = ctx.storage.get('sort', null);
@@ -8050,9 +8029,20 @@
         return el;
       }
 
+      /** 搜索匹配：地区名、国家中 / 英文名、法币代码四路任一命中。 */
+      const matchesQuery = (row, keyword) => {
+        if (!keyword) return true;
+        if (row.name && row.name.toLowerCase().indexOf(keyword) !== -1) return true;
+        if (row.countryName && row.countryName.toLowerCase().indexOf(keyword) !== -1) return true;
+        if (row.countryZh && row.countryZh.toLowerCase().indexOf(keyword) !== -1) return true;
+        if (row.countryCode && row.countryCode.toLowerCase().indexOf(keyword) !== -1) return true;
+        return false;
+      };
+
       function renderList() {
         if (!alive) return;
-        const items = rows.slice().sort(comparator());
+        const keyword = query.trim().toLowerCase();
+        const items = rows.filter((row) => matchesQuery(row, keyword)).sort(comparator());
         listEl.textContent = '';
         items.forEach((row, index) => listEl.appendChild(buildRow(row, index)));
 
@@ -8065,9 +8055,11 @@
           (error && (error.code === 'NO_TOKEN' || error.code === 'UNAUTHORIZED')) ||
           (market.state !== 'ok' && !updatedAt);
         emptyEl.hidden = Boolean(loading) || Boolean(blocked);
-        emptyEl.textContent = updatedAt
-          ? '这次没有读到任何地区数据，稍后可以点「刷新地区」再试。'
-          : '还没有地区数据，点「刷新地区」抓取一次。';
+        emptyEl.textContent = keyword
+          ? '没有匹配「' + query.trim() + '」的地区。'
+          : updatedAt
+            ? '这次没有读到任何地区数据，稍后可以点「刷新地区」再试。'
+            : '还没有地区数据，点「刷新地区」抓取一次。';
       }
 
       /** 共用提示里写的是「刷新行情」，这页的按钮叫「刷新地区」，换一下别让玩家找不到。 */
@@ -8241,6 +8233,18 @@
 
       on(refreshBtn, 'click', () => load(true));
 
+      on(queryEl, 'input', () => {
+        query = queryEl.value || '';
+        renderList();
+        ctx.ui.reposition();
+      });
+
+      // 面板在 Shadow DOM 内，游戏若在 document / window 上监听按键，拿到的 target 会被重定向成宿主元素，
+      // 很容易被当成「在页面里按键」（打字直接触发游戏快捷键、页面跳走）；这里把按键拦在组件内部。
+      ['keydown', 'keypress', 'keyup'].forEach((type) => {
+        on(queryEl, type, (event) => event.stopPropagation());
+      });
+
       ctx.onDestroy(() => {
         alive = false;
         if (offAuth) {
@@ -8262,7 +8266,7 @@
    * 数据来源：
    *  - 增值税 / 进口税 / 工资税 / 最低工资取自 /countries/summary 的 laws
    *    （个别环境 summary 不带 laws，这时才补一次 /countries，与「销售」共用同一份缓存）；
-   *  - 「折金」用 fxFeed 的卖法币换黄金最优价，与「商品」的销售口径一致；
+   *  - 「折金」用 fxFeed 的卖法币换黄金最优价，与「市场」的销售口径一致；
    *  - 领土检查复用 regionFeed（与「工业」、商品比价的领土检查共用 5 分钟缓存），
    *    已失去全部领土的流亡政府单独放到最底下。
    *
@@ -8813,7 +8817,7 @@
 
       /**
        * 读一次账号的国籍国 / 当前所在国（只存 id，不存原始字段）。
-       * 走 playerFeed 的 2 分钟缓存，与「汇率」的置顶、「商品」的本国判断共用同一次请求。
+       * 走 playerFeed 的 2 分钟缓存，与「汇率」的置顶、「市场」的本国判断共用同一次请求。
        */
       async function readPlayer() {
         let info = null;
@@ -9217,6 +9221,27 @@
           </p>
         </div>
         <div class="eh-section">
+          <div class="eh-h3">功能开关</div>
+          <label class="eh-gd-switch">
+            <input type="checkbox" data-role="badge">
+            <span>商品市场与上架表单显示金价</span>
+          </label>
+          <label class="eh-gd-switch">
+            <input type="checkbox" data-role="regions">
+            <span>商品市场显示该国地区快捷入口</span>
+          </label>
+          <label class="eh-gd-switch">
+            <input type="checkbox" data-role="auto-compare">
+            <span>商品市场自动加载比价数据</span>
+          </label>
+          <p class="eh-note is-warn" data-role="auto-note" hidden></p>
+          <div class="eh-row" data-role="auto-confirm" hidden>
+            <button class="eh-btn" type="button" data-role="auto-yes">仍然开启</button>
+            <button class="eh-btn eh-btn--ghost" type="button" data-role="auto-no">取消</button>
+          </div>
+          <p class="eh-note">只影响游戏商品市场页的只读标注与本地预抓行情，不改游戏数据。</p>
+        </div>
+        <div class="eh-section">
           <div class="eh-h3">API 访问</div>
           <div class="eh-kv">
             <span>当前鉴权</span><b data-role="api-mode">…</b>
@@ -9296,6 +9321,71 @@
       let usageDate = '';
       let usageReady = false;
       let usageError = '';
+
+      // 功能开关：原先在市场页，集中到这里管理；游戏页标注仍由 marketBadge / regionJump 自己维护
+      const badgeToggle = pane.querySelector('[data-role="badge"]');
+      const regionToggle = pane.querySelector('[data-role="regions"]');
+      const autoToggle = pane.querySelector('[data-role="auto-compare"]');
+      const autoNote = pane.querySelector('[data-role="auto-note"]');
+      const autoConfirm = pane.querySelector('[data-role="auto-confirm"]');
+      const autoYes = pane.querySelector('[data-role="auto-yes"]');
+      const autoNo = pane.querySelector('[data-role="auto-no"]');
+      const AUTO_WARN =
+        '开启后会在游戏启动时自动获取全球行情，数据请求量比较大，可能拖慢游戏启动速度。该选项关闭时，也可以在市场页获取完整数据后正常展示比价。';
+
+      const syncToggles = () => {
+        badgeToggle.checked = marketBadge.enabled;
+        regionToggle.checked = regionJump.enabled;
+        autoToggle.checked = goodsAuto.enabled;
+        autoConfirm.hidden = true;
+        autoNote.hidden = true;
+        autoNote.textContent = '';
+      };
+
+      on(badgeToggle, 'change', () => {
+        marketBadge.setEnabled(badgeToggle.checked);
+        ctx.log('市场列表金价标注', badgeToggle.checked ? '开' : '关');
+      });
+
+      on(regionToggle, 'change', () => {
+        regionJump.setEnabled(regionToggle.checked);
+        ctx.log('地区快捷跳转', regionToggle.checked ? '开' : '关');
+      });
+
+      // 自动比价默认关闭：勾选只展开提醒，点「仍然开启」才真正生效
+      on(autoToggle, 'change', () => {
+        if (!autoToggle.checked) {
+          goodsAuto.setEnabled(false);
+          syncToggles();
+          ctx.ui.reposition();
+          return;
+        }
+        autoToggle.checked = false;
+        autoConfirm.hidden = false;
+        autoNote.textContent = AUTO_WARN;
+        autoNote.hidden = false;
+        ctx.ui.reposition();
+      });
+
+      on(autoYes, 'click', () => {
+        goodsAuto.setEnabled(true);
+        syncToggles();
+        ctx.ui.reposition();
+      });
+
+      on(autoNo, 'click', () => {
+        syncToggles();
+        ctx.ui.reposition();
+      });
+
+      // 「清除本地设置」等其它入口也会关掉自动比价，勾选状态跟着同步
+      const offAuto = goodsAuto.subscribe(() => {
+        if (!alive) return;
+        syncToggles();
+        ctx.ui.reposition();
+      });
+
+      syncToggles();
 
       const sayApi = (text, tone) => {
         apiFlash.hidden = false;
@@ -9591,7 +9681,7 @@
 
       on(pane.querySelector('[data-role="reset-all"]'), 'click', () => {
         ctx.ui.resetAll();
-        // 自动比价也回到默认关闭，同时停掉后台的自动刷新（商品页的勾选状态由订阅同步）
+        // 自动比价也回到默认关闭，同时停掉后台的自动刷新（设置页的勾选状态由订阅同步）
         goodsAuto.setEnabled(false);
         say('已清除本地设置，界面恢复默认');
         ctx.ui.reposition();
@@ -9628,6 +9718,7 @@
         clearTimeout(flashTimer);
         clearTimeout(apiFlashTimer);
         clearInterval(usageTimer);
+        offAuto();
         watchPane.disconnect();
         watchPanel.disconnect();
       });
