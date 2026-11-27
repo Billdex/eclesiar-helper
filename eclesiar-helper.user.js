@@ -7402,6 +7402,12 @@
     let observer = null;
     let timer = 0;
     let retryTimer = 0;
+    /**
+     * 页面静止时的低频重扫（只重算本地 DOM，不直接发请求）：
+     * 没有它，标注的「10 分钟过期才重拉」就永远等不到触发——扫描平时只由页面的 DOM 变化驱动。
+     */
+    const IDLE_SCAN_MS = 60 * 1000;
+    let idleTimer = 0;
     let credentialTries = 0;
     let currencyMap = null;
     let currencyByCountry = null;
@@ -7411,9 +7417,6 @@
     let listingRoot = null;
     /** 已为「当前所在国家」发过请求，避免每轮扫描都问一次。 */
     let playerAsked = false;
-    /** 上一次复核「当前所在国家」的时间：上架表单可能长时间开着，定期重读一次。 */
-    const PLAYER_CHECK_MS = 30 * 1000;
-    let playerCheckedAt = 0;
     /** playerFeed 的订阅：只在本页标注运行期间持有，stop() 里退订。 */
     let offPlayer = null;
     /** 换汇挂单的订阅：别的页面刷新了汇率，这边立刻重画，不用等下一次时间复核。 */
@@ -7561,11 +7564,14 @@
      * selling=true 走买单（你把手里的法币卖成黄金），false 走卖单（你花黄金买法币）。
      * 数据直接读 coinBook（与「汇率」面板共用同一套 key）：
      *  - 命中 10 分钟缓存：直接用；
-     *  - 已过期：先拿旧值顶上，同时补一次请求（扫描很密，补请求按 RATE_KICK_MS 节流）；
+     *  - 已过期：先拿旧值顶上，同时补一次请求（按币种节流，买卖两个方向共用一次 ensureMany）；
      *  - 完全没有：补一次请求，这一轮先不画。
      */
     const RATE_KICK_MS = 60 * 1000;
-    let rateKickAt = 0;
+    /** 补拉失败后退避：页面上的重扫是每分钟一次，别让它变成对故障接口的持续轮询。 */
+    const RATE_RETRY_MS = 5 * 60 * 1000;
+    /** 币种 id → 下次允许补拉的时间。 */
+    const rateKick = new Map();
     function goldRateOf(id, selling) {
       const transaction = selling ? 'BUY' : 'SELL';
       const entry = coinBook.side(id, transaction);
@@ -7575,10 +7581,13 @@
       if (apiClient.state !== 'ok') return entry ? priceOf(entry) : undefined;
 
       const now = Date.now();
-      if (!rateKickAt || now - rateKickAt >= RATE_KICK_MS) {
-        rateKickAt = now;
-        coinBook.ensureMany([id]).then(schedule, schedule);
-      }
+      if (now < (rateKick.get(id) || 0)) return entry ? priceOf(entry) : undefined;
+      rateKick.set(id, now + RATE_KICK_MS);
+      coinBook.ensureMany([id]).then(schedule, (err) => {
+        rateKick.set(id, Date.now() + RATE_RETRY_MS);
+        log('市场金价：换汇挂单补拉失败', (err && err.code) || (err && err.message) || err);
+        schedule();
+      });
       return entry ? priceOf(entry) : undefined;
     }
 
@@ -7738,17 +7747,8 @@
       }
 
       const countryId = playerFeed.countryId;
-      // 账号信息 10 秒就过期，但 getter 不会自己重新请求：上架表单长时间开着时定期复核一次，
-      // 否则玩家旅行 / 换国籍后这里会一直按旧国家的货币折算
-      if (countryId && Date.now() - playerCheckedAt >= PLAYER_CHECK_MS) {
-        playerCheckedAt = Date.now();
-        playerFeed
-          .ensure()
-          .then((info) => {
-            if (running && info && String(info.countryId) !== String(countryId)) schedule();
-          })
-          .catch(() => {});
-      }
+      // 所在国只在「还没有值」时读一次：玩家在商品市场页内不会换国家（旅行会离开这页，
+      // 回来时 start() 会重读），所以不做周期性复核，免得每分钟打一次账号接口
       if (!countryId) {
         if (!playerAsked) {
           playerAsked = true;
@@ -8014,17 +8014,22 @@
       running = true;
       credentialTries = 0;
       playerAsked = false;
-      playerCheckedAt = Date.now();
       rowPainted = false;
       grossPainted = false;
       listingRoot = findListingRoot();
       ensureCurrencyMap();
-      // 账号字段被别的页面刷新（旅行 / 换国籍）时立刻重画实收金额那条，不用等下一次复核
+      // 页面静止时也要让「过期才重拉」有机会发生：每分钟本地重扫一次，是否发请求由 TTL 决定
+      if (!idleTimer) {
+        idleTimer = setInterval(() => {
+          if (!running || document.visibilityState !== 'visible') return;
+          schedule();
+        }, IDLE_SCAN_MS);
+      }
+      // 账号字段被别的页面刷新（旅行 / 换国籍）时立刻重画实收金额那条
       if (!offPlayer) {
         offPlayer = playerFeed.watch(() => {
           if (!running) return;
           playerAsked = false;
-          playerCheckedAt = Date.now();
           schedule();
         });
       }
@@ -8068,13 +8073,14 @@
       }
       clearTimeout(timer);
       clearInterval(retryTimer);
+      clearInterval(idleTimer);
       timer = 0;
       retryTimer = 0;
+      idleTimer = 0;
       credentialTries = 0;
       scope = null;
       listingRoot = null;
       playerAsked = false;
-      playerCheckedAt = 0;
       rowPainted = false;
       grossPainted = false;
       unknownCodes.clear();

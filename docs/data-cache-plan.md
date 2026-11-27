@@ -270,7 +270,7 @@ apiCache.stats()                           // 调试：hit / join / miss / coold
 
 - **岗位硬上限失效**：`peek` 不判 TTL，过期页既不计入 300 上限又真会发请求 → 新增 `apiCache.fresh(key)`，计数改用它。
 - **页面级 key 刷不动**：国家清单 / 税率只有 `ensure`，首次失败后所有「刷新」按钮都会撞上冷却 → 补 `refreshCountries` / `refreshTaxes` / `loadCountries(mode)`，五个面板的刷新入口与岗位刷新都改走 refresh 口径；`COOLDOWN` 也不再原样显示，统一翻成「冷却中，约 N 秒后可重试」。
-- **市场页标注不再更新**：`marketBadge` 只判「有没有条目」不判过期 → 按 `API_TTL.coin` 判过期并在过期时补一次（60 秒节流）；上架表单的所在国改为 30 秒复核一次。
+- **市场页标注不再更新**：`marketBadge` 只判「有没有条目」不判过期 → 按 `API_TTL.coin` 判过期并在过期时补一次（按币种 60 秒节流、失败退避 5 分钟）；页面静止时由 **60 秒本地重扫**触发（只重算 DOM，不发请求）。所在国只在「还没有值」时读一次——商品市场页内不会换国家，旅行会离开这页，回来时 `start()` 会重读。
 - **ensure 模式的补跑无效**：冷却会立刻拒绝第二次 ensure → 补跑改用 `refresh`（绕过冷却），并跳过 429（额度已满不重试）。
 - **批次句柄可能卡死**：`batch = null` 不在 `finally`，异常逃逸后 `load()` 永远返回旧句柄；`reset()` 期间旧批次还会回写 `lastBatch` → 复位放进 `finally` + `batch === handle` 身份守卫；`lastBatch` 改成按本轮成功集合覆盖（整批全失败才保留旧值）。
 - **「更新于」口径不一**：市场 / 税费 / 工业原本都写 `Date.now()` → 统一为「这屏里最旧的数据时间」（`goodsSnapshot.updatedAt` / `regionFeed.atOf`），调度另用 `goodsSnapshot.checkedAt`；`formatClock(0)` 返回「—」。
