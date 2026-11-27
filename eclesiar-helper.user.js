@@ -3598,6 +3598,8 @@
       kept.forEach((entry, item) => entries.set(item, entry));
       failures.clear();
       inflight.clear();
+      // 整体清空（destroy）时连计数一起归零，方便验收「destroy 后 stats 归零」
+      if (!keepPage) resetStats();
     }
 
     /** 只读查询，不触发请求。 */
@@ -11019,6 +11021,9 @@
         apiSaveBtn.disabled = generating;
       };
 
+      /** 专用密钥的当日用量：60 秒内复用同一份结果。 */
+      const USAGE_KEY = '/account/apikey/usage';
+
       const countLabel = (value) => {
         const n = Number(value);
         if (!Number.isFinite(n)) return '—';
@@ -11035,6 +11040,7 @@
       /**
        * 进入设置页时读一次当日用量；只有专用密钥可用时才请求。
        * 用量接口只认游戏登录凭据，用专用密钥反而会被拒，所以这里显式指定 login。
+       * 结果走 apiCache（60 秒）：来回切标签不会每次都打一遍这个接口。
        */
       const loadUsage = async () => {
         if (!alive || usageLoading) return;
@@ -11043,7 +11049,12 @@
         usageLoading = true;
         syncApi();
         try {
-          const usage = await apiClient.call('/account/apikey/usage', { login: true, object: true });
+          const entry = await apiCache.ensure(
+            USAGE_KEY,
+            () => apiClient.call(USAGE_KEY, { login: true, object: true }),
+            { ttl: 'usage', namespace: 'usage' }
+          );
+          const usage = entry && entry.value;
           if (!alive) return;
           const used = Number(usage && usage.used);
           const limit = Number(usage && usage.limit);

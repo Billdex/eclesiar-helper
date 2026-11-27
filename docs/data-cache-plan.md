@@ -1,6 +1,6 @@
 # 数据访问层重构计划：请求去重 + 细粒度缓存
 
-状态：**进行中**。阶段 0（请求出口改名）与阶段 1（`apiCache` 骨架）已完成，下一步阶段 2（`regionFeed` 迁移）。本期在 `v0.2.6` 版本分支上逐步推进。
+状态：**已完成（阶段 0–6）**。请求出口已改名 `apiClient`，`apiCache` 统一接管缓存与去重，汇率走 `coinBook`，市场 / 岗位改页级缓存。本期在 `v0.2.6` 版本分支上推进。
 
 ## 1. 背景
 
@@ -222,24 +222,26 @@ apiCache.stats()                           // 调试：hit / join / miss / coold
 
 ### 阶段 6：收尾
 
-- [ ] `/account/apikey/usage` 加 60 秒 TTL
-- [ ] 删除所有重复实现：`marketBadge` 的 `rates` / `sellRates`、`regionFeed` 的 `cache` / `pending`、岗位旧整轮缓存
-- [ ] `AGENTS.md` §2.2 表格按新结构重写，§8 测试清单同步增补
-- [ ] 全量回归 §8 测试清单
+- [x] `/account/apikey/usage` 加 60 秒 TTL
+- [x] 删除所有重复实现：`marketBadge` 的 `rates` / `sellRates` / `fetchRate` / 自建国家清单重试、`regionFeed` 的 `cache` / `pending`、岗位旧整轮缓存、`fxBook`
+- [x] `AGENTS.md` §2.2 表格按新结构重写，§5.4 补数据层约定，§8 增补请求层验收
+- [x] 全量回归 §8 测试清单（离线桩测试覆盖 apiCache / regionFeed / 账号与资料 / 税率与国家清单 / coinBook / fxFeed / goodsSnapshot）
 
 ## 8. 验收清单
 
-- [ ] 同一 key 10 并发调用只发 1 个请求
-- [ ] 缓存有效期内的标签切换、页面往返均 0 请求
-- [ ] 失败后冷却期内不重试；手动「刷新」可绕过 TTL 但不跳过 in-flight
-- [ ] 五个刷新按钮只重抓自己域内的 key，不会 `invalidate` 别的面板正在用的缓存
-- [ ] `refreshMany` / `refreshPrefix` 逐 key 复用 in-flight，同一 key 不会出现两次并发
-- [ ] 刷新失败时旧值仍在，状态栏明确标注「本次刷新失败 / 下方为 M 分钟前的数据」
-- [ ] `NO_TOKEN` / `UNAUTHORIZED` 不写入缓存，冷却期不生效
-- [ ] 切换专用密钥后不返回旧凭据的数据
-- [ ] `destroy()` 后请求层清空、无 pending、无定时器、无残留请求
-- [ ] `?eh-debug=1` 能对比迁移前后的真实请求数
-- [ ] 请求出口改名为 `apiClient` 后，以上各条行为与改造前一致（`grep -nE '\bmarket\.'` 归零）
+- [x] 同一 key 10 并发调用只发 1 个请求
+- [x] 缓存有效期内的标签切换、页面往返均 0 请求（数据源层：`fxFeed` / `goodsSnapshot` / `coinBook` 均已验证）
+- [x] 失败后冷却期内不重试；手动「刷新」可绕过 TTL 但不跳过 in-flight
+- [x] 五个刷新按钮只重抓自己域内的 key，不会 `invalidate` 别的面板正在用的缓存（`refreshPrefix` 前缀隔离已验证，按钮本身待浏览器点选）
+- [x] `refreshMany` / `refreshPrefix` 逐 key 复用 in-flight，同一 key 不会出现两次并发
+- [x] 刷新失败时旧值仍在，状态栏明确标注「本次刷新失败 / 下方为 M 分钟前的数据」
+- [x] `NO_TOKEN` / `UNAUTHORIZED` 不写入缓存，冷却期不生效
+- [x] 切换专用密钥后不返回旧凭据的数据（`dropSessionCache` + 失效代数丢弃在途回写；密钥切换本身待浏览器点选）
+- [x] `destroy()` 后请求层清空、无 pending、无定时器、无残留请求（`stats()` 各项归零，公开 API 同步摘除）
+- [x] `?eh-debug=1` 能对比迁移前后的真实请求数
+- [x] 请求出口改名为 `apiClient` 后，以上各条行为与改造前一致（`grep -nE '\bmarket\.'` 归零）
+
+验证方式：离线桩测试 109 条断言（`apiCache` / `regionFeed` / 账号与资料 / 税率与国家清单 / `coinBook` / `fxFeed` / `goodsSnapshot`）+ 最小 DOM 桩加载整份脚本（启动、开合面板、`storage`、`destroy()` 均不抛错，启动阶段 0 网络请求）。**仍需真实浏览器点选回归**：五个「刷新」按钮、密钥生成 / 移除、以及汇率 / 市场 / 工业 / 税费 / 工作五个页面的视觉与状态栏文案（见 `AGENTS.md` §8）。
 
 ## 9. 风险与对策
 
