@@ -2,7 +2,7 @@
 // @name         Eclesiar 助手
 // @name:en      Eclesiar Helper
 // @namespace    https://github.com/Billdex/eclesiar-helper
-// @version      0.2.1
+// @version      0.2.2
 // @description  Eclesiar 经济 / 政治计算辅助插件：悬浮球面板 + 全球汇率总览 + 各国市场商品金价比价与销售税后收益估算 + 各国地区工业数据总览，商品市场列表与上架表单直接标注折算金价，并可一键跳转该国的地区页面。
 // @description:en Eclesiar helper: floating panel + exchange rates + cross-market goods pricing and after-tax sale revenue in gold + a sortable overview of every region's industry data, plus one-click jumps to a country's regions.
 // @author       billdex
@@ -14,8 +14,8 @@
 // @homepageURL  https://github.com/Billdex/eclesiar-helper
 // @supportURL   https://github.com/Billdex/eclesiar-helper/issues
 // @source       https://github.com/Billdex/eclesiar-helper
-// @updateURL    https://cdn.jsdmirror.com/gh/Billdex/eclesiar-helper@main/eclesiar-helper.meta.js
-// @downloadURL  https://cdn.jsdmirror.com/gh/Billdex/eclesiar-helper@main/eclesiar-helper.user.js
+// @updateURL    https://cdn.jsdelivr.net/gh/Billdex/eclesiar-helper@main/eclesiar-helper.meta.js
+// @downloadURL  https://cdn.jsdelivr.net/gh/Billdex/eclesiar-helper@main/eclesiar-helper.user.js
 // ==/UserScript==
 
 /**
@@ -43,31 +43,31 @@
    * 1. 常量与工具
    * ========================================================================= */
 
-  const VERSION = '0.2.1';
+  const VERSION = '0.2.2';
   const REPO_URL = 'https://github.com/Billdex/eclesiar-helper';
+  /** 主源：jsDelivr 官方。自动更新与「安装更新」都以它为准，不接受任何第三方密钥。 */
+  const CDN_RAW = 'https://cdn.jsdelivr.net/gh/Billdex/eclesiar-helper@main/';
   /**
-   * JSDMirror：与 jsDelivr 路径完全兼容的国内镜像（腾讯 EdgeOne 多线节点，分支缓存只有 5 分钟），
-   * 下载与自动更新都以它为主。cdn.jsdelivr.net 在国内常被限速或拦截，只作为第一备源。
+   * 备源一：JSDMirror（与 jsDelivr 路径完全兼容的国内镜像，腾讯 EdgeOne 多线节点）。
+   * jsDelivr 在国内被限速 / 拦截时走它，设置页与版本检查都留了入口。
    */
-  const CDN_RAW = 'https://cdn.jsdmirror.com/gh/Billdex/eclesiar-helper@main/';
-  /** jsDelivr 官方源：海外网络以及镜像不可用时的备源。 */
-  const JSDELIVR_RAW = 'https://cdn.jsdelivr.net/gh/Billdex/eclesiar-helper@main/';
-  /** JSDMirror 的备用域名（阿里 ESA），主域名解析异常时顶上。 */
-  const CDN_MIRROR_RAW = 'https://cdn.jsdmirror.cn/gh/Billdex/eclesiar-helper@main/';
+  const MIRROR_RAW = 'https://cdn.jsdmirror.com/gh/Billdex/eclesiar-helper@main/';
+  /** 备源二：JSDMirror 的备用域名（阿里 ESA），主域名解析异常时顶上。 */
+  const MIRROR_CN_RAW = 'https://cdn.jsdmirror.cn/gh/Billdex/eclesiar-helper@main/';
   /** GitHub raw 在国内常被拦，只作为最后备用。 */
   const REPO_RAW = 'https://raw.githubusercontent.com/Billdex/eclesiar-helper/main/';
   /**
    * 版本号只从元数据文件读，检查更新时不需要下载整个脚本。
-   * 几个源并行请求、取其中最高的版本号：某个源缓存落后（jsDelivr 分支最长 12 小时）也不会漏更新。
+   * 几个源并行请求、取其中最高的版本号：某个源缓存落后（分支缓存最长 12 小时）也不会漏更新。
    */
   const UPDATE_META_URLS = [
     CDN_RAW + 'eclesiar-helper.meta.js',
-    JSDELIVR_RAW + 'eclesiar-helper.meta.js',
-    CDN_MIRROR_RAW + 'eclesiar-helper.meta.js',
+    MIRROR_RAW + 'eclesiar-helper.meta.js',
+    MIRROR_CN_RAW + 'eclesiar-helper.meta.js',
     REPO_RAW + 'eclesiar-helper.meta.js'
   ];
   const UPDATE_INSTALL_URL = CDN_RAW + 'eclesiar-helper.user.js';
-  const UPDATE_INSTALL_JSDELIVR = JSDELIVR_RAW + 'eclesiar-helper.user.js';
+  const UPDATE_INSTALL_MIRROR = MIRROR_RAW + 'eclesiar-helper.user.js';
   const UPDATE_INSTALL_FALLBACK = REPO_RAW + 'eclesiar-helper.user.js';
   const NS = 'eclesiar-helper';
   const ROOT_ID = NS + '-root';
@@ -8307,8 +8307,8 @@
           </div>
           <p class="eh-note" data-role="update-note" hidden></p>
           <p class="eh-links">
-            <a href="${UPDATE_INSTALL_URL}" target="_blank" rel="noopener noreferrer">手动安装（JSDMirror）</a>
-            <a href="${UPDATE_INSTALL_JSDELIVR}" target="_blank" rel="noopener noreferrer">备用（jsDelivr）</a>
+            <a href="${UPDATE_INSTALL_URL}" target="_blank" rel="noopener noreferrer">手动安装（jsDelivr）</a>
+            <a href="${UPDATE_INSTALL_MIRROR}" target="_blank" rel="noopener noreferrer">备用（JSDMirror）</a>
             <a href="${UPDATE_INSTALL_FALLBACK}" target="_blank" rel="noopener noreferrer">备用（GitHub）</a>
           </p>
         </div>

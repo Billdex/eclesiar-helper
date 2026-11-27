@@ -5,7 +5,7 @@
 ## 1. 项目定位
 
 - 目标：为多人在线经济 / 政治模拟游戏 Eclesiar（<https://app.eclesiar.com/>）提供 Tampermonkey 用户脚本。
-- 现状：**v0.2.1**（走 GitHub 仓库分发，下载与更新走 JSDMirror 镜像，jsDelivr 与 GitHub raw 备用）——外壳（悬浮球 + 面板 + 功能注册表 + SPA 路由钩子）+ 业务模块「汇率总览」（拉取全球法币挂单、算最优价与目标额度加权均价，内置中文国名 / 国旗，逐行加载进度；目标额度可在黄金 / 法币之间切换，列表顶部置顶玩家国籍与当前所在国的汇率，各自配色 + 标签，数据来自 `playerFeed`）与「商品比价」（两行图标按钮点选成品 / 原材料、成品再选 Q1–Q5；「采购」按黄金单价从低到高，「销售」扣增值税 / 进口税后按卖币换金汇率算出税后收入并从高到低，国籍固定取 `POST /account/getuser`）。两者共用 `fxFeed` 这一份汇率缓存，销售模式还会额外读一次 `countries` 的 `laws` 税率。商品行情由全局 `goodsSnapshot` 持有（抓取 / 去重 / 10 分钟 TTL / 抓完 `publish` 给 `goodsFeed`），面板「商品」页与自动比价共用。地区清单由全局 `regionFeed` 持有（按国家缓存 5 分钟、并发共享同一个请求），商品比价的领土检查、`regionJump` 与「工商」页共用。「工商」是工商类数据的入口，目前只挂一个「工业」子面板：拉全服所有国家的地区，按国旗 / 地区 / 资源产区 / 工业区 / 物产 / 污染度 / NPC 列成可排序的表（默认「三项齐全优先，同级按（工业区 + 资源产区 + 物产加成）× 污染扣减」）；手动排序只给综合 / 物产 / 污染 / NPC（产区与工业区最高 5 级，单独排序区分度太低），每行右侧走 `route.goto('/region/{region_id}')`；子面板由 `registerBusinessPane()` 注册，后续加子面板只往 `businessPanes` 里加一项。「设置」页负责专用 API 密钥管理（生成 / 粘贴 / 移除，优先于登录 JWT 用于插件查询）、版本检查与更新入口。「商品」页底部另有默认关闭的「自动展示商品比价」（`goodsAuto`：开启后启动即预抓全球汇率与商品行情、按 TTL 自动更新，使市场页不打开面板也能显示全球最低价对比）。另有 `marketBadge` 模块在游戏自己的商品市场页每行起价下追加折算金价，并在上架表单的「实收金额」右侧追加税后折算金价；`regionJump` 模块只在该页出现「你当前不在该国家」提示时，把该国的地区列成按钮，点一下 `route.goto('/region/{region_id}')`（两者是仅有的会写游戏 DOM 的模块，规则见硬约束 2）。`route.goto` 负责跳到游戏内页面（`/market/{country_id}`、`/monetary-market/{currency_id}`，会自动补当前路径首段的语言前缀，如 `/zh-CN/market/12`），优先 SPA 内切换、失败退回整页跳；`marketJump` 在落地后按 `sessionStorage` 里的意图点一次游戏自己的分类（食物 / 武器 / 票券 / 原材料——游戏只有这四类，飞机归「武器」、机票归「票券」、四种原材料归「原材料」）与 Q1–Q5 品质筛选（规则见硬约束 5）。同一路由只换 id（`/market/17` → `/18`、`/monetary-market/2` → `/3`）时游戏不会重新渲染，`route.goto` 会走 `detour`：先 push 到 `/{语言}/dashboard` 把当前页卸掉，用节点增删判断 dashboard 已经画出来（正常一百多毫秒，600ms 兜底）后立即 `replaceState` 到目标（两段都是结构变化，路由都会重渲染，全程不刷新，中转页也不留在历史里）；两段里任一段没生效才整页跳。
+- 现状：**v0.2.2**（走 GitHub 仓库分发，下载与自动更新走 jsDelivr 官方源，JSDMirror 镜像与 GitHub raw 备用）——外壳（悬浮球 + 面板 + 功能注册表 + SPA 路由钩子）+ 业务模块「汇率总览」（拉取全球法币挂单、算最优价与目标额度加权均价，内置中文国名 / 国旗，逐行加载进度；目标额度可在黄金 / 法币之间切换，列表顶部置顶玩家国籍与当前所在国的汇率，各自配色 + 标签，数据来自 `playerFeed`）与「商品比价」（两行图标按钮点选成品 / 原材料、成品再选 Q1–Q5；「采购」按黄金单价从低到高，「销售」扣增值税 / 进口税后按卖币换金汇率算出税后收入并从高到低，国籍固定取 `POST /account/getuser`）。两者共用 `fxFeed` 这一份汇率缓存，销售模式还会额外读一次 `countries` 的 `laws` 税率。商品行情由全局 `goodsSnapshot` 持有（抓取 / 去重 / 10 分钟 TTL / 抓完 `publish` 给 `goodsFeed`），面板「商品」页与自动比价共用。地区清单由全局 `regionFeed` 持有（按国家缓存 5 分钟、并发共享同一个请求），商品比价的领土检查、`regionJump` 与「工商」页共用。「工商」是工商类数据的入口，目前只挂一个「工业」子面板：拉全服所有国家的地区，按国旗 / 地区 / 资源产区 / 工业区 / 物产 / 污染度 / NPC 列成可排序的表（默认「三项齐全优先，同级按（工业区 + 资源产区 + 物产加成）× 污染扣减」）；手动排序只给综合 / 物产 / 污染 / NPC（产区与工业区最高 5 级，单独排序区分度太低），每行右侧走 `route.goto('/region/{region_id}')`；子面板由 `registerBusinessPane()` 注册，后续加子面板只往 `businessPanes` 里加一项。「设置」页负责专用 API 密钥管理（生成 / 粘贴 / 移除，优先于登录 JWT 用于插件查询）、版本检查与更新入口。「商品」页底部另有默认关闭的「自动展示商品比价」（`goodsAuto`：开启后启动即预抓全球汇率与商品行情、按 TTL 自动更新，使市场页不打开面板也能显示全球最低价对比）。另有 `marketBadge` 模块在游戏自己的商品市场页每行起价下追加折算金价，并在上架表单的「实收金额」右侧追加税后折算金价；`regionJump` 模块只在该页出现「你当前不在该国家」提示时，把该国的地区列成按钮，点一下 `route.goto('/region/{region_id}')`（两者是仅有的会写游戏 DOM 的模块，规则见硬约束 2）。`route.goto` 负责跳到游戏内页面（`/market/{country_id}`、`/monetary-market/{currency_id}`，会自动补当前路径首段的语言前缀，如 `/zh-CN/market/12`），优先 SPA 内切换、失败退回整页跳；`marketJump` 在落地后按 `sessionStorage` 里的意图点一次游戏自己的分类（食物 / 武器 / 票券 / 原材料——游戏只有这四类，飞机归「武器」、机票归「票券」、四种原材料归「原材料」）与 Q1–Q5 品质筛选（规则见硬约束 5）。同一路由只换 id（`/market/17` → `/18`、`/monetary-market/2` → `/3`）时游戏不会重新渲染，`route.goto` 会走 `detour`：先 push 到 `/{语言}/dashboard` 把当前页卸掉，用节点增删判断 dashboard 已经画出来（正常一百多毫秒，600ms 兜底）后立即 `replaceState` 到目标（两段都是结构变化，路由都会重渲染，全程不刷新，中转页也不留在历史里）；两段里任一段没生效才整页跳。
 - 非官方工具：不修改游戏数据、不自动操作，遵守游戏规则。
 - 文档：`README.md` 面向玩家（安装 / 扩展），官方 Wiki 为 <https://wiki.eclesiar.com/>。
 
@@ -23,7 +23,7 @@
    - 例外之二：`marketJump`。只在玩家从面板点「去市场」之后运行：跳到 `/market/{country_id}` 后，读 `sessionStorage` 里的意图，点一下游戏自己的商品 / 品质筛选按钮（只认文本或图标 `alt` 完全相等的可点控件——`button` / `role=button|tab|option` / `cursor:pointer`，带 `href` 的链接一律不点，最多重试 10 秒，点不到就放弃并清掉意图），不提交表单、不下单、不轮询。已经在同类页面、只换国家 / 币种时，只做两段 history 跳转（先 `/dashboard` 再目标，不点击游戏里的任何控件、不碰金额与买卖按钮），失败才整页刷新。玩家没点跳转时任何情况下都不执行。
 6. **扩展只走功能注册表**：新模块用 `features.register()`，不要改面板外壳或硬编码标签页。
 7. **版本号四处同步**：`eclesiar-helper.user.js` 的 `@version`、`eclesiar-helper.meta.js` 的 `@version`、`const VERSION`、`README.md` 的「当前版本」。
-8. **更新源地址固定**：`@updateURL` / `@downloadURL` / 设置页的「安装更新」都走 JSDMirror `https://cdn.jsdmirror.com/gh/Billdex/eclesiar-helper@main/…`（`CDN_RAW`；与 jsDelivr 路径完全兼容的国内镜像，解析到国内多线节点，分支缓存约 5 分钟）。备源顺序固定为 `cdn.jsdelivr.net`（`JSDELIVR_RAW`）→ `cdn.jsdmirror.cn`（`CDN_MIRROR_RAW`，同镜像的备用域名）→ `raw.githubusercontent.com`（`REPO_RAW`）。设置页的版本检查对 `UPDATE_META_URLS` 里的源**并行**请求并取最高 `@version`（带 `eh_t` 时间戳只绕得开边缘节点缓存，中间层对分支的解析缓存仍要等它自己过期，最坏情况会滞后到小时级），所以单个源缓存落后不会漏更新；油猴只支持一个 `@updateURL`，自动更新通道只能有一个，改主源要清楚这一点。改名或迁移仓库时这几处（含 `REPO_URL` / `CDN_RAW` / `JSDELIVR_RAW` / `CDN_MIRROR_RAW` / `REPO_RAW` / `UPDATE_META_URLS` / `UPDATE_INSTALL_URL` / `UPDATE_INSTALL_JSDELIVR` / `UPDATE_INSTALL_FALLBACK`、README 里的安装链接）必须一起改，否则老版本收不到更新。
+8. **更新源地址固定**：`@updateURL` / `@downloadURL` / 设置页的「安装更新」都走 jsDelivr 官方源 `https://cdn.jsdelivr.net/gh/Billdex/eclesiar-helper@main/…`（`CDN_RAW`）。备源顺序固定为 JSDMirror `cdn.jsdmirror.com`（`MIRROR_RAW`，与 jsDelivr 路径完全兼容的国内镜像）→ JSDMirror 备用域名 `cdn.jsdmirror.cn`（`MIRROR_CN_RAW`）→ `raw.githubusercontent.com`（`REPO_RAW`）。设置页的版本检查对 `UPDATE_META_URLS` 里的源**并行**请求并取最高 `@version`（带 `eh_t` 时间戳只绕得开边缘节点缓存，中间层对分支的解析缓存仍要等它自己过期，最坏情况会滞后到小时级），所以单个源缓存落后不会漏更新；油猴只支持一个 `@updateURL`，自动更新通道只能有一个，改主源要清楚这一点。镜像只作手工兜底，不引入任何第三方密钥、不依赖第三方服务可用性。改名或迁移仓库时这几处（含 `REPO_URL` / `CDN_RAW` / `MIRROR_RAW` / `MIRROR_CN_RAW` / `REPO_RAW` / `UPDATE_META_URLS` / `UPDATE_INSTALL_URL` / `UPDATE_INSTALL_MIRROR` / `UPDATE_INSTALL_FALLBACK`、README 里的安装链接）必须一起改，否则老版本收不到更新。
 
 ## 3. 目录
 
@@ -34,7 +34,7 @@ eclesiar-helper/
 ├── README.md                 # 给玩家看的安装 / 扩展文档
 ├── scripts/
 │   └── release.sh            # 发布辅助：版本校验 + 刷新三个源的 CDN 缓存（不是安装产物）
-├── .jsdmirror-key            # 本地密钥（git 忽略，不入库；见 §9）
+├── .jsdmirror-key            # 可选：镜像刷新用的本地密钥（git 忽略，不入库；没有也能发布）
 ├── .gitignore
 └── AGENTS.md
 ```
@@ -105,7 +105,7 @@ EclesiarHelper.features.register({
 3. 改过生命周期时，控制台执行 `EclesiarHelper.destroy()`，确认宿主与 API 都消失。
 4. 改过「汇率」：最优价与均价和手算一致；每行两个方向各一行（徽标是最优价，后面是这笔目标额度的成交结果；吃满多档时行尾补「均价」，均价与最优价只差一档时不重复显示；吃不满时徽标直接换成成交均价并在前面标「均价」，行尾只留「深度不足」与实际成交金数，不再重复写均价）；逐行转圈随数据到达消失，无挂单的行被移除；没捕获到凭据时给出提示。目标口径：输入框左侧的口径标签本身就是切换按钮（文字 + 切换图标，与输入框同在一个胶囊里，不再有独立的切换按钮），点一下从「目标黄金」变「目标法币」再点回去，输入框里的数字不变（只有 `fx:target` 一个值，默认 10；`fx:mode` 记当前口径），切换后立即按新口径重算整张列表且不发请求，再切回来数字仍是原值；清空输入框时不要立刻把 10 填回去（可以留着空继续输入，列表保持上一次的有效额度），只有失焦 / 回车 / 切口径才补回上一次的有效值；按法币算时每个方向显示「换够这么多单位需要 / 得到多少黄金」，黄金数改用 `fxGold` 保留位数，吃不满标「深度不足」并显示实际成交量；切回黄金口径排序恢复正常。置顶：列表上方固定两行（国籍在上、当前所在国在下，同一种货币合并为一行并标「玩家国籍 · 当前位置」），两国额度不同时用不同配色 + 「玩家国籍」「当前位置」标签；这两行在全球列表里不重复出现；读不到账号时原位提示（无凭据与读不到国籍文案不同），凭据晚到（`market.onAuth`）后自动补上；行情没拉过时显示「未加载」而不是「暂无卖单」；点刷新 / 一轮行情结束会重新读一次（`playerFeed` 2 分钟缓存）；`destroy()` 后无残留订阅。
 5. 改过「商品」：玩家当前所在国的行换橙色配色，国名后标「当前位置」；销售模式下国籍国在国名后标「玩家国籍」，两者重合时合成一个标签「玩家国籍 · 当前位置」；国名后另有英文国名（窄面板截断），货币代码只出现在下方数据行；第一名绿色、当前所在国橙色，两者重合时橙色底 + 绿色描边。采购的黄金单价 = 挂单价 × 买币最优价（不叠加进口税）；缺换汇挂单的货币排最后并标注；切商品 / 切采购销售不重新请求；选择区是两行图标按钮（成品 / 原材料），品质行只在选中成品时出现；商品图标缺图时退回内置 emoji。销售：税后价 = 挂单价 ×（1 − 增值税 − 进口税），再乘卖币最优价（买单方向，与采购相反）；国籍自动读取（`POST /account/getuser`，取 `nationality.id` 或 `nationality_id`），本国免进口税、拿不到国籍时两项都扣；最显眼的是税后金价，其次一行先写税前金价再写税率，不重复税后；商品市场只有卖单，不显示「可卖数量」；排序按税后从高到低；缺税率标「按 0 税估算」，缺买单标「暂无换汇买单」，买盘连 1 件所得都吃不下标「换汇深度不足」；`countries` 与 `POST /account/getuser` 只在进入销售时各请求一次。领土：`GET /country/regions?country_id=…` 没有 `data`（真实接口对无领土国家只回 `{ code: 200, description: '成功' }`）或返回空数组 = 已失去全部领土（流亡政府，玩家到不了），`call` 需传 `allowEmpty` 才不把「无 data」当成坏载荷；这些国家从主列表剔除、单独放到最底部「流亡政府」一栏并说明原因，栏内仍按同一套规则排序但名次显示 `—`、不抢「最优」高亮；领土只对有挂单的国家查、结果按国家缓存 5 分钟，查不到时按「有领土」处理（只在 `?eh-debug=1` 的日志里记录，不上状态栏）；该接口只发 GET（同地址 POST 是 404，`call` 要传 `noMethodRetry` 挡掉「GET 失败改 POST」的兜底）。
-6. 改过「设置」或版本检查：同版本显示「已是最新」、`@version` 更大时出现「安装更新」且链接指向 JSDMirror 上的 `.user.js`、所有源都失败时显示提示并保留三个手动安装链接（JSDMirror / jsDelivr / GitHub）；顺手确认 `eclesiar-helper.meta.js` 的 `@version` 与主脚本一致。
+6. 改过「设置」或版本检查：同版本显示「已是最新」、`@version` 更大时出现「安装更新」且链接指向 jsDelivr 上的 `.user.js`、所有源都失败时显示提示并保留三个手动安装链接（jsDelivr / JSDMirror / GitHub）；顺手确认 `eclesiar-helper.meta.js` 的 `@version` 与主脚本一致。
 7. 真实环境：从 `@downloadURL` 安装后刷新游戏，确认悬浮球出现、面板正常，「设置」页能读到仓库里的版本号。
 8. 改过「设置」的 API 密钥：没有密钥时按钮能生成并立即显示掩码；有密钥时「汇率 / 商品」发出的请求头带的是 `Bearer eclesiar_prod_…` 而不是登录 JWT（`/account/getuser` 例外，只认登录凭据）；密钥被拒（401）时只提示密钥失效、不丢登录凭据；「移除密钥」后回到登录凭据；「清除本地设置」不删除密钥。使用专用密钥时进入「设置」页会请求一次 `/account/apikey/usage` 并显示已用 / 上限、剩余与距 UTC 零点重置的倒计时（本地每分钟刷新，请求不轮询），切走再回来或重开面板只多请求一次；没有密钥时不发这个请求。注意：该接口只认游戏登录凭据，必须用 `{ login: true }` 发请求，不能用专用密钥。
 9. 改过 `marketBadge`（市场列表金价标注）：进游戏「商品市场」页，确认每行起价下出现「≈ + 金币图标 + 金额」且与「商品比价」同口径（挂单价 × 买币最优价，悬停可看乘式）；打开面板「商品」页抓取一次后，市场页每条标注应补上「比全球最低贵多少」（`+0.0078` 这类绝对金数，全球最低或差额不足 0.5% 时显示`最低`），数值 = 本行金价 − 全球最低金价，全球最低取 `goodsFeed.bestGold()`（跳过流亡政府、缺汇率的国家），没抓过行情时不显示这段、不自动发起抓取（「自动展示商品比价」开启时除外，见第 10 条）；切品类 / 切品质 / 换国家后重渲染仍每行只有一个标注、不重复叠加（某品质只剩 1 件商品、列表只有一行时也要标，且从单行切回多行后不能只剩第一行有标注）；离开市场页（含 SPA 前进后退到其它页面）后 `document.querySelectorAll('[data-eh-gold]').length` 归零；面板「商品」页的开关能即时摘掉 / 恢复标注并写进 `localStorage`；`EclesiarHelper.destroy()` 后页面无残留标注与观察器；没捕获到凭据时静默不标（只在 `?eh-debug=1` 日志里留记录），不重复打接口。上架表单：进「商品市场」→「我的报价」点开「上架物品」并选中商品，调整单价 / 数量后「实收金额」右侧应出现（并实时更新）「≈ + 金币图标 + 金额」，口径 = 实收金额 × 卖币换金最优价（买单方向，和列表行的买币口径相反），币种取 `playerFeed` 的 `region.country.id` 对应货币（页面右上的「货币市场 · XXX」只是购买页的余额按钮，**不能**当上架币种用）；**必须自己主动加载**——不打开插件面板、不点「刷新行情」也要能出来（面板是点击才插进 DOM 的，靠 `addedListingAnchor` 认到「单价」输入框后重扫；热身重试要等两类标注都画出来才停），收起再展开、隔一分钟再展开都要能恢复；同一行只允许一个标注；开关与列表行共用；离开商品市场页后 `document.querySelectorAll('[data-eh-gold]').length` 归零；拿不到所在国家时静默跳过（不弹提示、不重复打 `/account/getuser`）。
@@ -128,20 +128,19 @@ EclesiarHelper.features.register({
 1. 修改版本号（四处必须一致）：`eclesiar-helper.user.js` 的 `@version`、同文件的 `const VERSION`、`eclesiar-helper.meta.js` 的 `@version`、`README.md` 的「当前版本」。
 2. 更新 README 的能力表 / 说明。
 3. 提交并推送到 `main`。
-4. 刷新缓存：`scripts/release.sh`（需要刷新时**每次推送都要跑**）。
+4. 刷新缓存：`scripts/release.sh`（**每次推送都要跑**）。
    - 参数：`--verify` 只校验版本与三源当前状态、不发刷新请求；`--no-wait` 发完请求就退出、不轮询。
    - 脚本做的事：① 校验四处版本号一致 + 两个文件过 `node --check`；② 刷新三个源的缓存；③ 轮询 `@main` 直到三个源都返回新版本。
-   - **六个目标，缺一不可**：`eclesiar-helper.meta.js` 与 `eclesiar-helper.user.js` × 三个源（`cdn.jsdmirror.com`、`cdn.jsdmirror.cn`、`cdn.jsdelivr.net`）。只刷 `.meta.js` 会出现「提示有新版本、点安装下来还是旧的」。
-   - 三个源怎么刷：
-     - `cdn.jsdmirror.com` / `cdn.jsdmirror.cn` → `POST https://cache.jsdmirror.com/api/v1/purge`，请求头 `X-API-Key`，body `{"url":"<完整 URL>","method":"invalidate"}`，返回 `job_id`，通常 1 分钟内完成；
-     - `cdn.jsdelivr.net` → `GET https://purge.jsdelivr.net/gh/Billdex/eclesiar-helper@main/<文件名>`，无需 Key，返回 `"status": "finished"` 即成功。
+   - **六个目标，缺一不可**：`eclesiar-helper.meta.js` 与 `eclesiar-helper.user.js` × 三个源（`cdn.jsdelivr.net`、`cdn.jsdmirror.com`、`cdn.jsdmirror.cn`）。只刷 `.meta.js` 会出现「提示有新版本、点安装下来还是旧的」。
+   - 主源（`cdn.jsdelivr.net`）怎么刷：`GET https://purge.jsdelivr.net/gh/Billdex/eclesiar-helper@main/<文件名>`，**无需 Key**，返回 `"status": "finished"` 即成功。这条是必做项，与镜像是否可用无关。
+   - 镜像（`cdn.jsdmirror.com` / `cdn.jsdmirror.cn`）怎么刷：`POST https://cache.jsdmirror.com/api/v1/purge`，请求头 `X-API-Key`，body `{"url":"<完整 URL>","method":"invalidate"}`，返回 `job_id`，通常 1 分钟内完成。**这一步是可选的**：没有 Key 时脚本只打一条警告并跳过，不算失败（镜像是备用通道，等它的分支缓存自然过期也能追上）。
    - **顺序不能反**：先 push 再 purge。purge 会回源到 GitHub raw，而 raw 自己有 `max-age=300`；推完立刻刷可能刷到旧文件，脚本会轮询重试，实在不行过几分钟再跑一次 `--verify`。
-   - **密钥文件**：仓库根目录 `.jsdmirror-key`（已写进 `.gitignore`，**绝不入库、不贴进脚本 / README / 提交信息**）。写入规则：
+   - **密钥文件（可选）**：仓库根目录 `.jsdmirror-key`（已写进 `.gitignore`，**绝不入库、不贴进脚本 / README / 提交信息**）。写入规则：
      - 纯文本，第一行非空且不以 `#` 开头的文本就是 Key；`#` 开头的行是注释，会被跳过；
      - 首尾空白与 `\r` 会被自动去掉（Windows 记事本保存也能用）；
-     - 文件缺失或为空时，脚本只刷 jsDelivr 并打一条警告，不阻断发布；
+     - 文件缺失或为空时，跳过 JSDMirror 的两次刷新、只刷 jsDelivr，退出码不受影响；
      - Key 只发给 `cache.jsdmirror.com`，脚本输出最多打印前 6 位掩码。
    - 想换 provider 时用环境变量 `JSD_PROVIDER` 覆盖（默认交给服务端自己选）。
-5. 对外分享统一发**安装地址**，不要发仓库首页：首选 `https://cdn.jsdmirror.com/gh/Billdex/eclesiar-helper@main/eclesiar-helper.user.js`，备用 `https://cdn.jsdelivr.net/gh/Billdex/eclesiar-helper@main/eclesiar-helper.user.js`（`raw.githubusercontent.com` 在国内多被拦截，只作为最后备用）。文案模板见 README 的「分享给朋友」。
+5. 对外分享统一发**安装地址**，不要发仓库首页：首选 `https://cdn.jsdelivr.net/gh/Billdex/eclesiar-helper@main/eclesiar-helper.user.js`，国内打不开时给镜像 `https://cdn.jsdmirror.com/gh/Billdex/eclesiar-helper@main/eclesiar-helper.user.js`（`raw.githubusercontent.com` 在国内多被拦截，只作为最后备用）。文案模板见 README 的「分享给朋友」。
 6. 本地调试也可以把 `.user.js` 全文粘贴进 Tampermonkey 覆盖。
 7. **不要**把 `@updateURL` / `@downloadURL` 改成 tag 或 commit 地址：油猴的更新地址是写死在已安装副本里的，指向不可变引用会导致该版本永远「已是最新」、之后再也收不到更新。tag / commit 只用于「安装更新」链接与发版自检。

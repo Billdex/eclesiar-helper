@@ -2,7 +2,7 @@
 // @name         Eclesiar 助手
 // @name:en      Eclesiar Helper
 // @namespace    https://github.com/Billdex/eclesiar-helper
-// @version      0.2.1
+// @version      0.2.2
 // @description  Eclesiar 经济 / 政治计算辅助插件：悬浮球面板 + 全球汇率总览 + 各国市场商品金价比价与销售税后收益估算 + 各国地区工业数据总览，商品市场列表与上架表单直接标注折算金价，并可一键跳转该国的地区页面。
 // @description:en Eclesiar helper: floating panel + exchange rates + cross-market goods pricing and after-tax sale revenue in gold + a sortable overview of every region's industry data, plus one-click jumps to a country's regions.
 // @author       billdex
@@ -14,8 +14,8 @@
 // @homepageURL  https://github.com/Billdex/eclesiar-helper
 // @supportURL   https://github.com/Billdex/eclesiar-helper/issues
 // @source       https://github.com/Billdex/eclesiar-helper
-// @updateURL    https://cdn.jsdmirror.com/gh/Billdex/eclesiar-helper@main/eclesiar-helper.meta.js
-// @downloadURL  https://cdn.jsdmirror.com/gh/Billdex/eclesiar-helper@main/eclesiar-helper.user.js
+// @updateURL    https://cdn.jsdelivr.net/gh/Billdex/eclesiar-helper@main/eclesiar-helper.meta.js
+// @downloadURL  https://cdn.jsdelivr.net/gh/Billdex/eclesiar-helper@main/eclesiar-helper.user.js
 // ==/UserScript==
 
 // 本文件只放元数据，供 Tampermonkey 检查更新用（@updateURL 指向这里）。

@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# 发布辅助：推送后刷新三个 CDN 源（JSDMirror 主 / JSDMirror 备用域名 / jsDelivr），
+# 发布辅助：推送后刷新三个 CDN 源（jsDelivr 主源 / JSDMirror 两处镜像），
 # 并确认 @main 上读到的版本号已经是刚发布的版本。
+#
+# 主源 jsDelivr 走公开 purge 接口，无需任何密钥，是每次发布的必做项；
+# 镜像走 JSDMirror 的 purge 接口，需要 Key，没 Key 时自动跳过（不影响退出码）。
 #
 # 用法（在仓库任意位置执行均可）：
 #   scripts/release.sh            # 校验版本 → 刷新缓存 → 等生效
@@ -10,7 +13,7 @@
 # 密钥读取规则（见 AGENTS.md §9）：
 #   - 文件：仓库根目录 `.jsdmirror-key`（已在 .gitignore 里）
 #   - 内容：第一行非空、且不以 # 开头的文本即为 API Key；首尾空白与 \r 会被去掉
-#   - 文件缺失或为空：跳过 JSDMirror 的两次刷新，只刷 jsDelivr，并给出提示
+#   - 文件缺失或为空：跳过 JSDMirror 的几次刷新，只刷 jsDelivr，并给出提示（不算失败）
 #   - 任何输出都不打印 Key 本身，最多打印前 6 位掩码
 #
 # 说明：本脚本只是发布工具，不属于安装产物，也不参与脚本运行时。
@@ -21,7 +24,7 @@ cd "$(dirname "$0")/.." || exit 1
 
 VERSION_FILE_KEY='.jsdmirror-key'
 PURGE_API='https://cache.jsdmirror.com/api/v1/purge'
-MIRRORS="cdn.jsdmirror.com cdn.jsdelivr.net cdn.jsdmirror.cn"
+MIRRORS="cdn.jsdelivr.net cdn.jsdmirror.com cdn.jsdmirror.cn"
 FILES="eclesiar-helper.meta.js eclesiar-helper.user.js"
 WAIT=1
 PURGE=1
@@ -111,8 +114,7 @@ if [ "$PURGE" -eq 1 ]; then
   if [ -n "$key" ]; then
     info "   JSDMirror Key：${key:0:6}…（来自 ${VERSION_FILE_KEY}）"
   else
-    purge_failed=1
-    warn "没读到 ${VERSION_FILE_KEY}（或内容为空），本次跳过 JSDMirror 的两个域名"
+    warn "没读到 ${VERSION_FILE_KEY}（或内容为空），本次跳过 JSDMirror 的两个域名（可选步骤，不影响发布）"
     warn '格式：第一行非空、且不以 # 开头的文本即 Key，例如 eclesiar_xxx'
   fi
 
