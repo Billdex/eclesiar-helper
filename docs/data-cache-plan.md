@@ -214,11 +214,11 @@ apiCache.stats()                           // 调试：hit / join / miss / coold
 
 ### 阶段 5：`goodsSnapshot` / 岗位
 
-- [ ] `/market/get` 改走 `apiCache`，`goodsSnapshot` 保留编排与订阅
-- [ ] 岗位改页级缓存：`country_id + page` 为 key，门槛只影响读几页
-- [ ] 「刷新岗位」= `invalidate` 该轮页 key 后逐页 `ensure`（换门槛不 invalidate，只复用已读页）
-- [ ] 保留 300 次整轮上限、10 页/国上限、每国失败只跳过该国
-- [ ] 验收：市场页 10 分钟内重开 0 请求；换门槛只补缺失页；状态栏进度与「符合条件 N 条」不变
+- [x] `/market/get` 改走 `apiCache`，`goodsSnapshot` 保留编排与订阅；刷新失败保留旧值继续显示
+- [x] 岗位改页级缓存：`country_id + page` 为 key，门槛只影响读几页
+- [x] 「刷新岗位」逐页 `refresh`（绕过 TTL 但不清缓存，旧值仍在）；换门槛不 invalidate，只复用已读页
+- [x] 保留 300 次整轮上限（只数真正要发的页）、10 页/国上限、每国失败只跳过该国
+- [x] 验收：市场页 10 分钟内重开 0 请求；换门槛只补缺失页；状态栏进度与「符合条件 N 条」不变（离线桩测试 12 条断言全过）
 
 ### 阶段 6：收尾
 

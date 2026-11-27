@@ -5925,6 +5925,13 @@
 
   /** 行情快照的有效期：与汇率一致（10 分钟）；自动模式据此决定什么时候重拉。 */
   const GOODS_CACHE_MS = 10 * 60 * 1000;
+  const GOODS_PATH = '/market/get';
+  /** 单国市场挂单：10 分钟；没有挂单的国家也记成空结果，别反复问。 */
+  const GOODS_OPTS = {
+    ttl: 'goods',
+    namespace: 'goods',
+    empty: (value) => value instanceof Map && value.size === 0
+  };
 
   /**
    * 全球商品行情快照：面板「市场」页与「商品市场自动加载比价数据」共用同一份。
@@ -5952,7 +5959,7 @@
     let failures = 0;
     let landFailures = 0;
     let limited = false;
-    let controller = null;
+    let cancelled = false;
     let promise = null;
 
     const notify = (kind, payload) => {
@@ -5991,8 +5998,12 @@
       });
     };
 
-    /** 拉一轮全球行情；并发调用共享同一个请求。 */
-    function load() {
+    /**
+     * 拉一轮全球行情。mode='ensure' 命中 10 分钟缓存（打开面板、自动比价），
+     * 'refresh' 绕过 TTL（「刷新行情」）。单国市场的解析结果存在 apiCache 里，
+     * 本轮只维护编排（entries / 进度 / 流亡标记 / publish）。
+     */
+    function run(mode) {
       if (loading) return promise;
       if (apiClient.state !== 'ok') {
         error = { code: 'NO_TOKEN' };
@@ -6016,15 +6027,7 @@
       progress = { done: 0, total: 0 };
       // 本次失败时放回去，别让已有结果凭空消失
       const previous = entries.filter((entry) => entry.status === 'ok');
-      if (controller) {
-        try {
-          controller.abort();
-        } catch (err) {
-          /* ignore */
-        }
-      }
-      controller = new AbortController();
-      const signal = controller.signal;
+      cancelled = false;
       notify('state');
 
       promise = (async () => {
@@ -6032,7 +6035,7 @@
           // 汇率与市场并行：汇率优先吃缓存，只有缓存过期才真的去拉
           fxFeed.ensure().catch(() => null);
           const countries = await fxFeed.ensureCountries();
-          if (signal.aborted) return;
+          if (cancelled) return;
 
           const list = (Array.isArray(countries) ? countries : [])
             .filter((country) => {
@@ -6064,24 +6067,35 @@
           let cursor = 0;
           const worker = async () => {
             while (cursor < entries.length) {
-              if (signal.aborted) return;
+              if (cancelled) return;
               const entry = entries[cursor];
               cursor += 1;
 
+              // 不带 type/quality 时接口一次返回该国全部商品，一个市场只需一次请求
+              const key = apiCache.key(GOODS_PATH, { countryid: String(entry.id) });
+              const loader = () =>
+                apiClient
+                  .call(GOODS_PATH, { form: { countryid: entry.id }, object: true })
+                  .then((data) => goodsIndex(data && data.offers));
+
               try {
-                // 不带 type/quality 时接口一次返回该国全部商品，一个市场只需一次请求
-                const data = await apiClient.call('/market/get', {
-                  form: { countryid: entry.id },
-                  object: true,
-                  signal
-                });
-                entry.items = goodsIndex(data && data.offers);
+                const cached =
+                  mode === 'refresh'
+                    ? await apiCache.refresh(key, loader, GOODS_OPTS)
+                    : await apiCache.ensure(key, loader, GOODS_OPTS);
+                entry.items = cached && cached.value instanceof Map ? cached.value : new Map();
                 entry.status = 'ok';
               } catch (err) {
-                if (err && err.name === 'AbortError') return;
                 if (err && err.code === 'UNAUTHORIZED') throw err;
                 if (err && err.code === 'HTTP' && String(err.message) === 'HTTP_429') limited = true;
-                entry.status = 'error';
+                // 刷新失败但手里有上一次的数据：继续显示旧值，只在状态栏报失败数量
+                const stale = apiCache.peek(key);
+                if (stale && stale.value instanceof Map) {
+                  entry.items = stale.value;
+                  entry.status = 'ok';
+                } else {
+                  entry.status = 'error';
+                }
                 failures += 1;
               }
 
@@ -6090,7 +6104,7 @@
                 try {
                   await checkLand(entry);
                 } catch (err) {
-                  if (err && err.name === 'AbortError') return;
+                  if (cancelled) return;
                   if (err && err.code === 'UNAUTHORIZED') throw err;
                   if (err && err.code === 'HTTP' && String(err.message) === 'HTTP_429') limited = true;
                   landFailures += 1;
@@ -6110,7 +6124,7 @@
           await Promise.all(
             Array.from({ length: Math.min(FX_CONCURRENCY, entries.length) }, () => worker())
           );
-          if (signal.aborted) return;
+          if (cancelled) return;
 
           // 领土查不到不影响结果展示（这些国家按「有领土」留在主列表），只在调试日志里留个汇总
           if (landFailures) log('领土检查部分失败', landFailures + ' 个国家按「有领土」处理');
@@ -6121,15 +6135,8 @@
           // 共享给游戏市场页的金价标注：它要拿这份数据算「比全球最低贵多少」
           goodsFeed.publish(entries);
         } catch (err) {
-          if (err && err.name === 'AbortError') return;
           entries = previous;
-          if (err && err.code === 'UNAUTHORIZED') {
-            try {
-              controller.abort();
-            } catch (ignore) {
-              /* ignore */
-            }
-          }
+          if (err && err.code === 'UNAUTHORIZED') cancelled = true;
           error = {
             code: (err && err.code) || 'ERROR',
             message: err && err.message,
@@ -6139,8 +6146,8 @@
         } finally {
           loading = false;
           promise = null;
-          // 中止（destroy / 新一轮接管）不算结束：只更新状态，不发 done
-          if (!signal.aborted) notify(error ? 'error' : 'done');
+          // 中止（destroy）不算结束：只更新状态，不发 done
+          if (!cancelled) notify(error ? 'error' : 'done');
           notify('state');
         }
       })();
@@ -6184,22 +6191,21 @@
         const age = maxAge == null ? GOODS_CACHE_MS : maxAge;
         const now = Date.now();
         if (updatedAt && now - updatedAt < age && entries.length) return Promise.resolve(entries);
-        // 刚失败过：一分钟内不自动重试（手动点「刷新行情」走 load，不受此限）
+        // 刚失败过：一分钟内不自动重试（手动点「刷新行情」走 refresh，不受此限）
         if (error && errorAt && now - errorAt < 60 * 1000) return Promise.resolve(null);
-        return load();
+        return run('ensure');
       },
-      load,
+      /** 命中单国市场缓存（10 分钟），只补缺失的国家。 */
+      load: () => run('ensure'),
+      /** 「刷新行情」：绕过 TTL 重抓，失败保留旧值。 */
+      refresh: () => run('refresh'),
       cancel() {
         if (offAuthRetry) {
           offAuthRetry();
           offAuthRetry = null;
         }
-        if (!controller) return;
-        try {
-          controller.abort();
-        } catch (err) {
-          /* ignore */
-        }
+        // 只停止继续发起新的国家，已发出且可能被别的面板共享的请求不 abort
+        cancelled = true;
       }
     };
   })();
@@ -7009,7 +7015,8 @@
           loadPlayer();
           loadTaxes();
         }
-        goodsSnapshot.load();
+        // 面板上的按钮：绕过 TTL 重抓（失败保留旧值），不是「清缓存」
+        goodsSnapshot.refresh();
       };
 
       on(refreshBtn, 'click', () => load());
@@ -9874,8 +9881,8 @@
         'Titanium Mine': '钛矿',
         'Weapons Factory': '武器工厂'
       };
-      /** 整轮结果只在内存里缓存 2 分钟，不落盘。 */
-      const CACHE_MS = 2 * 60 * 1000;
+      /** 岗位按「国家 + 页」缓存 2 分钟（apiCache），门槛只决定读到第几页。 */
+      const JOB_PATH = '/market/jobs/get';
 
       pane.classList.add('eh-pane--stick');
       pane.innerHTML = `
@@ -9924,7 +9931,6 @@
       let updatedAt = 0;
       let capped = false;
       let progress = { done: 0, total: 0, count: 0 };
-      const cache = new Map();
 
       const tokenHint = () => authHint().replace('刷新行情', '刷新岗位');
 
@@ -10284,7 +10290,7 @@
         if (offAuth) return;
         offAuth = apiClient.onAuth(() => {
           offAuth = null;
-          if (!loading && !updatedAt) load(false);
+          if (!loading && !updatedAt) load();
         });
       };
 
@@ -10322,40 +10328,58 @@
        * 遍历全部国家抓岗位，回来后在列表里统一按税后金价排序。
        * 分页在响应根上，所以要给 call 传 full；无岗位的国家可能不带 data，allowEmpty 放行，
        * total_records 为 0 同样当作空结果；单国失败只跳过那一国，已有岗位照常展示。
-       * 接口按薪资从高到低返回：设了门槛时逐页读，某页最低已低于门槛即停；
-       * 全局请求有硬上限，缓存键带上门槛，半截结果不会被当成完整列表复用。
+       * 接口按薪资从高到低返回：设了门槛时逐页读，某页最低已低于门槛即停。
+       * 缓存按「国家 + 页」走 apiCache（2 分钟）：门槛只决定读到第几页，
+       * 换门槛复用已读页、不整轮重抓；「刷新岗位」用 refresh 绕过 TTL，旧值不会被删。
+       * 全局请求有硬上限（只数真正要发的请求，命中缓存的页不计入）。
        */
       async function fetchJobs(force, threshold, targets) {
-        const key = threshold == null ? 'all' : String(threshold);
-        const cached = cache.get(key);
-        if (!force && cached && Date.now() - cached.at < CACHE_MS) return cached;
-
         const data = [];
         let requests = 0;
         let stopped = false;
         let capped = false;
         let cursor = 0;
         // 没有岗位的国家可能整个不带 data，allowEmpty 放行；total_records 为 0 也直接当作空结果
-        const opts = { object: true, full: true, noMethodRetry: true, allowEmpty: true };
+        const callOpts = { object: true, full: true, noMethodRetry: true, allowEmpty: true };
+        // 空岗位页也是有效结果（empty 标记），2 分钟内不再问同一个国家
+        const pageOpts = {
+          ttl: 'jobPage',
+          namespace: 'jobs',
+          empty: (payload) => !(payload && Array.isArray(payload.data) && payload.data.length)
+        };
+
+        /** 读一页：force=true 绕过 TTL，其余命中 2 分钟缓存。 */
+        const readPage = (countryId, page) => {
+          const key = apiCache.key(JOB_PATH, { country_id: String(countryId), page: page });
+          const loader = () =>
+            apiClient.call(
+              JOB_PATH + '?country_id=' + encodeURIComponent(countryId) + '&page=' + page,
+              callOpts
+            );
+          return force ? apiCache.refresh(key, loader, pageOpts) : apiCache.ensure(key, loader, pageOpts);
+        };
 
         const worker = async () => {
           while (cursor < targets.length) {
             if (!alive || capped) return;
             const countryId = targets[cursor];
             cursor += 1;
-            const url = (page) =>
-              '/market/jobs/get?country_id=' + encodeURIComponent(countryId) + '&page=' + page;
             let page = 1;
             let wanted = 1;
             try {
               while (page <= wanted) {
                 if (!alive || capped) return;
-                if (requests >= MAX_REQUESTS) {
-                  capped = true;
-                  return;
+                const pageKey = apiCache.key(JOB_PATH, { country_id: String(countryId), page: page });
+                // 只有真会发请求的页才计入硬上限，命中缓存的页不算
+                if (force || !apiCache.peek(pageKey)) {
+                  if (requests >= MAX_REQUESTS) {
+                    capped = true;
+                    return;
+                  }
+                  requests += 1;
                 }
-                requests += 1;
-                const payload = await apiClient.call(url(page), opts);
+                const entry = await readPage(countryId, page);
+                const payload = entry && entry.value ? entry.value : null;
                 const pg =
                   payload && payload.pagination && typeof payload.pagination === 'object'
                     ? payload.pagination
@@ -10403,12 +10427,20 @@
           seen.add(rowKey);
           return true;
         });
-        const result = { at: Date.now(), rows, stopped, capped };
-        cache.set(key, result);
-        return result;
+        return { rows, stopped, capped };
       }
 
-      function load(force) {
+      /** 打开面板 / 凭据晚到：命中已有页缓存。 */
+      function load() {
+        return run(false);
+      }
+
+      /** 「刷新岗位」：绕过 2 分钟 TTL 重抓（失败保留旧值，不清缓存）。 */
+      function refresh() {
+        return run(true);
+      }
+
+      function run(force) {
         if (!alive || loading) return;
         if (apiClient.state !== 'ok') {
           error = { code: apiClient.state === 'expired' ? 'UNAUTHORIZED' : 'NO_TOKEN' };
@@ -10474,7 +10506,7 @@
         })();
       }
 
-      on(refreshBtn, 'click', () => load(true));
+      on(refreshBtn, 'click', () => refresh());
 
       on(skillEl, 'change', () => {
         skillOnly = skillEl.checked;
@@ -10531,7 +10563,7 @@
       skillEl.checked = skillOnly;
       paint();
       // 打开「工作」就抓一轮：国家清单、汇率与账号都命中共享缓存时只发岗位请求
-      load(false);
+      load();
     }
   });
 

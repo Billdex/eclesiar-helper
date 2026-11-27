@@ -36,11 +36,11 @@
 | `apiCache`（请求层） | 接口级缓存与请求去重：key = 接口 + 规范化参数，负责 TTL、失败冷却、in-flight 合并、空结果标记与按前缀失效 | 见 §5 `9.0`（行情 10 分钟、账号 / 岗位 2 分钟、用量 60 秒、国家清单与税率页面级） | 全部数据源（迁移中：阶段 2 起逐个接入） |
 | `coinBook` | 单币种挂单簿（`/market/coin/get`，买卖各一个 key）：`quote` / `ensureMany` / `load` 批次句柄 | 10 分钟（`API_TTL.coin`），失败冷却 60 秒 | 汇率、商品销售、税费折金、`marketBadge` |
 | `fxFeed` | 国家清单、税率与工资法；「汇率」面板的展示快照（`quotes` 只是 coinBook 的渲染视图） | 国家清单与税率页面级（`apiCache`），失败冷却 60 秒 | 汇率、商品销售、税费、`marketBadge`（国家清单） |
-| `goodsSnapshot` → `goodsFeed` | 各国市场行情，抓完 `publish` 给 `goodsFeed` | 10 分钟（`GOODS_CACHE_MS`） | 市场页、`goodsAuto`、`marketBadge` |
+| `goodsSnapshot` → `goodsFeed` | 各国市场行情，抓完 `publish` 给 `goodsFeed`；单国 `/market/get` 的解析结果存在 `apiCache` | 10 分钟（`GOODS_CACHE_MS` / `API_TTL.goods`），空市场也记 | 市场页、`goodsAuto`、`marketBadge` |
 | `regionFeed` | 国家 → 地区清单（底层 `apiCache`，`ensure` / `refresh` 两个入口） | 10 分钟 | 市场页领土检查、`regionJump`、工业、税费 |
 | `playerFeed` | 账号 id、国籍 id、所在国 id（只这三个字段） | 2 分钟，失败冷却 60 秒（`apiCache`） | 汇率置顶、商品销售、税费高亮、`marketBadge`、工作技能过滤取 id |
 | `profileFeed` | `GET /user/profile/{account_id}` 的 `economic_level`（公开资料，只取这一个字段） | 2 分钟，失败冷却 60 秒（`apiCache`，key 含 id） | 工商「工作」技能过滤 |
-| 工作（子面板内存缓存） | 遍历全部国家的 `GET /market/jobs/get?country_id=…&page=…` 岗位，按金价门槛存整轮结果 | 2 分钟，`destroy()` 后失效；不落盘 | 工商「工作」子面板 |
+| 工作（页级缓存） | 遍历全部国家的 `GET /market/jobs/get?country_id=…&page=…` 岗位；缓存 key = 国家 + 页，门槛只决定读到第几页 | `apiCache` 2 分钟（空页也记），`destroy()` 后失效；不落盘 | 工商「工作」子面板 |
 
 - 所有数据请求统一走 `apiClient.call`（负责并发、凭据与错误分类），不要自己 `fetch`；该出口服务全插件，不只是行情。
 - 分页接口的 `pagination` 在响应根上，`call` 传 `{ object: true, full: true }` 才能拿到；`/market/jobs/get` 无岗位时可能不带 `data`，还要传 `allowEmpty`，并把 `total_records` 为 0 当作空结果，不要报「读取失败」；单页失败只跳过该页，不打断整轮。
