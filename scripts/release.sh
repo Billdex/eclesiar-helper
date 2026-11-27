@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 发布辅助：推送后刷新 jsDelivr 主源的缓存，并确认 @main 上读到的版本号已经是刚发布的版本。
+# 发布辅助：推送后刷新 jsDelivr 主源的缓存，并确认 @main 的元数据与脚本本体均为刚发布的版本。
 #
 # 只处理 jsDelivr（主源，公开 purge 接口、无需任何密钥），这是每次发布的必做项。
 # JSDMirror 等镜像不再主动刷新：它们按自身的分支缓存自然过期就会追上，
@@ -92,38 +92,61 @@ fi
 
 # -------------------------------------------------------------- 3. 确认已生效
 info ''
-info '== 3/3 确认 jsDelivr 上的 @main 已生效'
+info '== 3/3 确认 jsDelivr 上的 @main 元数据与脚本本体均已生效'
 
 probe() {
-  curl -sS -m 15 "$CDN_BASE/eclesiar-helper.meta.js?eh_t=$(date +%s)" 2>/dev/null \
-    | grep -m1 '@version' | awk '{print $3}'
+  local file="$1"
+  # 不用 grep -m1 提前关闭管道，避免下载较大的 user.js 时 curl 报写入失败。
+  curl -sS -m 15 "$CDN_BASE/$file?eh_t=$(date +%s)" 2>/dev/null \
+    | grep '@version' | awk 'NR == 1 { print $3 }'
+}
+
+probe_all() {
+  got_meta=$(probe 'eclesiar-helper.meta.js')
+  got_user=$(probe 'eclesiar-helper.user.js')
+  info "   meta.js：${got_meta:-<读取失败>}"
+  info "   user.js：${got_user:-<读取失败>}"
+}
+
+versions_ready() {
+  [ "$got_meta" = "$user_version" ] && [ "$got_user" = "$user_version" ]
+}
+
+release_ready() {
+  versions_ready && [ "$purge_failed" -eq 0 ]
+}
+
+report_failure() {
+  warn "发布尚未完成：目标为 v${user_version}，meta.js=${got_meta:-<读取失败>}，user.js=${got_user:-<读取失败>}。"
+  [ "$purge_failed" -eq 0 ] || warn '本次至少一个 jsDelivr 缓存刷新请求未确认成功。'
+  warn '稍后重跑 scripts/release.sh 即可重新刷新并校验，不需要再次 git push。'
 }
 
 if [ "$WAIT" -eq 1 ]; then
   max=12
   attempt=1
   while : ; do
-    got=$(probe)
-    info "   第 $attempt/$max 次探测：$(printf '%-22s' 'cdn.jsdelivr.net') ${got:-<读取失败>}"
-    if [ "$got" = "$user_version" ]; then
+    info "   第 $attempt/$max 次探测："
+    probe_all
+    if release_ready; then
       info ''
-      info "jsDelivr 已是 v${user_version}。镜像（JSDMirror / GitHub raw）会随自身缓存过期自动追上，不另行刷新。"
+      info "jsDelivr 的 meta.js 与 user.js 均已是 v${user_version}。镜像（JSDMirror / GitHub raw）会随自身缓存过期自动追上，不另行刷新。"
       exit 0
     fi
     [ "$attempt" -ge "$max" ] && break
     attempt=$((attempt + 1))
     sleep 15
   done
-  warn "等了 $((max * 15)) 秒 jsDelivr 仍返回旧版本；中间层缓存可能还没过期，稍后重跑 scripts/release.sh --verify。"
+  warn '轮询结束，jsDelivr 仍未全部生效；中间层缓存可能还没过期。'
+  report_failure
   exit 1
 else
-  got=$(probe)
-  info "   $(printf '%-22s' 'cdn.jsdelivr.net') ${got:-<读取失败>}"
-  if [ "$got" = "$user_version" ] && [ "$purge_failed" -eq 0 ]; then
+  probe_all
+  if release_ready; then
     info ''
-    info "jsDelivr 已是 v${user_version}，缓存刷新成功。镜像不主动刷新。"
+    info "jsDelivr 的 meta.js 与 user.js 均已是 v${user_version}，缓存刷新成功。镜像不主动刷新。"
     exit 0
   fi
-  warn "jsDelivr 尚未返回 v${user_version}，或刷新请求失败（--no-wait，未轮询等待）。"
+  report_failure
   exit 1
 fi
