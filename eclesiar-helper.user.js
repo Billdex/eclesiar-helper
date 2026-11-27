@@ -10210,11 +10210,11 @@
           <div class="eh-h3">功能开关</div>
           <label class="eh-gd-switch">
             <input type="checkbox" data-role="badge">
-            <span>商品市场与上架表单显示金价</span>
+            <span>显示金价换算</span>
           </label>
           <label class="eh-gd-switch">
             <input type="checkbox" data-role="regions">
-            <span>商品市场显示该国地区快捷入口</span>
+            <span>不在当地时展示目标地区列表</span>
           </label>
           <label class="eh-gd-switch">
             <input type="checkbox" data-role="auto-compare">
@@ -10225,7 +10225,6 @@
             <button class="eh-btn" type="button" data-role="auto-yes">仍然开启</button>
             <button class="eh-btn eh-btn--ghost" type="button" data-role="auto-no">取消</button>
           </div>
-          <p class="eh-note">只影响游戏商品市场页的只读标注与本地预抓行情，不改游戏数据。</p>
         </div>
         <div class="eh-section">
           <div class="eh-h3">API 访问</div>
