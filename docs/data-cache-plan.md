@@ -1,6 +1,6 @@
 # 数据访问层重构计划：请求去重 + 细粒度缓存
 
-状态：**规划中，未开工**。本期在 `v0.2.6` 版本分支上逐步推进，开工前不动 `eclesiar-helper.user.js`。
+状态：**进行中**。阶段 0（请求出口改名）与阶段 1（`apiCache` 骨架）已完成，下一步阶段 2（`regionFeed` 迁移）。本期在 `v0.2.6` 版本分支上逐步推进。
 
 ## 1. 背景
 
@@ -179,12 +179,12 @@ apiCache.stats()                           // 调试：hit / join / miss / coold
 
 ### 阶段 1：准备
 
-- [ ] 确认本期版本号（当前分支 `v0.2.6`，不额外递增）
-- [ ] 新增 `apiCache` 骨架：key 规范化、`peek / ensure / refresh / refreshMany / refreshPrefix / invalidate / clear / stats`
-- [ ] `refresh` 失败保留旧值并打 `stale` 标记（不是删除），与 §4.3 一致
-- [ ] `?eh-debug=1` 下输出每轮真实请求数与 `hit / join / miss / cooldown / refresh` 计数
-- [ ] `AGENTS.md`：§2.2 数据源表新增「请求层」一行，§5 代码组织新增 `9.0 数据访问层`
-- [ ] `AGENTS.md`：§2.2 中地区缓存 5 分钟的表述改为 10 分钟
+- [x] 确认本期版本号（当前分支 `v0.2.6`，不额外递增）
+- [x] 新增 `apiCache` 骨架：key 规范化、`peek / ensure / refresh / refreshMany / refreshPrefix / invalidate / clear / stats`
+- [x] `refresh` 失败保留旧值并打 `stale` 标记（不是删除），与 §4.3 一致
+- [x] `?eh-debug=1` 下输出每轮真实请求数与 `hit / join / miss / cooldown / refresh` 计数
+- [x] `AGENTS.md`：§2.2 数据源表新增「请求层」一行，§5 代码组织新增 `9.0 数据访问层`
+- [ ] `AGENTS.md`：§2.2 中地区缓存 5 分钟的表述改为 10 分钟（**挪到阶段 2**：`LAND_CACHE_MS` 仍是 5 分钟，等 `regionFeed` 真正接入 `apiCache` 时一起改，避免文档先于代码失真）
 
 ### 阶段 2：`regionFeed` 迁移（最小闭环）
 

@@ -3284,6 +3284,359 @@
    * 9. 内置功能
    * ========================================================================= */
 
+  /* -------- 9.0 数据访问层：接口级缓存与请求去重 -------- */
+
+  /**
+   * 请求层各类数据的 TTL（毫秒）。
+   * 行情类（币种挂单、各国市场挂单、地区清单）统一 10 分钟，不做后台续期；
+   * 账号 / 岗位沿用既有 2 分钟（换国、改门槛后要尽快跟上）；
+   * page 表示「一次页面只拉一次」，destroy 前不过期。
+   */
+  const API_TTL = {
+    coin: 10 * 60 * 1000,
+    goods: 10 * 60 * 1000,
+    regions: 10 * 60 * 1000,
+    jobPage: 2 * 60 * 1000,
+    account: 2 * 60 * 1000,
+    profile: 2 * 60 * 1000,
+    usage: 60 * 1000,
+    page: Infinity
+  };
+  /** 普通失败后的重试冷却：错误不写缓存，只在这段时间内不再问同一个 key。 */
+  const API_COOLDOWN = 60 * 1000;
+  /** 429 多半是当日额度用尽，冷却久一点，别把额度打光。 */
+  const API_COOLDOWN_429 = 5 * 60 * 1000;
+
+  /**
+   * 接口缓存（请求层）。key 只由「接口 + 参数」决定，不认功能：
+   * 谁能共享就给谁共享，功能层不再自己维护接口缓存。
+   *
+   * - ensure：命中即返回；同 key 有 in-flight 就合并；冷却期内直接失败
+   * - refresh：绕过 TTL 重新请求（给「刷新」按钮用），失败保留旧值并标 stale
+   * - refreshMany / refreshPrefix：批量 refresh，逐个 key 复用 in-flight
+   * - invalidate：按前缀删除（凭据变化、明确丢弃旧数据）
+   * - clear：destroy / 换凭据时整体清空
+   *
+   * 不透传调用方的 signal：请求可能被多个面板共享，取消只意味着「不再发起新 key」，
+   * 已经发出的请求不会被某个调用方 abort；超时由 apiClient.call 负责。
+   * 也不起定时器：只被动响应 ensure / refresh，不轮询。
+   */
+  const apiCache = (() => {
+    /** key → { key, value, at, ttl, empty, stale, namespace, loader } */
+    const entries = new Map();
+    /** key → { at, code, retryAt }；错误不写缓存，只留失败时间用来冷却。 */
+    const failures = new Map();
+    /** key → promise */
+    const inflight = new Map();
+    const counters = { hit: 0, join: 0, miss: 0, cooldown: 0, refresh: 0, fail: 0, request: 0 };
+    /** clear 时自增：整体清空后，旧请求的结果不许再落回缓存。 */
+    let generation = 0;
+
+    /** 参数按名排序后拼接，保证同样的调用得到同一个 key。 */
+    function key(path, params) {
+      const base = String(path == null ? '' : path);
+      if (!params) return base;
+      const pairs = Object.keys(params)
+        .filter((name) => params[name] !== undefined && params[name] !== null)
+        .sort()
+        .map((name) => name + '=' + String(params[name]));
+      return pairs.length ? base + '?' + pairs.join('&') : base;
+    }
+
+    /** ttl 可以写数字，也可以写 API_TTL 的键名。 */
+    const ttlOf = (opts) => {
+      const raw = opts && opts.ttl;
+      if (typeof raw === 'number') return raw;
+      if (typeof raw === 'string' && API_TTL[raw] != null) return API_TTL[raw];
+      return API_TTL.goods;
+    };
+
+    /** 空结果（无挂单 / 无地区 / 空岗位页）也是有效缓存，与「未加载」严格区分。 */
+    const isEmpty = (value, opts) => {
+      const pick = opts && opts.empty;
+      if (typeof pick === 'function') return pick(value) === true;
+      return Array.isArray(value) && value.length === 0;
+    };
+
+    /**
+     * 凭据问题不冷却（补到凭据后要能立刻重试）；
+     * 调用方显式给的 cooldown 优先；429 冷却 5 分钟；其它默认 60 秒。
+     */
+    const cooldownOf = (err, opts) => {
+      const code = err && err.code;
+      if (code === 'NO_TOKEN' || code === 'UNAUTHORIZED') return 0;
+      const custom = opts && opts.cooldown;
+      if (typeof custom === 'number') return custom;
+      if (code === 'HTTP' && String(err && err.message) === 'HTTP_429') return API_COOLDOWN_429;
+      return API_COOLDOWN;
+    };
+
+    const writeEntry = (key, value, loader, opts) => {
+      const entry = {
+        key,
+        value,
+        at: Date.now(),
+        ttl: ttlOf(opts),
+        empty: isEmpty(value, opts),
+        stale: false,
+        namespace: (opts && opts.namespace) || '',
+        loader
+      };
+      entries.set(key, entry);
+      failures.delete(key);
+      return entry;
+    };
+
+    /** 只清掉自己登记的那个 promise，避免把同 key 后续新起的请求一起抹掉。 */
+    const settle = (key, pending) => {
+      if (inflight.get(key) === pending) inflight.delete(key);
+    };
+
+    /**
+     * 真正发一次请求。loader 收到 key（便于由 key 反解参数），返回 Promise。
+     * 失败不写缓存；已有旧值时只标 stale，不删除（面板继续显示上次成功的数据）。
+     */
+    function run(key, loader, opts, mode) {
+      const mine = generation;
+      counters.request += 1;
+      if (DEBUG) log('apiCache', mode, key, '请求 #' + counters.request);
+
+      let pending;
+      pending = Promise.resolve()
+        .then(() => loader(key))
+        .then(
+          (value) => {
+            settle(key, pending);
+            // 缓存已被整体清空（换凭据 / destroy）：结果作废，别写回去
+            if (mine !== generation) return null;
+            const entry = writeEntry(key, value, loader, opts);
+            if (DEBUG) log('apiCache', mode, key, '成功', entry.empty ? '（空结果）' : '');
+            return entry;
+          },
+          (err) => {
+            settle(key, pending);
+            if (mine !== generation) throw err;
+            const wait = cooldownOf(err, opts);
+            if (wait > 0) {
+              const now = Date.now();
+              failures.set(key, { at: now, code: (err && err.code) || '', retryAt: now + wait });
+            }
+            counters.fail += 1;
+            const previous = entries.get(key);
+            if (previous) previous.stale = true;
+            if (DEBUG) {
+              log(
+                'apiCache',
+                mode,
+                key,
+                '失败',
+                (err && err.code) || err,
+                wait > 0 ? '冷却 ' + Math.round(wait / 1000) + 's' : '不冷却',
+                previous ? '（保留旧值）' : ''
+              );
+            }
+            throw err;
+          }
+        );
+      inflight.set(key, pending);
+      return pending;
+    }
+
+    /**
+     * 命中即返回（返回缓存条目 { value, at, empty, stale }，不是裸载荷）；
+     * 同 key 有 in-flight 就合并；冷却期内直接失败，不重复问同一个 key。
+     */
+    function ensure(key, loader, opts) {
+      const cached = entries.get(key);
+      if (cached && Date.now() - cached.at < cached.ttl) {
+        counters.hit += 1;
+        if (DEBUG) log('apiCache', 'ensure', key, 'hit');
+        return Promise.resolve(cached);
+      }
+      const joining = inflight.get(key);
+      if (joining) {
+        counters.join += 1;
+        if (DEBUG) log('apiCache', 'ensure', key, 'join');
+        return joining;
+      }
+      const blocked = failures.get(key);
+      if (blocked && Date.now() < blocked.retryAt) {
+        counters.cooldown += 1;
+        if (DEBUG) log('apiCache', 'ensure', key, 'cooldown');
+        const error = new Error('COOLDOWN');
+        error.code = 'COOLDOWN';
+        error.reason = blocked.code;
+        error.retryAt = blocked.retryAt;
+        return Promise.reject(error);
+      }
+      counters.miss += 1;
+      return run(key, loader, opts, 'ensure');
+    }
+
+    /** 忽略 TTL 重新请求；已有 in-flight 就复用（不并发第二次），失败不删旧值。 */
+    function refresh(key, loader, opts) {
+      const joining = inflight.get(key);
+      if (joining) {
+        counters.join += 1;
+        if (DEBUG) log('apiCache', 'refresh', key, 'join');
+        return joining;
+      }
+      const pick = loader || (entries.get(key) || {}).loader;
+      if (typeof pick !== 'function') {
+        const error = new Error('NO_LOADER');
+        error.code = 'NO_LOADER';
+        return Promise.reject(error);
+      }
+      counters.refresh += 1;
+      return run(key, pick, opts, 'refresh');
+    }
+
+    /** 并发跑一批 key（默认 3 并发 + 可选间隔）；单个 key 失败不影响其它 key。 */
+    async function runPool(keys, worker, opts) {
+      const opt = opts || {};
+      const limit = Math.max(1, Math.min(Number(opt.limit) || 3, keys.length));
+      const gap = Math.max(0, Number(opt.gap) || 0);
+      const okKeys = [];
+      const failedKeys = [];
+      const order = new Map(keys.map((item, index) => [item, index]));
+      const byOrder = (a, b) => (order.get(a) || 0) - (order.get(b) || 0);
+      let cursor = 0;
+
+      const lanes = new Array(limit).fill(0).map(async () => {
+        while (cursor < keys.length) {
+          const current = keys[cursor];
+          cursor += 1;
+          try {
+            await worker(current);
+            okKeys.push(current);
+          } catch (err) {
+            failedKeys.push(current);
+          }
+          if (gap > 0 && cursor < keys.length) await fxSleep(gap);
+        }
+      });
+      await Promise.all(lanes);
+
+      okKeys.sort(byOrder);
+      failedKeys.sort(byOrder);
+      return { okKeys, failedKeys };
+    }
+
+    /**
+     * 批量 refresh。loader 可以省略（用每个 key 上次登记的 loader）。
+     * opts 额外支持 limit / gap 控制并发与间隔。
+     */
+    function refreshMany(keys, loaderOrOpts, maybeOpts) {
+      const list = (Array.isArray(keys) ? keys : []).filter((item) => typeof item === 'string' && item);
+      if (!list.length) return Promise.resolve({ okKeys: [], failedKeys: [] });
+      const loader = typeof loaderOrOpts === 'function' ? loaderOrOpts : null;
+      const opts = typeof loaderOrOpts === 'function' ? maybeOpts : loaderOrOpts;
+      return runPool(list, (item) => refresh(item, loader, opts), opts);
+    }
+
+    /** 按 key 前缀批量 refresh（如全部 /country/regions、全部 /market/get）。 */
+    function refreshPrefix(prefix, opts) {
+      const wanted = String(prefix == null ? '' : prefix);
+      const keys = [];
+      entries.forEach((entry, item) => {
+        if (item.indexOf(wanted) === 0) keys.push(item);
+      });
+      return refreshMany(keys, opts);
+    }
+
+    /**
+     * 按前缀删除（下次 ensure 才会重新请求）。这是「丢弃旧数据」，
+     * 只适用于凭据变化 / 明确要求重抓；面板上的「刷新」请用 refresh*。
+     */
+    function invalidate(prefix) {
+      const wanted = prefix == null || prefix === '' ? null : String(prefix);
+      let removed = 0;
+      [...entries.keys()].forEach((item) => {
+        if (wanted && item.indexOf(wanted) !== 0) return;
+        entries.delete(item);
+        removed += 1;
+      });
+      [...failures.keys()].forEach((item) => {
+        if (wanted && item.indexOf(wanted) !== 0) return;
+        failures.delete(item);
+      });
+      if (DEBUG && removed) log('apiCache', 'invalidate', wanted || '*', '删除 ' + removed + ' 条');
+      return removed;
+    }
+
+    /** 整体清空：凭据变化（生成 / 移除密钥、401）与 destroy() 用。 */
+    function clear() {
+      generation += 1;
+      entries.clear();
+      failures.clear();
+      inflight.clear();
+    }
+
+    /** 只读查询，不触发请求。 */
+    function peek(item) {
+      const entry = entries.get(item);
+      if (!entry) return null;
+      return { value: entry.value, at: entry.at, empty: entry.empty, stale: entry.stale };
+    }
+
+    function stats() {
+      return {
+        hit: counters.hit,
+        join: counters.join,
+        miss: counters.miss,
+        cooldown: counters.cooldown,
+        refresh: counters.refresh,
+        fail: counters.fail,
+        /** 逻辑请求数（apiClient 内部兜底重试之前），用来对比迁移前后的请求量。 */
+        request: counters.request,
+        entries: entries.size,
+        failures: failures.size,
+        inflight: inflight.size
+      };
+    }
+
+    /** 一轮结束后打一条汇总（?eh-debug=1 下用来对比迁移前后的真实请求数）。 */
+    function report(label) {
+      const snapshot = stats();
+      if (DEBUG) {
+        log(
+          'apiCache 汇总' + (label ? '（' + label + '）' : ''),
+          '请求 ' + snapshot.request,
+          'hit ' + snapshot.hit,
+          'join ' + snapshot.join,
+          'miss ' + snapshot.miss,
+          'cooldown ' + snapshot.cooldown,
+          'refresh ' + snapshot.refresh,
+          'fail ' + snapshot.fail,
+          '条目 ' + snapshot.entries
+        );
+      }
+      return snapshot;
+    }
+
+    /** 调试用：计数清零，便于只看某一轮。 */
+    function resetStats() {
+      Object.keys(counters).forEach((name) => {
+        counters[name] = 0;
+      });
+      return stats();
+    }
+
+    return {
+      key,
+      peek,
+      ensure,
+      refresh,
+      refreshMany,
+      refreshPrefix,
+      invalidate,
+      clear,
+      stats,
+      report,
+      resetStats
+    };
+  })();
+
   /* -------- 9.1 汇率总览：接口、凭据与计算 -------- */
 
   const FX_API = 'https://api.eclesiar.com';
@@ -10914,6 +11267,8 @@
     fxFeed.cancel();
     // 地区缓存只存内存，销毁时一并丢掉；在途请求会自己结束，不会留下轮询
     regionFeed.clear();
+    // 请求层缓存同理：清空后旧请求的结果不会回写（generation 校验）
+    apiCache.clear();
     apiClient.uninstall();
 
     features.forEach((feature) => {
@@ -10987,6 +11342,14 @@
       get: (key, fallback) => storage.read(key, fallback),
       set: (key, value) => storage.write(key, value),
       remove: (key) => storage.remove(key)
+    },
+    /** 调试用：请求层缓存的统计与条目查询（只在控制台手动调用，插件自己不轮询）。 */
+    cache: {
+      stats: () => apiCache.stats(),
+      report: (label) => apiCache.report(label),
+      peek: (key) => apiCache.peek(key),
+      invalidate: (prefix) => apiCache.invalidate(prefix),
+      clear: () => apiCache.clear()
     },
     destroy
   };

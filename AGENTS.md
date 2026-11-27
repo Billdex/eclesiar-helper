@@ -33,6 +33,7 @@
 
 | 数据源 | 内容 | 缓存 | 使用方 |
 | --- | --- | --- | --- |
+| `apiCache`（请求层） | 接口级缓存与请求去重：key = 接口 + 规范化参数，负责 TTL、失败冷却、in-flight 合并、空结果标记与按前缀失效 | 见 §5 `9.0`（行情 10 分钟、账号 / 岗位 2 分钟、用量 60 秒、国家清单与税率页面级） | 全部数据源（迁移中：阶段 2 起逐个接入） |
 | `fxFeed` | 全球法币挂单；国家清单、税率与工资法 | 行情 10 分钟；国家清单一次；税率页面内缓存 | 汇率、商品销售、税费、`marketBadge` |
 | `goodsSnapshot` → `goodsFeed` | 各国市场行情，抓完 `publish` 给 `goodsFeed` | 10 分钟（`GOODS_CACHE_MS`） | 市场页、`goodsAuto`、`marketBadge` |
 | `regionFeed` | 国家 → 地区清单，并发共享同一请求 | 5 分钟 | 市场页领土检查、`regionJump`、工业 |
@@ -131,6 +132,7 @@ scripts/release.sh                     # 合并推送后刷新 jsDelivr 缓存�
 7. 路由钩子（`route`：包装 `pushState` / `replaceState`，订阅变化，`goto(path)` 跳转）
 8. 对外 UI 控制（`publicUi`）
 9. 内置功能（`fx` / `goods`（含 `goodsSnapshot`、`regionFeed`、`goodsAuto`）/ `marketBadge` / `regionJump` / `marketJump` / `business` / `about`，版本检查在 `about`）
+   - `9.0 数据访问层`：`apiCache`（请求层）与 `API_TTL` / `API_COOLDOWN` / `API_COOLDOWN_429` 常量；`9.1` 起才是请求出口 `apiClient` 与各功能
 10. 启动与销毁
 11. 公开 API
 
@@ -157,6 +159,15 @@ scripts/release.sh                     # 合并推送后刷新 jsDelivr 缓存�
 - 「顶部固定、只有列表滚」的页面统一用 `.eh-pane--stick` + `.eh-stick-head` + `.eh-stick-bar` + `.eh-stick-scroll`（汇率 / 市场 / 工业）：pane 变 flex 列并撑满内容区，头部 `flex: none`，`.eh-stick-bar` 放不随列表滚动的区块标题（如「全球汇率」「各国市场」），滚动区 `flex: 1 1 auto; min-height: 0; overflow-y: auto`，滚动区的直接子项必须 `flex: none`（否则会被压缩成溢出而不是滚动）。`.eh-pane--stick` 只写 `display: flex`，flex 与 `min-height` 由 `.eh-body > .eh-pane.eh-pane--stick` / `.eh-biz-body > .eh-biz-pane.eh-pane--stick` 补——不要把 `display` 提到高特异性，否则会压掉 `.eh-pane[hidden]`。
 - 工商子面板的 pane 本身没有 padding，固定头与滚动区直接挂在 pane 下；不要在外面再包一层 `.eh-section`，否则滚动区会失去 flex 容器、内容被裁而不是滚动。
 - 税费页把滚动交给内部列表：`.eh-tax-pane` + `.eh-tax-scroll`，并用 `.eh-biz-body > .eh-tax-pane { flex: 1 1 auto; min-height: 0 }` 顶掉 `.eh-biz-body > .eh-biz-pane { flex: none }`。不要在工商页多出色带。
+
+### 5.4 数据访问层
+
+- 请求层缓存只有 `apiCache` 一层：key 由 `apiCache.key(path, params)` 生成（接口 + 排序后的参数），数据层只保存由载荷派生的结构，功能层不再自己写接口缓存。
+- 两个动作不能混用：按钮 / 手动刷新一律 `refresh` / `refreshMany` / `refreshPrefix`（绕过 TTL，失败保留旧值并标 `stale`）；只有凭据变化（生成 / 移除密钥、401）、`destroy()` 与「明确丢弃旧数据」才 `invalidate(prefix)` / `clear()`。
+- 不加 `force` 布尔：功能层直接调用 `refresh*`，不要把「要不要绕过 TTL」包装成参数往数据层透传。
+- 共享请求不透传调用方 `signal`：取消只表示「不再发起新 key」，已发出的请求不 abort（超时由 `apiClient.call` 的 10 秒负责）。
+- 空结果（无挂单 / 无地区 / 空岗位页）是有效缓存，用 `opts.empty` 标记；错误不写入缓存，只记失败时间用于冷却（`NO_TOKEN` / `UNAUTHORIZED` 不冷却，429 冷却 5 分钟，其余 60 秒）。
+- `apiCache` 不轮询、不起定时器，只被动响应 `ensure` / `refresh`；调试统计用 `?eh-debug=1` 或控制台 `EclesiarHelper.cache.stats()`。
 
 ## 6. 新增功能
 
@@ -189,7 +200,7 @@ EclesiarHelper.features.register({
 - 可复用样式类：`eh-section`、`eh-h3`、`eh-kv`、`eh-note`、`eh-callout`、`eh-row`、`eh-btn`、`eh-btn--ghost`、`eh-links`、`eh-mono`、`eh-empty`。
 - 工商子面板用 `registerBusinessPane({ id, title, order, mount })` 注册，加子面板只往 `businessPanes` 里加一项，不动一级标签。
 - 注释与用户可见文案用中文。
-- 控制台可用：`EclesiarHelper.ui.toggle()`、`EclesiarHelper.ui.open()`、`EclesiarHelper.features.list()`、`EclesiarHelper.route.current`、`EclesiarHelper.destroy()`。
+- 控制台可用：`EclesiarHelper.ui.toggle()`、`EclesiarHelper.ui.open()`、`EclesiarHelper.features.list()`、`EclesiarHelper.route.current`、`EclesiarHelper.cache.stats()`、`EclesiarHelper.destroy()`。
 
 ## 7. Git 与发布
 
