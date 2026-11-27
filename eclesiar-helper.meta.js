@@ -2,9 +2,9 @@
 // @name         Eclesiar 助手
 // @name:en      Eclesiar Helper
 // @namespace    https://github.com/Billdex/eclesiar-helper
-// @version      0.2.4
-// @description  Eclesiar 经济 / 政治计算辅助插件：悬浮球面板 + 全球汇率总览 + 各国市场商品金价比价与销售税后收益估算 + 各国地区工业数据与税负 / 最低工资总览，商品市场列表与上架表单直接标注折算金价，并可一键跳转该国的地区页面。
-// @description:en Eclesiar helper: floating panel + exchange rates + cross-market goods pricing and after-tax sale revenue in gold + sortable overviews of every region's industry data and every country's taxes and minimum wage, plus one-click jumps to a country's regions.
+// @version      0.2.5
+// @description  Eclesiar 经济 / 政治计算辅助插件：悬浮球面板 + 全球汇率总览 + 各国市场商品金价比价与销售税后收益估算 + 各国地区工业数据与税负 / 最低工资总览 + 各国招工信息按税后薪资金价排序，商品市场列表与上架表单直接标注折算金价，并可一键跳转游戏对应页面。
+// @description:en Eclesiar helper: floating panel + exchange rates + cross-market goods pricing and after-tax sale revenue in gold + sortable overviews of every region's industry data and every country's taxes and minimum wage + job listings ranked by after-tax pay in gold, plus one-click jumps to the matching game pages.
 // @author       billdex
 // @match        https://app.eclesiar.com/*
 // @run-at       document-idle

@@ -2,9 +2,9 @@
 // @name         Eclesiar 助手
 // @name:en      Eclesiar Helper
 // @namespace    https://github.com/Billdex/eclesiar-helper
-// @version      0.2.4
-// @description  Eclesiar 经济 / 政治计算辅助插件：悬浮球面板 + 全球汇率总览 + 各国市场商品金价比价与销售税后收益估算 + 各国地区工业数据与税负 / 最低工资总览，商品市场列表与上架表单直接标注折算金价，并可一键跳转该国的地区页面。
-// @description:en Eclesiar helper: floating panel + exchange rates + cross-market goods pricing and after-tax sale revenue in gold + sortable overviews of every region's industry data and every country's taxes and minimum wage, plus one-click jumps to a country's regions.
+// @version      0.2.5
+// @description  Eclesiar 经济 / 政治计算辅助插件：悬浮球面板 + 全球汇率总览 + 各国市场商品金价比价与销售税后收益估算 + 各国地区工业数据与税负 / 最低工资总览 + 各国招工信息按税后薪资金价排序，商品市场列表与上架表单直接标注折算金价，并可一键跳转游戏对应页面。
+// @description:en Eclesiar helper: floating panel + exchange rates + cross-market goods pricing and after-tax sale revenue in gold + sortable overviews of every region's industry data and every country's taxes and minimum wage + job listings ranked by after-tax pay in gold, plus one-click jumps to the matching game pages.
 // @author       billdex
 // @match        https://app.eclesiar.com/*
 // @run-at       document-idle
@@ -43,7 +43,7 @@
    * 1. 常量与工具
    * ========================================================================= */
 
-  const VERSION = '0.2.4';
+  const VERSION = '0.2.5';
   const REPO_URL = 'https://github.com/Billdex/eclesiar-helper';
   /** 主源：jsDelivr 官方。自动更新与「安装更新」都以它为准，不接受任何第三方密钥。 */
   const CDN_RAW = 'https://cdn.jsdelivr.net/gh/Billdex/eclesiar-helper@main/';
@@ -1968,6 +1968,247 @@
     color: #dcb17a;
   }
 
+  /* 工作子面板：搜索框下面一行放最低税后工资 / 技能过滤；刷新按钮跟状态栏同一行 */
+  .eh-job-tools {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px 10px;
+    margin-bottom: 7px;
+  }
+
+  /* 复合输入框：左侧「金币 ≥」+ 右侧数字，视觉上仍是同一个输入框 */
+  .eh-job-min-wrap {
+    display: inline-flex;
+    flex: 0 1 auto;
+    align-items: stretch;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, .12);
+    border-radius: 8px;
+    background: rgba(8, 14, 24, .5);
+  }
+
+  .eh-job-min-wrap:focus-within { border-color: rgba(232, 205, 143, .7); }
+
+  .eh-job-min-addon {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 2px;
+    padding: 0 6px;
+    border-right: 1px solid rgba(255, 255, 255, .1);
+    color: #c9a54a;
+    font-size: 10px;
+    white-space: nowrap;
+  }
+
+  .eh-job-min-addon .eh-gold-ico {
+    width: 15px;
+    height: 15px;
+    margin-right: 0;
+    vertical-align: -2px;
+  }
+
+  .eh-job-min {
+    flex: 0 1 110px;
+    width: 110px;
+    min-width: 80px;
+    padding: 4px 7px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    font-size: 11px;
+  }
+
+  .eh-job-min:focus-visible { border-color: transparent; }
+
+  .eh-job-filter { margin: 0; }
+
+  /* 岗位行：左列公司 / 拥有者 / 类型技能 / 地区，右列薪资与跳转（右列撑满整行高度） */
+  .eh-job-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .eh-job-main { min-width: 0; }
+
+  /* 标题区：公司图标占满两行，第一行产业类型 + 公司名，第二行职位数 + 技能要求 */
+  .eh-job-title {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: 14px 14px;
+    align-items: center;
+    column-gap: 6px;
+    row-gap: 1px;
+  }
+
+  .eh-job-title > .eh-job-avatar {
+    grid-row: 1 / span 2;
+    width: 28px;
+    height: 28px;
+    align-self: center;
+  }
+
+  .eh-job-avatar {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 5px;
+    object-fit: cover;
+    background: rgba(255, 255, 255, .06);
+    color: #9fadc2;
+    font-size: 11px;
+  }
+
+  .eh-job-headline,
+  .eh-job-subtitle {
+    grid-column: 2;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+  }
+
+  .eh-job-headline { grid-row: 1; }
+  .eh-job-subtitle { grid-row: 2; flex-wrap: wrap; gap: 3px 8px; font-size: 9.5px; color: #7d8ba0; }
+
+  .eh-job-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: #e7dfcd;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .eh-job-line {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    margin-top: 3px;
+    font-size: 9.5px;
+    color: #7d8ba0;
+  }
+
+  .eh-job-owner {
+    display: inline-flex;
+    flex: 0 1 auto;
+    align-items: center;
+    gap: 4px;
+    max-width: 100%;
+    min-width: 0;
+    color: #7d8ba0;
+    font-size: 9.5px;
+  }
+
+  .eh-job-owner-mark { flex: none; display: inline-flex; color: #7d8ba0; }
+  .eh-job-owner-mark svg { display: block; width: 11px; height: 11px; }
+
+  .eh-job-owner-avatar {
+    flex: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    object-fit: cover;
+    background: rgba(255, 255, 255, .06);
+  }
+
+  .eh-job-owner-fallback {
+    display: inline-grid;
+    flex: none;
+    place-items: center;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, .06);
+    color: #9fadc2;
+    font-size: 10px;
+  }
+
+  .eh-job-owner > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* 地区信息移到左列最底下，开头带地图标记 */
+  .eh-job-loc {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 3px;
+    min-width: 0;
+    font-size: 9.5px;
+    color: #7d8ba0;
+  }
+
+  .eh-job-pin { flex: none; display: inline-flex; color: #7d8ba0; }
+  .eh-job-pin svg { display: block; width: 11px; height: 11px; }
+
+  .eh-job-flag { width: 14px; height: 10px; font-size: 10px; }
+
+  .eh-job-loc-text {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 9.5px;
+    color: #9fadc2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .eh-job-type {
+    padding: 0 5px;
+    border-radius: 4px;
+    background: rgba(201, 165, 74, .12);
+    color: #c9a54a;
+    line-height: 1.7;
+    white-space: nowrap;
+  }
+
+  .eh-job-subtitle .eh-tax-mark { padding: 0 4px; font-size: 9px; }
+
+  .eh-job-side {
+    display: flex;
+    flex: none;
+    align-self: stretch;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+  }
+
+  .eh-job-pay {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    line-height: 1.4;
+  }
+
+  .eh-job-pay b {
+    font-family: var(--eh-mono);
+    font-size: 11px;
+    font-weight: 600;
+    color: #e7dfcd;
+    white-space: nowrap;
+  }
+
+  .eh-job-pay span {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-family: var(--eh-mono);
+    font-size: 9.5px;
+    color: #c9a54a;
+    white-space: nowrap;
+  }
+
+  .eh-job-pay span[data-tone="muted"] { color: #7d8ba0; }
+
+  .eh-job-side .eh-go { width: 22px; height: 22px; margin: auto 0 0; }
+
   /* ---------- 底栏 ---------- */
 
   .eh-foot {
@@ -3459,7 +3700,9 @@
         error.code = 'BAD_PAYLOAD';
         throw error;
       }
-      return data;
+      // 分页接口（如 /market/jobs/get）的 pagination 在根上，full 让调用方拿到整个信封；
+      // 不传时维持原行为，只返回 data，既有调用方不受影响。
+      return opts.full === true ? payload : data;
     }
 
     /** 用玩家当前登录凭据换一个专用 API 密钥；只用于账号操作，不占用数据查询额度。 */
@@ -4106,10 +4349,11 @@
     };
   })();
 
-  /* -------- 9.2b 玩家信息：国籍与当前所在国家 -------- */
+  /* -------- 9.2b 玩家信息：账号 id / 国籍 / 所在国家，以及公开资料里的经济技能 -------- */
 
   /**
-   * 只取两个字段，两个模块共用同一份缓存：
+   * playerFeed 只取三个字段，各模块共用同一份缓存：
+   *  - accountId：账号 id，只用来拼公开资料地址；
    *  - nationalityId：玩家国籍，「销售」时用来判断本国免进口税；
    *  - countryId：当前所在国家（region.country.id），
    *    商品市场里的价格按「所在国市场的本币」计价（上架表单的单价 / 实收金额就是这种），
@@ -4136,7 +4380,9 @@
       const region = account && account.region;
       const country = region && typeof region === 'object' ? region.country : null;
       const rawCountry = country && country.id != null ? country.id : account && account.country_id;
+      const rawId = account && account.id != null ? account.id : data && data.id;
       return {
+        accountId: Number(rawId) || 0,
         nationalityId: Number(rawNationality) || 0,
         countryId: Number(rawCountry) || 0
       };
@@ -4177,11 +4423,77 @@
       get info() {
         return info;
       },
+      get accountId() {
+        return info ? info.accountId : 0;
+      },
       get nationalityId() {
         return info ? info.nationalityId : 0;
       },
       get countryId() {
         return info ? info.countryId : 0;
+      },
+      ensure
+    };
+  })();
+
+  /**
+   * profileFeed：玩家经济技能在公开资料页里，getuser 与 attributes.stats.economic_aptitude 都不是它。
+   * GET /user/profile/{account_id} 只取 economic_level，2 分钟缓存、失败冷却 60 秒。
+   * 公开资料接口支持专用密钥，所以这里沿用 market.call 的默认凭据优先级，不强制 login。
+   */
+  const profileFeed = (() => {
+    const TTL = 2 * 60 * 1000;
+    const RETRY = 60 * 1000;
+
+    let currentId = null;
+    let level = null;
+    let loaded = false;
+    let at = 0;
+    let promise = null;
+    let failedAt = 0;
+
+    function ensure(accountId) {
+      const id = Number(accountId);
+      if (!Number.isFinite(id) || id <= 0) return Promise.resolve(null);
+      const now = Date.now();
+      if (currentId === id && loaded && now - at < TTL) return Promise.resolve(level);
+      if (promise && currentId === id) return promise;
+      if (currentId === id && failedAt && now - failedAt < RETRY) {
+        if (loaded) return Promise.resolve(level);
+        return Promise.reject(Object.assign(new Error('COOLDOWN'), { code: 'COOLDOWN' }));
+      }
+
+      currentId = id;
+      promise = market
+        .call('/user/profile/' + encodeURIComponent(String(id)), {
+          object: true,
+          noMethodRetry: true
+        })
+        .then((data) => {
+          const raw = data && data.economic_level;
+          const value = Number(raw);
+          level = raw != null && Number.isFinite(value) ? value : null;
+          loaded = true;
+          at = Date.now();
+          failedAt = 0;
+          return level;
+        })
+        .catch((err) => {
+          const code = err && err.code;
+          if (code !== 'NO_TOKEN' && code !== 'UNAUTHORIZED') failedAt = Date.now();
+          throw err;
+        });
+
+      const settle = () => {
+        promise = null;
+      };
+      promise.then(settle, settle);
+      return promise;
+    }
+
+    return {
+      get economicLevel() {
+        return level;
       },
       ensure
     };
@@ -9005,6 +9317,680 @@
       paintSort();
       paint();
       // 打开「税费」就先抓一轮：汇率与领土都命中共享缓存时几乎不花请求
+      load(false);
+    }
+  });
+
+  /**
+   * 工作：按国家读 GET /market/jobs/get（分页在响应根上），列出当前招工岗位。
+   * 排序固定为税后薪资金价从高到低；只做展示与跳转，不替玩家申请。
+   */
+  registerBusinessPane({
+    id: 'jobs',
+    title: '工作',
+    order: 30,
+    mount(pane, ctx) {
+      /** 每个国家最多十个分页；全国家一轮的总请求硬上限，避免把查询额度打光。 */
+      const MAX_PAGES = 10;
+      const MAX_REQUESTS = 300;
+      /** 符合条件时最多展示这么多条，更多只统计不渲染。 */
+      const DISPLAY_LIMIT = 50;
+      /** 公司类型：接口给英文，这里按游戏里的中文名对照；未知类型照原样显示。 */
+      const JOB_TYPE_ZH = {
+        'Aerial Weapon Factory': '空战武器工厂',
+        'Airlines Company': '航空公司',
+        Farm: '农场',
+        'Food Factory': '食品工厂',
+        'Iron Mine': '铁矿',
+        'Oil Well': '油井',
+        'Titanium Mine': '钛矿',
+        'Weapons Factory': '武器工厂'
+      };
+      /** 整轮结果只在内存里缓存 2 分钟，不落盘。 */
+      const CACHE_MS = 2 * 60 * 1000;
+
+      pane.classList.add('eh-pane--stick');
+      pane.innerHTML = `
+        <div class="eh-stick-head">
+          <div class="eh-biz-search">
+            <input class="eh-input" type="search" data-role="query" placeholder="搜索类型 / 公司 / 国家 / 法币 / 所有者" autocomplete="off" spellcheck="false" aria-label="搜索岗位" />
+          </div>
+          <div class="eh-job-tools">
+            <label class="eh-job-min-wrap" title="最低税后工资（折合黄金），留空不限">
+              <span class="eh-job-min-addon">${goldIconHtml('eh-gold-ico--sm')} ≥</span>
+              <input class="eh-input eh-job-min" type="number" step="any" min="0" data-role="min-gold" placeholder="最低税后工资" aria-label="最低税后工资（折合黄金）" />
+            </label>
+            <label class="eh-gd-switch eh-job-filter"><input type="checkbox" data-role="skill-only" /> 仅看符合技能要求</label>
+          </div>
+          <div class="eh-biz-bar">
+            <p class="eh-fx-status" data-role="status">…</p>
+            <button class="eh-btn" type="button" data-role="refresh">刷新岗位</button>
+          </div>
+        </div>
+        <div class="eh-stick-scroll">
+          <div class="eh-biz-list" data-role="list"></div>
+          <p class="eh-empty" data-role="empty" hidden>暂时没有岗位，点「刷新岗位」再试。</p>
+        </div>
+      `;
+
+      const queryEl = pane.querySelector('[data-role="query"]');
+      const minGoldEl = pane.querySelector('[data-role="min-gold"]');
+      const skillEl = pane.querySelector('[data-role="skill-only"]');
+      const refreshBtn = pane.querySelector('[data-role="refresh"]');
+      const statusEl = pane.querySelector('[data-role="status"]');
+      const listEl = pane.querySelector('[data-role="list"]');
+      const emptyEl = pane.querySelector('[data-role="empty"]');
+
+      let alive = true;
+      let loading = false;
+      let ratesLoading = false;
+      let error = null;
+      let rows = [];
+      let myHereId = null;
+      let myHomeId = null;
+      let mySkill = null;
+      let query = '';
+      // 默认勾选「仅看符合技能要求」；玩家主动取消后记住取消状态
+      let skillOnly = ctx.storage.get('skillOnly', true) !== false;
+      let minGold = null;
+      let updatedAt = 0;
+      let capped = false;
+      let progress = { done: 0, total: 0, count: 0 };
+      const cache = new Map();
+
+      const tokenHint = () => authHint().replace('刷新行情', '刷新岗位');
+
+      /** 留空 / 非法 / 负数都当作「不限」，避免拿坏值把列表全过滤掉。 */
+      function readMinGold() {
+        const raw = String(minGoldEl.value == null ? '' : minGoldEl.value).trim();
+        const num = Number(raw);
+        minGold = raw !== '' && Number.isFinite(num) && num >= 0 ? num : null;
+      }
+
+      /** 一行原始数据 → 展示用结构；缺关键数值的行直接丢掉，不显示半截岗位。 */
+      function buildRow(raw) {
+        const company = raw && raw.company && typeof raw.company === 'object' ? raw.company : {};
+        const currency = raw && raw.currency && typeof raw.currency === 'object' ? raw.currency : {};
+        const employer = raw && raw.employer && typeof raw.employer === 'object' ? raw.employer : {};
+        const country = raw && raw.country && typeof raw.country === 'object' ? raw.country : {};
+        const region = raw && raw.region && typeof raw.region === 'object' ? raw.region : {};
+        const net = Number(raw && (raw.net_value != null ? raw.net_value : raw.value));
+        const skill = Number(raw && raw.economic_skill);
+        const businessId = raw && raw.business_id != null ? raw.business_id : company.id;
+        if (!Number.isFinite(net) || businessId == null) return null;
+        return {
+          id: raw && raw.id,
+          net,
+          gross: Number(raw && raw.value),
+          tax: Number(raw && raw.tax_percent),
+          amount: Number(raw && raw.amount) || 0,
+          skill: Number.isFinite(skill) ? skill : 0,
+          currencyId: raw && raw.currency_id != null ? raw.currency_id : currency.id,
+          code: String(currency.name || ''),
+          company: String(company.name || '未命名公司'),
+          type: String(company.type || ''),
+          avatar: company.avatar,
+          countryId: country.id,
+          country: String(country.name || ''),
+          flag: country.flag,
+          region: String(region.name || ''),
+          owner: String(employer.name || ''),
+          ownerAvatar: employer.avatar,
+          businessId,
+          gold: null,
+          fallback: false
+        };
+      }
+
+      /** 折金口径与「税费」一致：卖法币换黄金优先，缺买单才退回最优卖单价。 */
+      function applyRate(row) {
+        const sell = fxFeed.sellRateFor(row.currencyId);
+        const rate = sell != null ? sell : fxFeed.rateFor(row.currencyId);
+        row.fallback = sell == null && rate != null;
+        row.gold = rate != null ? row.net * rate : null;
+        return row.gold;
+      }
+
+      /** 一页岗位里的最低折金薪资；只要有读不到汇率的就不判断，免得误停。 */
+      function pageMinGold(pageData) {
+        let min = Infinity;
+        let unknown = false;
+        (Array.isArray(pageData) ? pageData : []).forEach((raw) => {
+          const row = buildRow(raw);
+          if (!row) return;
+          const gold = applyRate(row);
+          if (gold == null) {
+            unknown = true;
+          } else if (gold < min) {
+            min = gold;
+          }
+        });
+        return { min, unknown };
+      }
+
+      function refreshRates() {
+        rows.forEach(applyRate);
+        // 固定口径：金价降序；没汇率的永远沉底，同价再比法币净薪与公司名
+        rows.sort((a, b) => {
+          if ((a.gold == null) !== (b.gold == null)) return a.gold == null ? 1 : -1;
+          if (a.gold != null && a.gold !== b.gold) return b.gold - a.gold;
+          if (a.net !== b.net) return b.net - a.net;
+          return a.company.localeCompare(b.company, 'zh-Hans');
+        });
+      }
+
+      function matches(row) {
+        if (skillOnly && mySkill != null && row.skill > mySkill) return false;
+        // 设了门槛时，折金读不到岗位的不能算「满足」，先滤掉
+        if (minGold != null && (row.gold == null || row.gold < minGold)) return false;
+        if (!query) return true;
+        const haystack = [
+          JOB_TYPE_ZH[row.type] || row.type,
+          row.type,
+          row.company,
+          row.country,
+          row.code,
+          String(row.currencyId),
+          row.owner
+        ]
+          .join(' ')
+          .toLowerCase();
+        return haystack.includes(query);
+      }
+
+      function buildJobRow(row) {
+        const el = document.createElement('div');
+        el.className = 'eh-biz-row eh-job-row';
+        // 当前位置只就地高亮：不置顶、不参与排序
+        const isHere = myHereId != null && String(row.countryId) === myHereId;
+        if (isHere) el.classList.add('is-here');
+
+        const main = document.createElement('div');
+        main.className = 'eh-job-main';
+
+        // 标题区：公司图标跨两行，第一行公司名，第二行国家（中英空格分隔）+ 地区
+        const title = document.createElement('div');
+        title.className = 'eh-job-title';
+        let avatarEl;
+        const src = fxAvatarUrl(row.avatar);
+        if (src) {
+          avatarEl = document.createElement('img');
+          avatarEl.className = 'eh-job-avatar';
+          avatarEl.alt = '';
+          avatarEl.decoding = 'async';
+          avatarEl.loading = 'lazy';
+          avatarEl.addEventListener(
+            'error',
+            () => {
+              const glyph = document.createElement('span');
+              glyph.className = 'eh-job-avatar';
+              glyph.textContent = row.company.slice(0, 1);
+              avatarEl.replaceWith(glyph);
+            },
+            { once: true }
+          );
+          avatarEl.src = src;
+        } else {
+          avatarEl = document.createElement('span');
+          avatarEl.className = 'eh-job-avatar';
+          avatarEl.textContent = row.company.slice(0, 1);
+        }
+        title.appendChild(avatarEl);
+
+        // 主标题：公司名
+        const headline = document.createElement('div');
+        headline.className = 'eh-job-headline';
+        const nameEl = document.createElement('b');
+        nameEl.className = 'eh-job-name';
+        nameEl.textContent = row.company;
+        nameEl.title = row.company;
+        headline.appendChild(nameEl);
+        title.appendChild(headline);
+
+        // 副标题：产业类型（中文）+ 职位数 + 技能要求
+        const subtitle = document.createElement('div');
+        subtitle.className = 'eh-job-subtitle';
+        if (row.type) {
+          const typeEl = document.createElement('span');
+          typeEl.className = 'eh-job-type';
+          typeEl.textContent = JOB_TYPE_ZH[row.type] || row.type;
+          typeEl.title = row.type;
+          subtitle.appendChild(typeEl);
+        }
+        const amountEl = document.createElement('span');
+        amountEl.textContent = row.amount + ' 个职位';
+        subtitle.appendChild(amountEl);
+        const skillEl = document.createElement('span');
+        skillEl.textContent = '技能 ≥ ' + row.skill;
+        skillEl.title = '最低技能要求';
+        subtitle.appendChild(skillEl);
+        if (isHere) {
+          const markEl = document.createElement('span');
+          markEl.className = 'eh-tax-mark';
+          markEl.textContent = '当前位置';
+          subtitle.appendChild(markEl);
+        }
+        title.appendChild(subtitle);
+        main.appendChild(title);
+
+        // 左半边第一行：前置小人图标 + 雇主头像（加载失败退回首字）+ 名字
+        const ownerLine = document.createElement('div');
+        ownerLine.className = 'eh-job-line';
+        const ownerEl = document.createElement('span');
+        ownerEl.className = 'eh-job-owner';
+        ownerEl.title = '雇主：' + (row.owner || '—');
+        const markEl = document.createElement('span');
+        markEl.className = 'eh-job-owner-mark';
+        markEl.innerHTML =
+          '<svg viewBox="0 0 16 16" aria-hidden="true">' +
+          '<circle cx="8" cy="5.4" r="2.6" fill="currentColor"/>' +
+          '<path d="M2.6 14c0-2.9 2.4-4.8 5.4-4.8s5.4 1.9 5.4 4.8" fill="currentColor"/>' +
+          '</svg>';
+        ownerEl.appendChild(markEl);
+        const ownerSrc = fxAvatarUrl(row.ownerAvatar);
+        let ownerAvatarEl;
+        if (ownerSrc) {
+          ownerAvatarEl = document.createElement('img');
+          ownerAvatarEl.className = 'eh-job-owner-avatar';
+          ownerAvatarEl.alt = '';
+          ownerAvatarEl.decoding = 'async';
+          ownerAvatarEl.loading = 'lazy';
+          ownerAvatarEl.addEventListener(
+            'error',
+            () => {
+              const glyph = document.createElement('span');
+              glyph.className = 'eh-job-owner-fallback';
+              glyph.textContent = (row.owner || '?').slice(0, 1);
+              ownerAvatarEl.replaceWith(glyph);
+            },
+            { once: true }
+          );
+          ownerAvatarEl.src = ownerSrc;
+        } else {
+          ownerAvatarEl = document.createElement('span');
+          ownerAvatarEl.className = 'eh-job-owner-fallback';
+          ownerAvatarEl.textContent = (row.owner || '?').slice(0, 1);
+        }
+        ownerEl.appendChild(ownerAvatarEl);
+        const ownerText = document.createElement('span');
+        ownerText.textContent = row.owner || '—';
+        ownerEl.appendChild(ownerText);
+        ownerLine.appendChild(ownerEl);
+        main.appendChild(ownerLine);
+
+        // 最后一行：地图标记 + 小国旗 + 国家（中英空格分隔）+ 地区
+        const loc = document.createElement('div');
+        loc.className = 'eh-job-loc';
+        const pinEl = document.createElement('span');
+        pinEl.className = 'eh-job-pin';
+        pinEl.innerHTML =
+          '<svg viewBox="0 0 16 16" aria-hidden="true">' +
+          '<path d="M8 1.6c-2.6 0-4.7 2.1-4.7 4.7 0 3.5 4.7 8.1 4.7 8.1s4.7-4.6 4.7-8.1c0-2.6-2.1-4.7-4.7-4.7Z" fill="none" stroke="currentColor" stroke-width="1.4"/>' +
+          '<circle cx="8" cy="6.3" r="1.7" fill="currentColor"/>' +
+          '</svg>';
+        loc.appendChild(pinEl);
+        const flagEl = buildFlagEl(row.code, row.flag);
+        flagEl.classList.add('eh-job-flag');
+        loc.appendChild(flagEl);
+        const locale = fxLocale(row.code);
+        const zh = locale && locale[0] ? locale[0] : '';
+        const countryText = zh && zh !== row.country ? zh + ' ' + row.country : row.country;
+        const locText = document.createElement('span');
+        locText.className = 'eh-job-loc-text';
+        locText.textContent = [countryText, row.region].filter(Boolean).join(' · ');
+        locText.title = locText.textContent;
+        loc.appendChild(locText);
+        main.appendChild(loc);
+
+        // 右列：税后法币 → 折算金币 → 申请跳转
+        const side = document.createElement('div');
+        side.className = 'eh-job-side';
+        const pay = document.createElement('div');
+        pay.className = 'eh-job-pay';
+        const payEl = document.createElement('b');
+        payEl.textContent = '税后 ' + fxPrice(row.net) + (row.code ? ' ' + row.code : '');
+        payEl.title =
+          (Number.isFinite(row.gross) ? '税前 ' + fxPrice(row.gross) + (row.code ? ' ' + row.code : '') : '税后薪资') +
+          (Number.isFinite(row.tax) ? ' · 工资税 ' + row.tax + '%' : '');
+        const goldEl = document.createElement('span');
+        if (row.gold != null) {
+          goldEl.appendChild(document.createTextNode('≈ '));
+          goldEl.appendChild(buildGoldIconEl('eh-gold-ico--sm'));
+          goldEl.appendChild(document.createTextNode(fxGold(row.gold)));
+          goldEl.title = row.fallback ? '买盘不足，按最优卖单价估算' : '按卖法币的最优买单折算';
+        } else {
+          goldEl.textContent = '汇率缺失';
+          goldEl.dataset.tone = 'muted';
+          goldEl.title = '还没有该法币的行情';
+        }
+        pay.appendChild(payEl);
+        pay.appendChild(goldEl);
+        side.appendChild(pay);
+        side.appendChild(
+          buildGoButton('前往「' + row.company + '」的申请页面', '/business/' + row.businessId)
+        );
+
+        el.appendChild(main);
+        el.appendChild(side);
+        return el;
+      }
+
+      function renderList() {
+        const visible = rows.filter(matches);
+        listEl.replaceChildren();
+        visible.slice(0, DISPLAY_LIMIT).forEach((row) => listEl.appendChild(buildJobRow(row)));
+        emptyEl.textContent =
+          rows.length && (minGold != null || skillOnly || query)
+            ? '没有符合条件的岗位，换个筛选条件试试。'
+            : '暂时没有岗位，点「刷新岗位」再试。';
+        emptyEl.hidden = visible.length > 0;
+      }
+
+      function paintStatus() {
+        if (error) {
+          const code = error && error.code;
+          if (code === 'NO_TOKEN' || code === 'UNAUTHORIZED') {
+            statusEl.textContent = tokenHint();
+            statusEl.dataset.tone = code === 'UNAUTHORIZED' ? 'error' : 'warn';
+          } else if (code === 'TIMEOUT') {
+            statusEl.textContent = '请求超时，请稍后重试。';
+            statusEl.dataset.tone = 'error';
+          } else if (quotaHint(error) || error.limited) {
+            statusEl.textContent = quotaHint(error) || '接口返回 429（请求过多或已达当日查询上限），请稍后再试。';
+            statusEl.dataset.tone = 'error';
+          } else {
+            statusEl.textContent = '读取失败：' + (error.message || '未知错误');
+            statusEl.dataset.tone = 'error';
+          }
+          return;
+        }
+        delete statusEl.dataset.tone;
+        if (loading) {
+          statusEl.textContent =
+            '正在抓取岗位…\n已读 ' +
+            progress.done +
+            '/' +
+            progress.total +
+            ' 个国家 · ' +
+            progress.count +
+            ' 条';
+          if (capped) statusEl.textContent += '\n已达请求上限';
+          return;
+        }
+        if (!updatedAt) {
+          statusEl.textContent = '…';
+          return;
+        }
+        const count = rows.filter(matches).length;
+        let text = '符合条件 ' + count + ' 条';
+        if (count > DISPLAY_LIMIT) text += ' · 仅显示前 ' + DISPLAY_LIMIT + ' 条';
+        if (capped) text += ' · 已达请求上限，结果可能不完整';
+        if (ratesLoading) text += ' · 汇率加载中';
+        if (minGold != null && rows.length && !rows.some((row) => row.gold != null)) {
+          text += '\n汇率缺失，暂时无法按金价筛选';
+        }
+        if (skillOnly && mySkill == null) text += '\n技能未读到，暂未过滤';
+        statusEl.textContent = text + '\n更新于 ' + formatClock(updatedAt);
+      }
+
+      const paint = () => {
+        renderList();
+        paintStatus();
+      };
+
+      let offAuth = null;
+      /** 凭据晚到（面板先开、游戏还没发过请求）时补一轮，不用玩家手动刷新。 */
+      const armAuthRetry = () => {
+        if (offAuth) return;
+        offAuth = market.onAuth(() => {
+          offAuth = null;
+          if (!loading && !updatedAt) load(false);
+        });
+      };
+
+      /** 账号字段只认登录凭据，走 playerFeed 的 2 分钟缓存；读不到时技能过滤与高亮自动降级。 */
+      async function readPlayer() {
+        let info = null;
+        try {
+          info = await playerFeed.ensure();
+        } catch (err) {
+          info = playerFeed.info || null;
+          ctx.log('账号读取失败（技能过滤 / 位置高亮不可用）', (err && err.code) || (err && err.message) || err);
+        }
+        if (!alive) return;
+        myHomeId = info && info.nationalityId ? String(info.nationalityId) : null;
+        myHereId = info && info.countryId ? String(info.countryId) : null;
+        // getuser 没有技能等级：按账号 id 再读一次公开资料，只取 economic_level
+        const accountId = info && info.accountId ? info.accountId : 0;
+        if (accountId) {
+          try {
+            mySkill = await profileFeed.ensure(accountId);
+          } catch (err) {
+            mySkill = profileFeed.economicLevel;
+            ctx.log('经济技能读取失败（公开资料接口）', (err && err.code) || (err && err.message) || err);
+          }
+        } else {
+          mySkill = null;
+        }
+        if (!alive) return;
+        if (skillOnly && mySkill == null) {
+          ctx.log('公开资料里没有 economic_level，技能过滤暂不生效');
+        }
+      }
+
+      /**
+       * 遍历全部国家抓岗位，回来后在列表里统一按税后金价排序。
+       * 分页在响应根上，所以要给 call 传 full；无岗位的国家可能不带 data，allowEmpty 放行，
+       * total_records 为 0 同样当作空结果；单国失败只跳过那一国，已有岗位照常展示。
+       * 接口按薪资从高到低返回：设了门槛时逐页读，某页最低已低于门槛即停；
+       * 全局请求有硬上限，缓存键带上门槛，半截结果不会被当成完整列表复用。
+       */
+      async function fetchJobs(force, threshold, targets) {
+        const key = threshold == null ? 'all' : String(threshold);
+        const cached = cache.get(key);
+        if (!force && cached && Date.now() - cached.at < CACHE_MS) return cached;
+
+        const data = [];
+        let requests = 0;
+        let stopped = false;
+        let capped = false;
+        let cursor = 0;
+        // 没有岗位的国家可能整个不带 data，allowEmpty 放行；total_records 为 0 也直接当作空结果
+        const opts = { object: true, full: true, noMethodRetry: true, allowEmpty: true };
+
+        const worker = async () => {
+          while (cursor < targets.length) {
+            if (!alive || capped) return;
+            const countryId = targets[cursor];
+            cursor += 1;
+            const url = (page) =>
+              '/market/jobs/get?country_id=' + encodeURIComponent(countryId) + '&page=' + page;
+            let page = 1;
+            let wanted = 1;
+            try {
+              while (page <= wanted) {
+                if (!alive || capped) return;
+                if (requests >= MAX_REQUESTS) {
+                  capped = true;
+                  return;
+                }
+                requests += 1;
+                const payload = await market.call(url(page), opts);
+                const pg =
+                  payload && payload.pagination && typeof payload.pagination === 'object'
+                    ? payload.pagination
+                    : {};
+                if (page === 1) {
+                  if (pg.total_records != null && Number(pg.total_records) === 0) break;
+                  wanted = Math.min(MAX_PAGES, Math.max(1, Number(pg.total_pages) || 1));
+                }
+                const pageData = Array.isArray(payload && payload.data) ? payload.data : [];
+                if (!pageData.length) break;
+                data.push(...pageData);
+                if (threshold != null) {
+                  const pageMin = pageMinGold(pageData);
+                  if (!pageMin.unknown && Number.isFinite(pageMin.min) && pageMin.min < threshold) {
+                    stopped = true;
+                    break;
+                  }
+                }
+                page += 1;
+                if (page <= wanted) await fxSleep(FX_GAP);
+              }
+            } catch (err) {
+              if (err && (err.code === 'UNAUTHORIZED' || err.code === 'NO_TOKEN')) {
+                capped = true;
+                throw err;
+              }
+              ctx.log('岗位读取失败', countryId + ' · ' + ((err && err.code) || 'ERROR'));
+            }
+            progress.done += 1;
+            progress.count = data.length;
+            if (alive) paintStatus();
+            await fxSleep(FX_GAP);
+          }
+        };
+
+        await Promise.all(
+          Array.from({ length: Math.min(FX_CONCURRENCY, targets.length) }, () => worker())
+        );
+        if (!alive) return null;
+        const seen = new Set();
+        const rows = data.map(buildRow).filter((row) => {
+          if (!row) return false;
+          const rowKey = String(row.id);
+          if (seen.has(rowKey)) return false;
+          seen.add(rowKey);
+          return true;
+        });
+        const result = { at: Date.now(), rows, stopped, capped };
+        cache.set(key, result);
+        return result;
+      }
+
+      function load(force) {
+        if (!alive || loading) return;
+        if (market.state !== 'ok') {
+          error = { code: market.state === 'expired' ? 'UNAUTHORIZED' : 'NO_TOKEN' };
+          paint();
+          armAuthRetry();
+          return;
+        }
+
+        loading = true;
+        error = null;
+        capped = false;
+        progress = { done: 0, total: 0, count: 0 };
+        paint();
+
+        (async () => {
+          try {
+            const [list, rateResult] = await Promise.all([
+              fxFeed.ensureCountries().catch((err) => {
+                ctx.log('国家清单读取失败', (err && err.code) || (err && err.message) || err);
+                return [];
+              }),
+              fxFeed.ensure().catch((err) => {
+                ctx.log('汇率读取失败', (err && err.code) || (err && err.message) || err);
+                return null;
+              })
+            ]);
+            if (!alive) return;
+            ratesLoading = rateResult == null;
+            paintStatus();
+
+            await readPlayer();
+            if (!alive) return;
+            const targets = (Array.isArray(list) ? list : [])
+              .filter((item) => item && item.id != null)
+              .map((item) => String(item.id));
+            if (!targets.length) {
+              const empty = new Error('没有可用的国家清单');
+              empty.code = 'EMPTY_COUNTRIES';
+              throw empty;
+            }
+            progress.total = targets.length;
+            paintStatus();
+
+            const result = await fetchJobs(force, minGold, targets);
+            if (!alive || !result) return;
+            rows = result.rows;
+            capped = result.capped === true;
+            refreshRates();
+            updatedAt = Date.now();
+          } catch (err) {
+            if (err && err.name === 'AbortError') return;
+            error = { code: (err && err.code) || 'ERROR', message: err && err.message };
+            if (error.code === 'UNAUTHORIZED' || error.code === 'NO_TOKEN') armAuthRetry();
+          } finally {
+            loading = false;
+            ratesLoading = false;
+            if (alive) {
+              paint();
+              // 列表高度变了，重新测一次，别沿用旧的
+              ctx.ui.reposition();
+            }
+          }
+        })();
+      }
+
+      on(refreshBtn, 'click', () => load(true));
+
+      on(skillEl, 'change', () => {
+        skillOnly = skillEl.checked;
+        ctx.storage.set('skillOnly', skillOnly);
+        paint();
+        ctx.ui.reposition();
+      });
+
+      on(minGoldEl, 'input', () => {
+        readMinGold();
+        ctx.storage.set('minGold', minGoldEl.value || '');
+        // 门槛立即作用于已加载的岗位；提前停止翻页在下一轮抓取（刷新岗位）生效
+        paint();
+        ctx.ui.reposition();
+      });
+
+      on(queryEl, 'input', () => {
+        query = (queryEl.value || '').toLowerCase();
+        renderList();
+        ctx.ui.reposition();
+      });
+
+      // 面板在 Shadow DOM 内：打字时别让游戏把按键当成自己的快捷键
+      ['keydown', 'keypress', 'keyup'].forEach((type) => {
+        on(queryEl, type, (event) => event.stopPropagation());
+        on(minGoldEl, type, (event) => event.stopPropagation());
+      });
+
+      // 行情在别的标签页刷新完了：金价与排序跟着更新，不重复请求岗位
+      const offFx = fxFeed.subscribe((kind) => {
+        if (kind !== 'done' || !alive || !rows.length) return;
+        refreshRates();
+        if (loading) return;
+        paint();
+        ctx.ui.reposition();
+      });
+
+      ctx.onDestroy(() => {
+        alive = false;
+        offFx();
+        if (offAuth) {
+          offAuth();
+          offAuth = null;
+        }
+      });
+
+      // 默认门槛 1 金；旧设置里存过空串 / 非法值也回到 1，只有有效数字才沿用
+      const savedMinGold = ctx.storage.get('minGold', '1');
+      const savedText = savedMinGold == null ? '' : String(savedMinGold).trim();
+      const savedNum = Number(savedText);
+      minGoldEl.value =
+        savedText !== '' && Number.isFinite(savedNum) && savedNum >= 0 ? String(savedNum) : '1';
+      readMinGold();
+      skillEl.checked = skillOnly;
+      paint();
+      // 打开「工作」就抓一轮：国家清单、汇率与账号都命中共享缓存时只发岗位请求
       load(false);
     }
   });
