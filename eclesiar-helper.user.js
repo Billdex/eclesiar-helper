@@ -9689,6 +9689,9 @@
       }
 
       function paintStatus() {
+        // 抓取期间禁用：一轮上百次请求，重复点击既不会重抓也容易撞 429
+        refreshBtn.disabled = loading;
+
         if (error) {
           const code = error && error.code;
           if (code === 'NO_TOKEN' || code === 'UNAUTHORIZED') {
