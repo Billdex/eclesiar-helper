@@ -34,7 +34,8 @@
 | 数据源 | 内容 | 缓存 | 使用方 |
 | --- | --- | --- | --- |
 | `apiCache`（请求层） | 接口级缓存与请求去重：key = 接口 + 规范化参数，负责 TTL、失败冷却、in-flight 合并、空结果标记与按前缀失效 | 见 §5 `9.0`（行情 10 分钟、账号 / 岗位 2 分钟、用量 60 秒、国家清单与税率页面级） | 全部数据源（迁移中：阶段 2 起逐个接入） |
-| `fxFeed` | 全球法币挂单；国家清单、税率与工资法 | 行情 10 分钟；国家清单与税率页面级（均走 `apiCache`），失败冷却 60 秒 | 汇率、商品销售、税费、`marketBadge` |
+| `coinBook` | 单币种挂单簿（`/market/coin/get`，买卖各一个 key）：`quote` / `ensureMany` / `load` 批次句柄 | 10 分钟（`API_TTL.coin`），失败冷却 60 秒 | 汇率、商品销售、税费折金、`marketBadge` |
+| `fxFeed` | 国家清单、税率与工资法；「汇率」面板的展示快照（`quotes` 只是 coinBook 的渲染视图） | 国家清单与税率页面级（`apiCache`），失败冷却 60 秒 | 汇率、商品销售、税费、`marketBadge`（国家清单） |
 | `goodsSnapshot` → `goodsFeed` | 各国市场行情，抓完 `publish` 给 `goodsFeed` | 10 分钟（`GOODS_CACHE_MS`） | 市场页、`goodsAuto`、`marketBadge` |
 | `regionFeed` | 国家 → 地区清单（底层 `apiCache`，`ensure` / `refresh` 两个入口） | 10 分钟 | 市场页领土检查、`regionJump`、工业、税费 |
 | `playerFeed` | 账号 id、国籍 id、所在国 id（只这三个字段） | 2 分钟，失败冷却 60 秒（`apiCache`） | 汇率置顶、商品销售、税费高亮、`marketBadge`、工作技能过滤取 id |

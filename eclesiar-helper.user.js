@@ -4052,8 +4052,7 @@
           expired = true;
         }
         // 凭据失效：会过期的缓存全部作废，别拿旧凭据的数据继续显示
-        // （国家清单 / 税率与凭据无关，页面级缓存保留）
-        apiCache.clear(true);
+        dropSessionCache();
         const error = new Error('UNAUTHORIZED');
         error.code = 'UNAUTHORIZED';
         error.source = usingApiKey ? 'api' : 'login';
@@ -4122,7 +4121,7 @@
       }
       apiExpired = false;
       // 换了密钥：之前用旧凭据拉到的数据作废，下次进面板重新拉
-      apiCache.clear(true);
+      dropSessionCache();
       return apiKey.value;
     }
 
@@ -4154,14 +4153,14 @@
         if (!apiKey.set(raw)) return false;
         apiExpired = false;
         // 换了密钥：之前用旧凭据拉到的数据作废
-        apiCache.clear(true);
+        dropSessionCache();
         return true;
       },
       /** 移除已保存的密钥，回到使用登录凭据。 */
       clearKey() {
         apiKey.clear();
         apiExpired = false;
-        apiCache.clear(true);
+        dropSessionCache();
       }
     };
   })();
@@ -4201,34 +4200,6 @@
       });
     });
     return [...seen.values()];
-  }
-
-  /**
-   * 统一两侧挂单的口径：价格一律换成「黄金 / 1 单位法币」，数量换成可成交黄金量。
-   * SELL 单：amount 是法币数量，rate 本身就是 黄金/法币。
-   * BUY 单：amount 是黄金数量，rate 是 法币/黄金，价格要取倒数。
-   */
-  function fxBook(sellOrders, buyOrders) {
-    const read = (list) =>
-      (Array.isArray(list) ? list : [])
-        .map((order) => ({
-          rate: Number(order && order.rate),
-          amount: Number(order && order.amount)
-        }))
-        .filter(
-          (order) =>
-            Number.isFinite(order.rate) && order.rate > 0 && Number.isFinite(order.amount) && order.amount > 0
-        );
-
-    const asks = read(sellOrders)
-      .map((order) => ({ price: order.rate, qty: order.amount, gold: order.amount * order.rate }))
-      .sort((a, b) => a.price - b.price);
-
-    const bids = read(buyOrders)
-      .map((order) => ({ price: 1 / order.rate, qty: order.amount * order.rate, gold: order.amount }))
-      .sort((a, b) => b.price - a.price);
-
-    return { asks, bids };
   }
 
   /** 沿最优档位逐档吃单，凑够 goldBudget 黄金，给出成交量加权成本。 */
@@ -4390,13 +4361,313 @@
     return wrap;
   }
 
-  /* -------- 9.2 汇率数据源：两个标签共用一份缓存 -------- */
+  /* -------- 9.2 汇率数据源：挂单簿 + 国家 / 税率 -------- */
 
-  /** 汇率缓存的有效期：两个标签共用一份行情，超过这个时间才重新拉。 */
-  const FX_CACHE_MS = 10 * 60 * 1000;
+  const COIN_PATH = '/market/coin/get';
 
   /**
-   * 汇率数据源：全局只保留一份行情，供「汇率」与「市场」共用。
+   * 单侧挂单归一：价格一律换成「黄金 / 1 单位法币」，数量换成可成交黄金量。
+   * SELL 单：rate 就是 黄金/法币，amount 是法币数量；
+   * BUY 单：rate 是 法币/黄金，取倒数才是价格，amount 是黄金数量。
+   */
+  function fxLevels(orders, side) {
+    const read = (Array.isArray(orders) ? orders : [])
+      .map((order) => ({
+        rate: Number(order && order.rate),
+        amount: Number(order && order.amount)
+      }))
+      .filter(
+        (order) =>
+          Number.isFinite(order.rate) && order.rate > 0 && Number.isFinite(order.amount) && order.amount > 0
+      );
+
+    if (side === 'BUY') {
+      return read
+        .map((order) => ({ price: 1 / order.rate, qty: order.amount * order.rate, gold: order.amount }))
+        .sort((a, b) => b.price - a.price);
+    }
+    return read
+      .map((order) => ({ price: order.rate, qty: order.amount, gold: order.amount * order.rate }))
+      .sort((a, b) => a.price - b.price);
+  }
+
+  /**
+   * 单币种挂单簿：每个币种的买卖两侧各占一个 apiCache key（10 分钟、各自独立）。
+   * - `quote(id)` / `side(id, transaction)`：同步读，不触发请求；
+   * - `ensureMany(ids)`：补齐缺失的一侧（命中缓存就不发请求）；
+   * - `load(ids, hooks)`：跑一轮（默认绕过 TTL），返回**批次句柄**驱动进度 / 重试 / 失败 / 429。
+   * 批次句柄随调用栈消失，不常驻；「更新于」与「有没有挂单」都从 key 自身读。
+   */
+  const coinBook = (() => {
+    const OPTS = { ttl: 'coin', namespace: 'coin' };
+    /** 最近一次**整批成功**：失败批次不覆盖，没成功过就是空的（只存内存）。 */
+    let lastBatch = { startedAt: 0, okKeys: [], okAt: new Map() };
+    /** 正在跑的批次句柄（同一时刻只有一轮）。 */
+    let batch = null;
+
+    const sideKey = (currencyId, side) =>
+      apiCache.key(COIN_PATH, { currency_id: String(currencyId), transaction: side });
+
+    const loaderFor = (currencyId, side) => () =>
+      apiClient
+        .call(COIN_PATH, { form: { currency_id: currencyId, transaction: side } })
+        .then((orders) => fxLevels(orders, side));
+
+    /** 单侧缓存条目 { value, at, empty, stale } 或 null。 */
+    const side = (currencyId, transaction) => apiCache.peek(sideKey(currencyId, transaction));
+
+    /** 合并两侧；两侧都还没拉过时返回 null（区分「没数据」与「没加载过」）。 */
+    function quote(currencyId) {
+      const sell = side(currencyId, 'SELL');
+      const buy = side(currencyId, 'BUY');
+      if (!sell && !buy) return null;
+      const asks = sell ? sell.value : [];
+      const bids = buy ? buy.value : [];
+      const stamps = [sell, buy].filter(Boolean).map((entry) => entry.at);
+      return {
+        id: Number(currencyId),
+        asks,
+        bids,
+        /** 两侧里较早的那份时间：这行数据最旧到此为止。 */
+        at: Math.min.apply(null, stamps),
+        empty: asks.length === 0 && bids.length === 0,
+        /** 有一侧没拉到（失败 / 还没拉过），不代表那一侧没有挂单。 */
+        partial: !sell || !buy,
+        stale: Boolean((sell && sell.stale) || (buy && buy.stale))
+      };
+    }
+
+    /** 最优买价（吃卖单）/ 最优卖价（吃买单）；没有该方向挂单时 null。 */
+    function bestPrice(currencyId, transaction) {
+      const entry = side(currencyId, transaction);
+      if (!entry || !entry.value.length) return null;
+      return entry.value[0].price;
+    }
+
+    /** 该国货币在当前买单里还能吃下多少（法币数量），用于提示换汇深度不足。 */
+    function sellCapacity(currencyId) {
+      const entry = side(currencyId, 'BUY');
+      if (!entry) return 0;
+      return entry.value.reduce((sum, level) => sum + level.qty, 0);
+    }
+
+    /** 并发跑一组任务（默认 3 并发 + 60ms 间隔，与接口的既有限速口径一致）。 */
+    async function pool(tasks, worker) {
+      let cursor = 0;
+      const lanes = Array.from({ length: Math.min(FX_CONCURRENCY, tasks.length) }, async () => {
+        while (cursor < tasks.length) {
+          const task = tasks[cursor];
+          cursor += 1;
+          await worker(task);
+          await fxSleep(FX_GAP);
+        }
+      });
+      await Promise.all(lanes);
+    }
+
+    const tasksOf = (ids) => {
+      const out = [];
+      ids.forEach((id) => {
+        out.push({ id, side: 'SELL' }, { id, side: 'BUY' });
+      });
+      return out;
+    };
+
+    /** 补齐若干货币的两侧挂单（命中 10 分钟缓存就不发请求）。返回失败集合。 */
+    async function ensureMany(ids) {
+      const list = [...new Set((Array.isArray(ids) ? ids : []).map(Number).filter(Boolean))];
+      const failed = [];
+      await pool(tasksOf(list), async (task) => {
+        try {
+          await apiCache.ensure(sideKey(task.id, task.side), loaderFor(task.id, task.side), OPTS);
+        } catch (err) {
+          if (err && err.code === 'UNAUTHORIZED') throw err;
+          failed.push(sideKey(task.id, task.side));
+        }
+      });
+      return { failedKeys: failed, limited: false };
+    }
+
+    /**
+     * 跑一轮挂单刷新，返回批次句柄：
+     * { startedAt, progress, failedIds, failedKeys, limited, cancelled, done, promise }。
+     * mode='refresh' 绕过 TTL（「刷新行情」），mode='ensure' 命中缓存（打开面板）。
+     * 失败项按旧口径串行补一轮；整批都成功才更新 lastBatch。
+     */
+    function load(ids, hooks) {
+      if (batch) return batch;
+      const options = hooks || {};
+      const mode = options.mode === 'ensure' ? 'ensure' : 'refresh';
+      const queue = [...new Set((Array.isArray(ids) ? ids : []).map(Number).filter(Boolean))];
+      const handle = {
+        startedAt: Date.now(),
+        progress: { phase: 'fetch', done: 0, total: queue.length, retryIndex: 0, retryTotal: 0 },
+        failedIds: [],
+        failedKeys: [],
+        limited: false,
+        cancelled: false,
+        done: false,
+        promise: null
+      };
+      batch = handle;
+
+      const pull = (task) => {
+        const key = sideKey(task.id, task.side);
+        const loader = loaderFor(task.id, task.side);
+        return mode === 'ensure' ? apiCache.ensure(key, loader, OPTS) : apiCache.refresh(key, loader, OPTS);
+      };
+
+      const attempt = async (id) => {
+        await Promise.all(
+          ['SELL', 'BUY'].map((one) => pull({ id, side: one }))
+        );
+      };
+
+      const step = (id, failed) => {
+        if (typeof options.onRow === 'function') {
+          try {
+            options.onRow(id, failed);
+          } catch (err) {
+            warn('汇率行回调异常', err);
+          }
+        }
+      };
+
+      handle.promise = (async () => {
+        const failed = [];
+        let cursor = 0;
+        const worker = async () => {
+          while (cursor < queue.length) {
+            if (handle.cancelled) return;
+            const id = queue[cursor];
+            cursor += 1;
+            let ok = true;
+            try {
+              await attempt(id);
+            } catch (err) {
+              if (err && err.code === 'UNAUTHORIZED') throw err;
+              if (err && err.code === 'HTTP' && String(err.message) === 'HTTP_429') handle.limited = true;
+              ok = false;
+              failed.push(id);
+            }
+            handle.progress = Object.assign({}, handle.progress, { done: handle.progress.done + 1 });
+            step(id, !ok);
+            if (typeof options.onProgress === 'function') options.onProgress(handle);
+            await fxSleep(FX_GAP);
+          }
+        };
+
+        await Promise.all(
+          Array.from({ length: Math.min(FX_CONCURRENCY, queue.length) }, () => worker())
+        );
+
+        // 失败多半是瞬时 429 / 5xx：串行补一次，仍失败才计入结果
+        if (!handle.cancelled && failed.length) {
+          let left = failed.slice();
+          handle.progress = Object.assign({}, handle.progress, {
+            phase: 'retry',
+            retryIndex: 0,
+            retryTotal: left.length
+          });
+          if (typeof options.onProgress === 'function') options.onProgress(handle);
+          for (let i = 0; i < left.length; i += 1) {
+            if (handle.cancelled) break;
+            const id = left[i];
+            handle.progress = Object.assign({}, handle.progress, { retryIndex: i + 1 });
+            try {
+              await attempt(id);
+              left = left.filter((item) => item !== id);
+              step(id, false);
+            } catch (err) {
+              if (err && err.code === 'UNAUTHORIZED') throw err;
+              if (err && err.code === 'HTTP' && String(err.message) === 'HTTP_429') handle.limited = true;
+              step(id, true);
+            }
+            if (typeof options.onProgress === 'function') options.onProgress(handle);
+            await fxSleep(FX_GAP * 3);
+          }
+          failed.length = 0;
+          // 补成功的从失败集合里摘掉
+          left.forEach((id) => failed.push(id));
+        }
+
+        handle.failedIds = handle.cancelled ? [] : failed.slice();
+        handle.failedKeys = handle.failedIds.map((id) => sideKey(id, 'SELL'));
+        handle.progress = Object.assign({}, handle.progress, {
+          phase: 'idle',
+          retryIndex: 0,
+          retryTotal: 0
+        });
+        handle.done = true;
+        batch = null;
+
+        // 只有整批成功才更新「最近一次成功」，失败批次保留上一次的集合
+        if (!handle.cancelled && !failed.length) {
+          const okAt = new Map();
+          queue.forEach((id) => {
+            const sell = side(id, 'SELL');
+            const buy = side(id, 'BUY');
+            const stamps = [sell, buy].filter(Boolean).map((entry) => entry.at);
+            if (stamps.length) okAt.set(String(id), Math.min.apply(null, stamps));
+          });
+          lastBatch = {
+            startedAt: handle.startedAt,
+            okKeys: queue.map((id) => sideKey(id, 'SELL')),
+            okAt
+          };
+        }
+        return handle;
+      })();
+
+      return handle;
+    }
+
+    return {
+      quote,
+      side,
+      bestPrice,
+      sellCapacity,
+      ensureMany,
+      load,
+      cancel() {
+        if (batch) batch.cancelled = true;
+      },
+      /** 凭据变化 / destroy：连「最近一次成功」的时间一起丢掉，别拿旧数据报「更新于」。 */
+      reset() {
+        batch = null;
+        lastBatch = { startedAt: 0, okKeys: [], okAt: new Map() };
+      },
+      get last() {
+        return lastBatch;
+      },
+      /**
+       * 最近一次成功批里、当前这批货币中最旧的一份数据时间；一次都没成功过返回 0。
+       * 长期失败 / 从未成功的货币不参与，免得把时间无限拉低。
+       */
+      oldestAt(ids) {
+        let oldest = 0;
+        (Array.isArray(ids) ? ids : []).forEach((id) => {
+          const at = lastBatch.okAt.get(String(id));
+          if (!at) return;
+          if (!oldest || at < oldest) oldest = at;
+        });
+        return oldest;
+      }
+    };
+  })();
+
+  /**
+   * 凭据变化（生成 / 保存 / 移除密钥、401）：丢掉会过期的接口缓存，
+   * 连同「最近一次成功」的行情时间；页面级条目（国家清单 / 税率）与凭据无关，保留。
+   */
+  function dropSessionCache() {
+    apiCache.clear(true);
+    coinBook.reset();
+  }
+
+  /**
+   * 汇率数据源：国家清单 / 税率，以及「汇率」面板用的展示视图（quotes）。
+   * quotes 只是 coinBook 的渲染快照，不是缓存：数据一律回 coinBook 读。
    * 订阅回调签名 (kind, quote)：
    *   reset —— quotes 整体替换，订阅方需要重建列表；
    *   row   —— 单个货币的数据 / 状态变化；
@@ -4418,12 +4689,11 @@
     /** 国家 id → { workTax, minWage }；「税费」子面板用得到，和 taxes 来自同一次 /countries 请求。 */
     let wageLaws = null;
     let taxesEntry = null;
+    /** 「汇率」面板的展示快照（含 pending 行）；数据本身在 coinBook 里，这里只做渲染。 */
     let quotes = [];
-    let updatedAt = 0;
     let loading = false;
     let error = null;
     let progress = { phase: 'idle', done: 0, total: 0, retryIndex: 0, retryTotal: 0 };
-    let controller = null;
     let promise = null;
 
     const notify = (kind, quote) => {
@@ -4511,7 +4781,11 @@
         });
     }
 
-    async function load() {
+    /**
+     * 跑一轮行情。mode='refresh' 绕过 TTL（点「刷新行情」），'ensure' 命中 10 分钟缓存
+     * （打开面板、别的标签要用汇率）。数据一律写进 coinBook，这里只维护 quotes 快照与状态。
+     */
+    function run(mode) {
       if (loading) return promise;
       if (apiClient.state !== 'ok') {
         error = { code: 'NO_TOKEN' };
@@ -4522,16 +4796,6 @@
       loading = true;
       error = null;
       progress = { phase: 'fetch', done: 0, total: 0, retryIndex: 0, retryTotal: 0 };
-      const previous = quotes; // 本次失败时用来回滚，别让已有结果凭空消失
-      if (controller) {
-        try {
-          controller.abort();
-        } catch (err) {
-          /* ignore */
-        }
-      }
-      controller = new AbortController();
-      const signal = controller.signal;
       notify('state');
 
       promise = (async () => {
@@ -4549,105 +4813,21 @@
           progress = { phase: 'fetch', done: 0, total: list.length, retryIndex: 0, retryTotal: 0 };
           notify('reset');
 
-          // 遍历用副本：无挂单的货币会从 quotes（就是 list）里 splice 掉，
-          // 直接用 list 当队列会让 length 变短、把后面的货币整段跳过。
-          const total = list.length;
-          const work = list.slice();
-          const failures = [];
-          let limited = false;
-          let cursor = 0;
-
-          const fetchEntry = async (quote) => {
-            const [sell, buy] = await Promise.all([
-              apiClient.call('/market/coin/get', {
-                form: { currency_id: quote.id, transaction: 'SELL' },
-                signal
-              }),
-              apiClient.call('/market/coin/get', {
-                form: { currency_id: quote.id, transaction: 'BUY' },
-                signal
-              })
-            ]);
-            const book = fxBook(sell, buy);
-            if (!book.asks.length && !book.bids.length) {
-              // 两侧都没有挂单：直接把这行拿掉，与「只显示有挂单的货币」一致
-              const index = quotes.indexOf(quote);
-              if (index !== -1) quotes.splice(index, 1);
-              notify('drop', quote);
-              return;
-            }
-            quote.asks = book.asks;
-            quote.bids = book.bids;
-            quote.status = 'ok';
-            notify('row', quote);
-          };
-
-          const worker = async () => {
-            while (cursor < work.length) {
-              if (signal.aborted) return;
-              const quote = work[cursor];
-              cursor += 1;
-
-              try {
-                await fetchEntry(quote);
-              } catch (err) {
-                if (err && err.name === 'AbortError') return;
-                if (err && err.code === 'UNAUTHORIZED') throw err;
-                if (err && err.code === 'HTTP' && String(err.message) === 'HTTP_429') limited = true;
-                quote.status = 'error';
-                notify('row', quote);
-                failures.push(quote);
-              }
-
-              progress = Object.assign({}, progress, { done: progress.done + 1 });
+          const handle = coinBook.load(list.map((item) => item.id), {
+            mode,
+            onRow: (id, failed) => applyBook(id, failed),
+            onProgress: (current) => {
+              progress = Object.assign({}, current.progress);
               notify('state');
-              await fxSleep(FX_GAP);
             }
-          };
-
-          await Promise.all(Array.from({ length: Math.min(FX_CONCURRENCY, total) }, () => worker()));
-          if (signal.aborted) return;
-
-          // 失败多半是瞬时 429 / 5xx：串行补一次，行内转圈重新转起来，仍失败才计入结果
-          const retry = failures.splice(0);
-          progress = Object.assign({}, progress, {
-            phase: 'retry',
-            retryIndex: 0,
-            retryTotal: retry.length
           });
-          for (let i = 0; i < retry.length; i += 1) {
-            if (signal.aborted) return;
-            const quote = retry[i];
-            progress = Object.assign({}, progress, { retryIndex: i + 1 });
-            quote.status = 'pending';
-            notify('row', quote);
-            try {
-              await fetchEntry(quote);
-            } catch (err) {
-              if (err && err.name === 'AbortError') return;
-              if (err && err.code === 'UNAUTHORIZED') throw err;
-              if (err && err.code === 'HTTP' && String(err.message) === 'HTTP_429') limited = true;
-              quote.status = 'error';
-              notify('row', quote);
-              failures.push(quote);
-            }
-            notify('state');
-            await fxSleep(FX_GAP * 3);
+          await handle.promise;
+          progress = Object.assign({}, handle.progress, { phase: 'idle' });
+          // 失败时旧值仍在 coinBook 里，面板继续显示上一次成功的数据，只报失败数量
+          if (handle.failedIds.length) {
+            error = { code: 'PARTIAL', count: handle.failedIds.length, limited: handle.limited };
           }
-
-          updatedAt = Date.now();
-          progress = Object.assign({}, progress, { phase: 'idle', retryIndex: 0, retryTotal: 0 });
-          if (failures.length) error = { code: 'PARTIAL', count: failures.length, limited };
         } catch (err) {
-          if (err && err.name === 'AbortError') return;
-          quotes = previous;
-          if (err && err.code === 'UNAUTHORIZED') {
-            try {
-              controller.abort();
-            } catch (ignore) {
-              /* ignore */
-            }
-          }
           error = { code: (err && err.code) || 'ERROR', message: err && err.message };
           notify('reset');
         } finally {
@@ -4659,6 +4839,33 @@
       })();
 
       return promise;
+    }
+
+    /**
+     * 单个货币的数据到位：更新快照行；两侧都没挂单就从列表里拿掉。
+     * 这次失败但手里还有上一次的数据时继续显示旧值（状态栏会报失败数量），
+     * 只有一侧都没拉到才标「拉取失败」。
+     */
+    function applyBook(currencyId, failed) {
+      const quote = quotes.find((item) => item.id === Number(currencyId));
+      if (!quote) return;
+      const book = coinBook.quote(currencyId);
+      if (!book || (failed && book.partial)) {
+        quote.status = 'error';
+        notify('row', quote);
+        return;
+      }
+      if (book.empty) {
+        // 两侧都没有挂单：直接把这行拿掉，与「只显示有挂单的货币」一致
+        const index = quotes.indexOf(quote);
+        if (index !== -1) quotes.splice(index, 1);
+        notify('drop', quote);
+        return;
+      }
+      quote.asks = book.asks;
+      quote.bids = book.bids;
+      quote.status = 'ok';
+      notify('row', quote);
     }
 
     return {
@@ -4677,8 +4884,12 @@
       get progress() {
         return progress;
       },
+      /**
+       * 这屏数据里最旧的一份有效数据时间：取最近一次整批成功中、当前列表里那些货币的最旧值。
+       * 不用「本轮结束时刻」，否则比真实数据新；长期失败的货币不参与，不拉低时间。
+       */
       get updatedAt() {
-        return updatedAt;
+        return coinBook.oldestAt(quotes.map((item) => item.id));
       },
       get error() {
         return error;
@@ -4690,14 +4901,10 @@
       },
       ensureCountries,
       ensureTaxes,
-      load,
-      /** 缓存还在有效期内就直接用，否则拉一次；并发调用共享同一个请求。 */
-      async ensure(maxAge) {
-        if (loading) return promise;
-        const age = maxAge == null ? FX_CACHE_MS : maxAge;
-        if (updatedAt && Date.now() - updatedAt < age) return quotes;
-        return load();
-      },
+      /** 点「刷新行情」：绕过 TTL 重抓一遍。 */
+      refresh: () => run('refresh'),
+      /** 打开面板 / 别的标签要用汇率：命中 10 分钟缓存就不发请求。 */
+      ensure: () => run('ensure'),
       /**
        * 国家 id → 该国法币（来自 /countries/summary）。
        * 「汇率」置顶玩家国籍 / 所在国时用它把国家换成货币；清单还没拉到或该国没有法币时返回 null。
@@ -4717,27 +4924,15 @@
           avatar: row.avatar == null ? '' : String(row.avatar)
         };
       },
-      /** 法币 id → 最优卖单价（黄金 / 1 单位法币）；没有行情时返回 null。 */
-      rateFor(currencyId) {
-        const quote = quotes.find((item) => item.id === currencyId);
-        if (!quote || quote.status !== 'ok' || !quote.asks || !quote.asks.length) return null;
-        return quote.asks[0].price;
-      },
+      /** 法币 id → 最优卖单价（黄金 / 1 单位法币）；没有挂单返回 null。直接读挂单簿。 */
+      rateFor: (currencyId) => coinBook.bestPrice(currencyId, 'SELL'),
       /**
        * 卖法币换黄金的最优价（黄金 / 1 单位法币）：吃的是别人的买单，
        * 与「买入价」（rateFor，吃卖单）不是一个方向，销售时必须用这个。
        */
-      sellRateFor(currencyId) {
-        const quote = quotes.find((item) => item.id === currencyId);
-        if (!quote || quote.status !== 'ok' || !quote.bids || !quote.bids.length) return null;
-        return quote.bids[0].price;
-      },
+      sellRateFor: (currencyId) => coinBook.bestPrice(currencyId, 'BUY'),
       /** 该国货币在当前买单里还能吃下多少（法币数量），用于提示换汇深度不足。 */
-      sellCapacityFor(currencyId) {
-        const quote = quotes.find((item) => item.id === currencyId);
-        if (!quote || quote.status !== 'ok' || !quote.bids) return 0;
-        return quote.bids.reduce((sum, level) => sum + level.qty, 0);
-      },
+      sellCapacityFor: (currencyId) => coinBook.sellCapacity(currencyId),
       /** 国家 id → 税率（百分数）；还没拉到 / 该国没有 laws 时返回 null。 */
       taxFor(countryId) {
         if (!taxes || countryId == null) return null;
@@ -4748,13 +4943,9 @@
         if (!wageLaws || countryId == null) return null;
         return wageLaws.get(String(countryId)) || null;
       },
+      /** 面板关掉 / 插件销毁：只停止继续发起新的 key，已发出且可能被共享的请求不 abort。 */
       cancel() {
-        if (!controller) return;
-        try {
-          controller.abort();
-        } catch (err) {
-          /* ignore */
-        }
+        coinBook.cancel();
       }
     };
   })();
@@ -5463,7 +5654,7 @@
       });
 
       on(refreshBtn, 'click', () => {
-        fxFeed.load();
+        fxFeed.refresh();
         loadPins();
       });
 
@@ -5482,7 +5673,7 @@
       });
       if (fxFeed.quotes.length || fxFeed.loading) sync('reset');
       else sync('state');
-      fxFeed.ensure(FX_CACHE_MS);
+      fxFeed.ensure();
       loadPins();
 
       ctx.onDestroy(() => {
@@ -5839,7 +6030,7 @@
       promise = (async () => {
         try {
           // 汇率与市场并行：汇率优先吃缓存，只有缓存过期才真的去拉
-          fxFeed.ensure(FX_CACHE_MS).catch(() => null);
+          fxFeed.ensure().catch(() => null);
           const countries = await fxFeed.ensureCountries();
           if (signal.aborted) return;
 
@@ -6907,16 +7098,11 @@
    * 按「当前所在国家市场的本币」处理（playerFeed 的 region.country.id → currency.id），
    * 实收金额是卖币所得，所以用「卖币换金」的买单方向报价（fxFeed.sellRateFor）。
    *
-   * 汇率优先复用「汇率」标签那份缓存（fxFeed），缺少时才按单个货币查一次挂单，
-   * 结果缓存 5 分钟；一次页面访问最多按币种数个请求，不轮询。
+   * 汇率直接读挂单簿 coinBook（与「汇率」面板共用同一套 key，10 分钟）：
+   * 缺哪一侧才补一次请求，之后不会再问；不轮询、不自建缓存。
    */
   const marketBadge = (() => {
     const ATTR = 'data-eh-gold';
-    const RATE_TTL = 5 * 60 * 1000;
-    const RATE_RETRY = 60 * 1000;
-    /** 国家清单拉失败后 30 秒内不再重试；单次请求超过 10 秒视为卡住，允许重来。 */
-    const MAP_RETRY = 30 * 1000;
-    const MAP_TIMEOUT = 10 * 1000;
     const SCAN_DELAY = 150;
     const WARMUP_GAP = 2000;
     const WARMUP_TRIES = 15;
@@ -6935,9 +7121,6 @@
     let credentialTries = 0;
     let currencyMap = null;
     let currencyByCountry = null;
-    let currencyPromise = null;
-    let currencyStartedAt = 0;
-    let currencyFailedAt = 0;
     /** 当前认定的商品列表容器；离开页面或它被移除后重新找。 */
     let scope = null;
     /** 上架面板容器（含「上架身份」与「实收金额」的那一栏）；同样会失效重找。 */
@@ -6948,12 +7131,6 @@
     let rowPainted = false;
     let grossPainted = false;
 
-    /** 货币 id → { at, rate, failed }：rate 为 null 表示该币种确实没有挂单。 */
-    const rates = new Map();
-    const pending = new Set();
-    /** 同上，但记的是「卖币换金」方向（吃买单），给上架实收金额用。 */
-    const sellRates = new Map();
-    const sellPending = new Set();
     /** 已在调试日志里报过「未识别」的货币代码，避免同一批行反复刷屏。 */
     const unknownCodes = new Set();
 
@@ -7052,22 +7229,14 @@
 
     /**
      * 货币代码 → 货币 id：只有 /countries/summary 里有这份映射，拉一次就够。
-     * 自己发这一次请求、不借用 fxFeed 的缓存 promise：那份是给汇率 / 市场用的，
-     * 它失败或挂住时不该连带市场页标注一起失效。
+     * 走 fxFeed.ensureCountries（底层 apiCache 页面级条目）：并发合并、失败冷却都在那边，
+     * 这里不再自建 promise 与重试计时。
      */
     function ensureCurrencyMap() {
-      const now = Date.now();
       if (currencyMap) return;
-      if (currencyPromise) {
-        // 请求卡住超过 10 秒就不再等它，允许下一轮重来
-        if (now - currencyStartedAt < MAP_TIMEOUT) return;
-        currencyPromise = null;
-      }
       if (apiClient.state !== 'ok') return;
-      if (currencyFailedAt && now - currencyFailedAt < MAP_RETRY) return;
 
-      currencyStartedAt = now;
-      currencyPromise = fxFeed
+      fxFeed
         .ensureCountries()
         .then((list) => {
           const map = new Map();
@@ -7092,56 +7261,21 @@
           schedule();
         })
         .catch((err) => {
-          currencyFailedAt = Date.now();
           log('市场金价：国家清单读取失败', err && (err.message || err.code));
-        })
-        .then(() => {
-          currencyPromise = null;
         });
     }
 
     /**
-     * 没有对应方向挂单的币种只查一次并记住；失败则冷却 1 分钟，避免反复打接口。
-     * selling=true 查买单（卖币换金），false 查卖单（买币花金）。
-     */
-    function fetchRate(id, selling) {
-      if (apiClient.state !== 'ok') return;
-      const bucket = selling ? sellRates : rates;
-      const waiting = selling ? sellPending : pending;
-      waiting.add(id);
-      apiClient
-        .call('/market/coin/get', { form: { currency_id: id, transaction: selling ? 'BUY' : 'SELL' } })
-        .then((orders) => {
-          const book = selling ? fxBook(null, orders) : fxBook(orders, null);
-          const levels = selling ? book.bids : book.asks;
-          bucket.set(id, { at: Date.now(), rate: levels.length ? levels[0].price : null });
-        })
-        .catch((err) => {
-          bucket.set(id, { at: Date.now(), rate: null, failed: true });
-          log('市场金价：换汇挂单读取失败', err && (err.message || err.code));
-        })
-        .then(() => {
-          waiting.delete(id);
-          schedule();
-        });
-    }
-
-    /**
-     * 黄金/单位货币；null = 没有这个方向的挂单；undefined = 正在取或刚失败，先不画。
+     * 黄金/单位货币；null = 没有这个方向的挂单；undefined = 还没拉到（含刚失败进冷却），先不画。
      * selling=true 走买单（你把手里的法币卖成黄金），false 走卖单（你花黄金买法币）。
+     * 数据直接读 coinBook（与「汇率」面板共用同一套 key），缺这一侧时才补一次请求。
      */
     function goldRateOf(id, selling) {
-      const direct = selling ? fxFeed.sellRateFor(id) : fxFeed.rateFor(id);
-      if (direct) return direct;
-
-      const cached = (selling ? sellRates : rates).get(id);
-      const now = Date.now();
-      if (cached) {
-        if (cached.failed && now - cached.at < RATE_RETRY) return undefined;
-        if (!cached.failed && now - cached.at < RATE_TTL) return cached.rate;
-      }
-      if ((selling ? sellPending : pending).has(id)) return undefined;
-      fetchRate(id, selling);
+      const transaction = selling ? 'BUY' : 'SELL';
+      const entry = coinBook.side(id, transaction);
+      if (entry) return entry.value.length ? entry.value[0].price : null;
+      if (apiClient.state !== 'ok') return undefined;
+      coinBook.ensureMany([id]).then(schedule, schedule);
       return undefined;
     }
 
@@ -7604,8 +7738,6 @@
       playerAsked = false;
       rowPainted = false;
       grossPainted = false;
-      pending.clear();
-      sellPending.clear();
       unknownCodes.clear();
       // 只删自己加的徽标，游戏原有节点一个不动
       document.querySelectorAll('[' + ATTR + ']').forEach((node) => node.remove());
@@ -11298,8 +11430,9 @@
     fxFeed.cancel();
     // 地区缓存只存内存，销毁时一并丢掉；在途请求会自己结束，不会留下轮询
     regionFeed.clear();
-    // 请求层缓存同理：清空后旧请求的结果不会回写（generation 校验）
+    // 请求层缓存同理：清空后旧请求的结果不会回写（失效代数校验）
     apiCache.clear();
+    coinBook.reset();
     apiClient.uninstall();
 
     features.forEach((feature) => {

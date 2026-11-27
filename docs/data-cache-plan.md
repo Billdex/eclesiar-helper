@@ -203,14 +203,14 @@ apiCache.stats()                           // 调试：hit / join / miss / coold
 
 ### 阶段 4：`coinBook`（收益最大）
 
-- [ ] 新增 `coinBook`：单币种买卖两侧独立缓存、`empty` 标记、`ensureMany` 并发合并
-- [ ] 新增 `coinBook.load(targets)`：返回批次句柄（`progress` / `failedKeys` / `limited`），内部对每个 key 走 `refresh`，失败项串行补一轮
-- [ ] 汇率面板删除常驻 `fxRound`：只持有当前批次句柄，数据状态与「更新于」改读 `coinBook`（可用性看 `empty` / `asks` / `bids`，时间取 `lastBatch.okKeys ∩ 当前目标` 里**最旧**的 `at`，删掉轮级 `updatedAt = Date.now()`）
-- [ ] `lastBatch` 失败时不覆盖：整批失败或部分失败都保留上一次成功集合，只把本轮失败数交给状态栏；国家清单变化时按交集过滤
-- [ ] 状态栏口径不变：`N 种货币有挂单 · 更新于 HH:MM`，有失败时补 `M 个拉取失败（显示旧数据）`
-- [ ] `rateFor` / `sellRateFor` / `sellCapacityFor` 改读 `coinBook`
-- [ ] `marketBadge` 删除自建缓存与 `fetchRate`，改读 `coinBook`
-- [ ] 验收：汇率页一轮请求数不变（币种数 × 2）；打开商品市场页 0 额外 coin 请求；无挂单币种不再被重复询问；销售口径与改造前一致；10 分钟内重开面板 0 请求且「更新于」= `lastBatch.okKeys` 中最旧的 `at`；长期失败的币种不拉低该时间
+- [x] 新增 `coinBook`：单币种买卖两侧独立缓存、`empty` 标记、`ensureMany` 并发合并
+- [x] 新增 `coinBook.load(targets)`：返回批次句柄（`progress` / `failedKeys` / `limited`），内部对每个 key 走 `refresh`，失败项串行补一轮
+- [x] 汇率面板不再持有轮级状态：数据状态与「更新于」读 `coinBook`（可用性看 `empty` / `asks` / `bids`，时间取 `lastBatch.okAt ∩ 当前目标` 里**最旧**的 `at`，删掉轮级 `updatedAt = Date.now()`）
+- [x] `lastBatch` 失败时不覆盖：整批失败或部分失败都保留上一次成功集合，只把本轮失败数交给状态栏；国家清单变化时按交集过滤；凭据变化时随 `coinBook.reset()` 清空
+- [x] 状态栏口径不变：`N 种货币有挂单 · 更新于 HH:MM`，有失败时补 `M 个拉取失败（显示旧数据）`
+- [x] `rateFor` / `sellRateFor` / `sellCapacityFor` 改读 `coinBook`
+- [x] `marketBadge` 删除自建缓存与 `fetchRate`（连带自建的国家清单重试计时），改读 `coinBook`
+- [x] 验收：汇率页一轮请求数不变（币种数 × 2）；打开商品市场页 0 额外 coin 请求；无挂单币种不再被重复询问；销售口径与改造前一致；10 分钟内重开面板 0 请求且「更新于」= `lastBatch` 中最旧的 `at`；长期失败的币种不拉低该时间（离线桩测试 35 条断言全过）
 
 ### 阶段 5：`goodsSnapshot` / 岗位
 
