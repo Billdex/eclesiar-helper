@@ -2,9 +2,9 @@
 // @name         Eclesiar 助手
 // @name:en      Eclesiar Helper
 // @namespace    https://github.com/Billdex/eclesiar-helper
-// @version      0.2.1
-// @description  Eclesiar 经济 / 政治计算辅助插件：悬浮球面板 + 全球汇率总览 + 各国市场商品金价比价与销售税后收益估算 + 各国地区工业数据总览，商品市场列表与上架表单直接标注折算金价，并可一键跳转该国的地区页面。
-// @description:en Eclesiar helper: floating panel + exchange rates + cross-market goods pricing and after-tax sale revenue in gold + a sortable overview of every region's industry data, plus one-click jumps to a country's regions.
+// @version      0.2.3
+// @description  Eclesiar 经济 / 政治计算辅助插件：悬浮球面板 + 全球汇率总览 + 各国市场商品金价比价与销售税后收益估算 + 各国地区工业数据与税负 / 最低工资总览，商品市场列表与上架表单直接标注折算金价，并可一键跳转该国的地区页面。
+// @description:en Eclesiar helper: floating panel + exchange rates + cross-market goods pricing and after-tax sale revenue in gold + sortable overviews of every region's industry data and every country's taxes and minimum wage, plus one-click jumps to a country's regions.
 // @author       billdex
 // @match        https://app.eclesiar.com/*
 // @run-at       document-idle
@@ -43,7 +43,7 @@
    * 1. 常量与工具
    * ========================================================================= */
 
-  const VERSION = '0.2.1';
+  const VERSION = '0.2.3';
   const REPO_URL = 'https://github.com/Billdex/eclesiar-helper';
   /** 主源：jsDelivr 官方。自动更新与「安装更新」都以它为准，不接受任何第三方密钥。 */
   const CDN_RAW = 'https://cdn.jsdelivr.net/gh/Billdex/eclesiar-helper@main/';
@@ -479,17 +479,20 @@
 
   /* ---------- 内容区 ---------- */
 
+  /* 滚动容器只负责滚动：留白交给每个功能页自己定，带二级导航的页面才能把导航贴到一级标签下面 */
   .eh-body {
     display: flex;
     flex-direction: column;
     flex: 1 1 auto;
     min-height: 0;
-    padding: 14px;
     overflow-y: auto;
     overscroll-behavior: contain;
     scrollbar-width: thin;
     scrollbar-color: rgba(201, 165, 74, .35) transparent;
   }
+
+  /* 功能页统一留白（工商页会自己覆盖顶部那一截） */
+  .eh-pane { padding: 14px; }
 
   .eh-body::-webkit-scrollbar { width: 8px; }
 
@@ -1547,6 +1550,8 @@
     flex-direction: column;
     flex: 1 1 auto;
     min-height: 0;
+    /* 顶部只留 10px：二级标签是一级标签的下一行，跟着通用留白会显得像又开了一层板 */
+    padding: 10px 14px 14px;
     overflow: hidden;
   }
 
@@ -1562,6 +1567,8 @@
   }
 
   .eh-biz-body {
+    display: flex;
+    flex-direction: column;
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
@@ -1569,6 +1576,9 @@
     scrollbar-width: thin;
     scrollbar-color: rgba(201, 165, 74, .35) transparent;
   }
+
+  /* 默认由整块内容一起滚（工业页）；税费页自己接管滚动（见 .eh-tax-pane） */
+  .eh-biz-body > .eh-biz-pane { flex: none; }
 
   .eh-biz-body::-webkit-scrollbar { width: 8px; }
 
@@ -1607,6 +1617,59 @@
   }
 
   .eh-biz-pane[hidden] { display: none; }
+
+  /* 税费子面板：顶部搜索（中英文国名 / 法币代码） */
+  .eh-biz-search {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 7px;
+  }
+
+  .eh-biz-search .eh-input {
+    flex: 1 1 auto;
+    padding: 4px 9px;
+    font-size: 11px;
+  }
+
+  /* 税费子面板：搜索 / 排序 / 状态固定，只有下面的国家列表滚 */
+  .eh-tax-pane {
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* 覆盖上面那条「整块内容一起滚」：税费页把高度让给内部的列表滚动区 */
+  .eh-biz-body > .eh-tax-pane {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .eh-tax-pane > .eh-section {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .eh-tax-head { flex: none; }
+
+  .eh-tax-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(201, 165, 74, .35) transparent;
+  }
+
+  .eh-tax-scroll::-webkit-scrollbar { width: 8px; }
+
+  .eh-tax-scroll::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 8px;
+    background: rgba(201, 165, 74, .25);
+    background-clip: content-box;
+  }
 
   /* 排序：一列一个标签，点一次换列、再点一次切换升降序 */
   .eh-biz-sorts {
@@ -1763,6 +1826,12 @@
 
   .eh-biz-cell:last-child { margin-right: 0; }
 
+  /* 强制换行的占位：让后面的格子从新的一行开始，不额外占高度 */
+  .eh-biz-break {
+    display: block;
+    height: 0;
+  }
+
   .eh-biz-meta em {
     margin-right: 3px;
     font-style: normal;
@@ -1777,6 +1846,73 @@
   }
 
   .eh-biz-meta b[data-tone="warn"] { color: #d9a35e; }
+
+  /* 国名后的法币代码：小号等宽，方便和「汇率」页的货币对上 */
+  .eh-biz-cur {
+    flex: none;
+    padding: 0 4px;
+    border-radius: 4px;
+    background: rgba(201, 165, 74, .12);
+    color: #c9a54a;
+    font-family: var(--eh-mono);
+    font-size: 9px;
+    line-height: 1.65;
+  }
+
+  /* 折算成黄金的副值：跟在同一格主值后面，小一号 */
+  .eh-biz-gold {
+    margin-left: 3px;
+    font-family: var(--eh-mono);
+    font-size: 9.5px;
+    color: #c9a54a;
+  }
+
+  /* 流亡政府的行：虚线框 + 降透明度，和「商品」页的处理一致 */
+  .eh-biz-row.is-exile {
+    opacity: .6;
+    border-style: dashed;
+  }
+
+  /* 税费：玩家国籍国 / 当前所在国就地高亮（不置顶、不干预排序），配色与「汇率」「商品」一致 */
+  .eh-biz-row.is-home {
+    border-color: rgba(124, 178, 232, .42);
+    background: rgba(124, 178, 232, .08);
+  }
+
+  .eh-biz-row.is-here {
+    border-color: rgba(217, 163, 94, .42);
+    background: rgba(217, 163, 94, .08);
+  }
+
+  .eh-biz-row.is-home .eh-biz-name b { color: #cfe2f5; }
+  .eh-biz-row.is-here .eh-biz-name b { color: #f0d3ab; }
+
+  /* 既是第一名又是本国 / 所在国：底色保留标记色，描边换成绿色，两种状态都看得出来 */
+  .eh-biz-row.is-best.is-home,
+  .eh-biz-row.is-best.is-here {
+    border-color: rgba(111, 191, 155, .5);
+  }
+
+  /* 国名右侧的状态标签：玩家国籍 / 当前位置，两者重合时合成一个 */
+  .eh-tax-mark {
+    flex: none;
+    padding: 0 5px;
+    border-radius: 4px;
+    font-size: 9.5px;
+    line-height: 1.7;
+    letter-spacing: .02em;
+    white-space: nowrap;
+  }
+
+  .eh-biz-row.is-home .eh-tax-mark {
+    background: rgba(124, 178, 232, .2);
+    color: #9dc2e6;
+  }
+
+  .eh-biz-row.is-here .eh-tax-mark {
+    background: rgba(217, 163, 94, .2);
+    color: #dcb17a;
+  }
 
   /* ---------- 底栏 ---------- */
 
@@ -1852,7 +1988,8 @@
   @media (max-width: 480px) {
     .eh-head { padding: 8px 10px; }
     .eh-tabs { padding: 4px 6px 5px; }
-    .eh-body { padding: 12px; }
+    .eh-pane { padding: 12px; }
+    .eh-biz-shell { padding: 8px 12px 12px; }
   }
   `;
 
@@ -3569,6 +3706,8 @@
     let countriesPromise = null;
     /** 国家 id → { vat, importTax }（百分数，10 表示 10%）；只在「销售」视图用得到。 */
     let taxes = null;
+    /** 国家 id → { workTax, minWage }；「税费」子面板用得到，和 taxes 来自同一次 /countries 请求。 */
+    let wageLaws = null;
     let taxesPromise = null;
     let quotes = [];
     let updatedAt = 0;
@@ -3615,8 +3754,9 @@
     };
 
     /**
-     * 各国税率：/countries 的 laws.vat / laws.import_taxes。
-     * 与 summary 分开请求，只在打开「销售」视图时拉一次，结果在页面内缓存。
+     * 各国税率：/countries 的 laws.vat / laws.import_taxes，顺带把工资法
+     * （laws.work_tax / laws.minimum_wage）也存下来给「税费」子面板用，不多发请求。
+     * 与 summary 分开请求，只在真正需要时拉一次，结果在页面内缓存。
      */
     function ensureTaxes() {
       if (taxes) return Promise.resolve(taxes);
@@ -3625,6 +3765,7 @@
           .call('/countries')
           .then((list) => {
             const map = new Map();
+            const wageMap = new Map();
             (Array.isArray(list) ? list : []).forEach((country) => {
               if (!country || country.id == null) return;
               const laws = country.laws || {};
@@ -3636,13 +3777,23 @@
                     : laws.importTax;
               const vat = toPercent(laws.vat);
               const importTax = toPercent(rawImport);
-              if (vat == null && importTax == null) return;
-              map.set(String(country.id), {
-                vat: vat == null ? 0 : vat,
-                importTax: importTax == null ? 0 : importTax
-              });
+              const workTax = toPercent(laws.work_tax != null ? laws.work_tax : laws.workTax);
+              const rawWage = laws.minimum_wage != null ? laws.minimum_wage : laws.minimumWage;
+              const wage = rawWage == null || rawWage === '' ? null : Number(rawWage);
+              const minWage = Number.isFinite(wage) && wage >= 0 ? wage : null;
+
+              if (vat != null || importTax != null) {
+                map.set(String(country.id), {
+                  vat: vat == null ? 0 : vat,
+                  importTax: importTax == null ? 0 : importTax
+                });
+              }
+              if (workTax != null || minWage != null) {
+                wageMap.set(String(country.id), { workTax: workTax, minWage: minWage });
+              }
             });
             taxes = map;
+            wageLaws = wageMap;
             return taxes;
           })
           .catch((err) => {
@@ -3884,6 +4035,11 @@
       taxFor(countryId) {
         if (!taxes || countryId == null) return null;
         return taxes.get(String(countryId)) || null;
+      },
+      /** 国家 id → 工资法 { workTax, minWage }；和 taxFor 来自同一次 /countries 请求。 */
+      wageLawsFor(countryId) {
+        if (!wageLaws || countryId == null) return null;
+        return wageLaws.get(String(countryId)) || null;
       },
       cancel() {
         if (!controller) return;
@@ -7626,10 +7782,10 @@
        * 所以不放进手动排序，需要时看「综合」即可。
        */
       const SORTS = [
-        { key: 'score', label: '综合', dir: -1, hint: '默认：工业区 + 资源产区 + 物产 的综合水平（污染按扣减计）' },
-        { key: 'bonus', label: '物产', dir: -1, hint: '按主物产分组、组内按加成总和从高到低' },
-        { key: 'pollution', label: '污染', dir: 1, hint: '按污染度从低到高（污染越低越好）' },
-        { key: 'npc', label: 'NPC', dir: -1, hint: '按 NPC 数量从多到少' }
+        { key: 'score', label: '综合', dir: -1 },
+        { key: 'bonus', label: '物产', dir: -1 },
+        { key: 'pollution', label: '污染', dir: 1 },
+        { key: 'npc', label: 'NPC', dir: -1 }
       ];
 
       pane.innerHTML = `
@@ -7688,7 +7844,6 @@
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'eh-biz-chip';
-        btn.title = item.hint;
         const label = document.createElement('span');
         label.textContent = item.label;
         const arrow = document.createElement('span');
@@ -8097,6 +8252,755 @@
       paintSort();
       paint();
       // 打开「工业」就先抓一轮：已拉过的国家命中 regionFeed 缓存，不会重复打接口
+      load(false);
+    }
+  });
+
+  /**
+   * 税费：各国税负与最低工资的对照表。
+   *
+   * 数据来源：
+   *  - 增值税 / 进口税 / 工资税 / 最低工资取自 /countries/summary 的 laws
+   *    （个别环境 summary 不带 laws，这时才补一次 /countries，与「销售」共用同一份缓存）；
+   *  - 「折金」用 fxFeed 的卖法币换黄金最优价，与「商品」的销售口径一致；
+   *  - 领土检查复用 regionFeed（与「工业」、商品比价的领土检查共用 5 分钟缓存），
+   *    已失去全部领土的流亡政府单独放到最底下。
+   *
+   * 只做展示与排序：不发交易请求、不写游戏数据。
+   */
+  registerBusinessPane({
+    id: 'tax',
+    title: '税费',
+    order: 20,
+    mount(pane, ctx) {
+      /**
+       * 可排序的列。默认「综合」= 增值税 + 进口税从低到高；同值时比最低工资税金（折金），
+       * 再相同比进口税，最后按国名（这串同值规则方向固定，不随升降序反转）。
+       */
+      const SORTS = [
+        { key: 'total', label: '综合', dir: 1 },
+        { key: 'vat', label: '增值税', dir: 1 },
+        { key: 'importTax', label: '进口税', dir: 1 },
+        { key: 'workTax', label: '工资税', dir: 1 },
+        { key: 'wage', label: '税前最低工资', dir: -1 },
+        { key: 'taxGold', label: '最低工资税金', dir: 1 }
+      ];
+
+      // 顶部（搜索 / 排序 / 状态）固定，只有国家列表跟着滚
+      pane.classList.add('eh-tax-pane');
+      pane.innerHTML = `
+        <div class="eh-section">
+          <div class="eh-tax-head">
+            <div class="eh-biz-search">
+              <input class="eh-input" type="search" data-role="query" placeholder="搜索国家名（中 / 英）或法币" autocomplete="off" spellcheck="false" aria-label="搜索国家名或法币" />
+            </div>
+            <div class="eh-biz-sorts">
+              <span class="eh-biz-sorts__cap">排序</span>
+              <div class="eh-biz-chips" data-role="sorts"></div>
+            </div>
+            <div class="eh-biz-bar">
+              <p class="eh-fx-status" data-role="status">…</p>
+              <button class="eh-btn" type="button" data-role="refresh">刷新数据</button>
+            </div>
+          </div>
+          <div class="eh-tax-scroll">
+            <div class="eh-biz-list" data-role="list"></div>
+            <p class="eh-empty" data-role="empty" hidden>还没有国家数据，点「刷新数据」抓取一次。</p>
+            <div class="eh-gd-exile" data-role="exile" hidden>
+              <div class="eh-gd-exile-head">
+                <p class="eh-gd-exile-title">流亡政府 · 已失去全部领土</p>
+                <p class="eh-gd-exile-note">这些国家已经没有地区，玩家无法抵达；税率与工资仅作对照。</p>
+              </div>
+              <div class="eh-biz-list" data-role="exile-list"></div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      const sortsEl = pane.querySelector('[data-role="sorts"]');
+      const listEl = pane.querySelector('[data-role="list"]');
+      const exileEl = pane.querySelector('[data-role="exile"]');
+      const exileListEl = pane.querySelector('[data-role="exile-list"]');
+      const emptyEl = pane.querySelector('[data-role="empty"]');
+      const statusEl = pane.querySelector('[data-role="status"]');
+      const refreshBtn = pane.querySelector('[data-role="refresh"]');
+      const queryEl = pane.querySelector('[data-role="query"]');
+
+      let alive = true;
+      let loading = false;
+      let ratesLoading = false;
+      let error = null;
+      let failures = 0;
+      let limited = false;
+      let progress = { done: 0, total: 0 };
+      let updatedAt = 0;
+      let rows = [];
+      let query = '';
+      /** 账号的国籍国 / 当前所在国（只存 id，来自 playerFeed，2 分钟缓存，两个模块共用）。 */
+      let myHomeId = null;
+      let myHereId = null;
+
+      // 排序方式记在功能自己的 storage 里（eclesiar-helper:business:tax:sort）
+      const saved = ctx.storage.get('sort', null);
+      let sortKey = 'total';
+      let sortDir = 1;
+      if (saved && typeof saved === 'object' && SORTS.some((item) => item.key === saved.key)) {
+        sortKey = saved.key;
+        sortDir = saved.dir === 1 ? 1 : -1;
+      }
+
+      const saveSort = () => ctx.storage.set('sort', { key: sortKey, dir: sortDir });
+
+      /* ---------- 数值格式化 ---------- */
+
+      /** 税率：整数不带小数，12.5% 这类留一位；缺数据用 —。 */
+      const percentText = (value) => {
+        if (!Number.isFinite(value)) return '—';
+        return Number(value.toFixed(1)) + '%';
+      };
+
+      /** 最低工资是法币整数，3.5 这类也照实显示。 */
+      const wageText = (value) => {
+        if (!Number.isFinite(value)) return '—';
+        return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(2)));
+      };
+
+      /** 折金：0 是有效值（0% 税、0 工资），不能被 fxGold 当成「没有数据」。 */
+      const goldText = (value) => {
+        if (!Number.isFinite(value)) return '—';
+        return value === 0 ? '0' : fxGold(value);
+      };
+
+      /** 税率字段容错：正常是 10（=10%），个别实现会给 0.1 这种比例。 */
+      const asPercent = (value) => {
+        if (value == null || value === '') return null;
+        const num = Number(value);
+        if (!Number.isFinite(num) || num < 0) return null;
+        if (num > 0 && num < 1) return num * 100;
+        return num;
+      };
+
+      /** summary 里一条国家的 laws → 本页要的四项；缺的留 null，界面上显示 —。 */
+      const readLaws = (country) => {
+        const laws = country && country.laws;
+        const pick = (...keys) => {
+          if (!laws || typeof laws !== 'object') return null;
+          for (let i = 0; i < keys.length; i += 1) {
+            if (laws[keys[i]] != null) return laws[keys[i]];
+          }
+          return null;
+        };
+        const rawWage = pick('minimum_wage', 'minimumWage');
+        const wage = rawWage == null || rawWage === '' ? null : Number(rawWage);
+        return {
+          vat: asPercent(pick('vat')),
+          importTax: asPercent(pick('import_taxes', 'import_tax', 'importTax')),
+          workTax: asPercent(pick('work_tax', 'workTax')),
+          minWage: Number.isFinite(wage) && wage >= 0 ? wage : null
+        };
+      };
+
+      /* ---------- 排序标签 ---------- */
+
+      const chipEls = new Map();
+      SORTS.forEach((item) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'eh-biz-chip';
+        const label = document.createElement('span');
+        label.textContent = item.label;
+        const arrow = document.createElement('span');
+        arrow.className = 'eh-biz-chip__dir';
+        btn.appendChild(label);
+        btn.appendChild(arrow);
+        on(btn, 'click', () => {
+          if (sortKey === item.key) {
+            sortDir = -sortDir;
+          } else {
+            sortKey = item.key;
+            sortDir = item.dir > 0 ? 1 : -1;
+          }
+          saveSort();
+          paintSort();
+          renderList();
+          ctx.ui.reposition();
+        });
+        sortsEl.appendChild(btn);
+        chipEls.set(item.key, btn);
+      });
+
+      function paintSort() {
+        chipEls.forEach((btn, key) => {
+          const active = key === sortKey;
+          btn.classList.toggle('is-active', active);
+          const arrow = btn.querySelector('.eh-biz-chip__dir');
+          if (arrow) arrow.textContent = active ? (sortDir > 0 ? '↑' : '↓') : '';
+        });
+      }
+
+      /* ---------- 数据 ---------- */
+
+      /** 接口的一条国家 → 列表的一行；没有法币（Gold / 世界实体 / 海盗）的直接跳过。 */
+      function buildDataRow(country) {
+        if (!country || country.id == null) return null;
+        const currency = country.currency;
+        const code = currency && currency.name != null ? String(currency.name) : '';
+        if (!currency || currency.id == null || !code) return null;
+        if (code.toLowerCase() === 'gold') return null;
+
+        const laws = readLaws(country);
+        const locale = fxLocale(code);
+        return {
+          id: country.id,
+          name: String(country.name || code),
+          zh: locale ? locale[0] : '',
+          code,
+          currencyId: currency.id,
+          avatar: country.avatar,
+          vat: laws.vat,
+          importTax: laws.importTax,
+          workTax: laws.workTax,
+          minWage: laws.minWage,
+          rate: null,
+          wageGold: null,
+          taxGold: null,
+          exiled: false
+        };
+      }
+
+      /** summary 没带 laws 时才去 /countries 补一份（与「销售」共用缓存，不会重复请求）。 */
+      const needsLaws = () =>
+        rows.some(
+          (row) => row.vat == null || row.importTax == null || row.workTax == null || row.minWage == null
+        );
+
+      /** 用 /countries 那一份补上 summary 缺的字段；已经有的不覆盖。 */
+      function mergeLaws() {
+        rows.forEach((row) => {
+          const tax = fxFeed.taxFor(row.id);
+          if (tax) {
+            if (row.vat == null && tax.vat != null) row.vat = tax.vat;
+            if (row.importTax == null && tax.importTax != null) row.importTax = tax.importTax;
+          }
+          const laws = fxFeed.wageLawsFor(row.id);
+          if (!laws) return;
+          if (row.workTax == null && laws.workTax != null) row.workTax = laws.workTax;
+          if (row.minWage == null && laws.minWage != null) row.minWage = laws.minWage;
+        });
+      }
+
+      /** 卖法币换黄金的最优价（与「商品·销售」同口径）；只有买币挂单时退回买币价。 */
+      const rateOf = (currencyId) => {
+        if (currencyId == null) return null;
+        const sell = fxFeed.sellRateFor(currencyId);
+        if (sell) return sell;
+        return fxFeed.rateFor(currencyId);
+      };
+
+      /** 汇率会随后台行情更新：把折金的两列重算一遍。 */
+      function refreshRates() {
+        rows.forEach((row) => {
+          const rate = rateOf(row.currencyId);
+          row.rate = rate && rate > 0 ? rate : null;
+          row.wageGold = row.rate != null && row.minWage != null ? row.minWage * row.rate : null;
+          row.taxGold =
+            row.rate != null && row.minWage != null && row.workTax != null
+              ? (row.workTax / 100) * row.minWage * row.rate
+              : null;
+        });
+      }
+
+      /** 默认口径的税负总和；两项都没读到才算缺数据。 */
+      const totalOf = (row) =>
+        row.vat == null && row.importTax == null ? null : (row.vat || 0) + (row.importTax || 0);
+
+      const sortValue = (row, key) => {
+        if (key === 'vat') return row.vat;
+        if (key === 'importTax') return row.importTax;
+        if (key === 'wage') return row.wageGold;
+        if (key === 'workTax') return row.workTax;
+        if (key === 'taxGold') return row.taxGold;
+        return totalOf(row);
+      };
+
+      const byName = (a, b) => (a.zh || a.name).localeCompare(b.zh || b.name, 'zh-Hans');
+
+      /**
+       * 当前列 + 方向。缺数据（没读到税率 / 没有汇率）的行永远排最后，
+       * 不因为升降序跑上来；同值时按综合口径（最低工资税金 → 进口税）、再按国名。
+       */
+      function comparator() {
+        const key = sortKey;
+        const dir = sortDir;
+        return (a, b) => {
+          const left = sortValue(a, key);
+          const right = sortValue(b, key);
+          const leftNull = left == null || !Number.isFinite(left);
+          const rightNull = right == null || !Number.isFinite(right);
+          if (leftNull !== rightNull) return leftNull ? 1 : -1;
+          if (!leftNull && left !== right) return dir > 0 ? left - right : right - left;
+
+          // 综合：总和相同时最低工资税金（折金）更低的在前；这条与下面的进口税、国名
+          // 都是同值兜底，方向固定，不跟着升 / 降序翻转
+          if (key === 'total') {
+            const ag = a.taxGold == null ? Infinity : a.taxGold;
+            const bg = b.taxGold == null ? Infinity : b.taxGold;
+            if (ag !== bg) return ag - bg;
+            const ai = a.importTax == null ? Infinity : a.importTax;
+            const bi = b.importTax == null ? Infinity : b.importTax;
+            if (ai !== bi) return ai - bi;
+          } else {
+            const at = totalOf(a);
+            const bt = totalOf(b);
+            if (at == null && bt != null) return 1;
+            if (at != null && bt == null) return -1;
+            if (at != null && bt != null && at !== bt) return at - bt;
+          }
+          return byName(a, b);
+        };
+      }
+
+      /* ---------- 渲染 ---------- */
+
+      /**
+       * 一行。
+       * @param {object} row    数据行
+       * @param {object} opts   { index: 主列表里的名次, exile: 是否流亡栏 }
+       */
+      function buildRow(row, opts) {
+        const options = opts || {};
+        const el = document.createElement('div');
+        el.className = 'eh-biz-row';
+        if (options.exile) {
+          el.classList.add('is-exile');
+        } else if (sortKey === 'total' && sortDir === 1 && options.index === 0) {
+          // 只有默认「综合」从低到高时第一名才有意义（其它列的第一名不代表「最优」）
+          el.classList.add('is-best');
+        }
+
+        // 玩家国籍国 / 当前所在国只做就地高亮：不置顶、不干预排序，避免干扰全球对比
+        const isHome = myHomeId != null && String(row.id) === myHomeId;
+        const isHere = myHereId != null && String(row.id) === myHereId;
+        if (isHome) el.classList.add('is-home');
+        if (isHere) el.classList.add('is-here');
+
+        const head = document.createElement('div');
+        head.className = 'eh-biz-head';
+        head.appendChild(buildFlagEl(row.code, row.avatar));
+
+        const nameWrap = document.createElement('span');
+        nameWrap.className = 'eh-biz-name';
+
+        const nameEl = document.createElement('b');
+        nameEl.textContent = row.zh || row.name;
+        nameEl.title = row.zh && row.zh !== row.name ? row.zh + ' · ' + row.name : row.name;
+        nameWrap.appendChild(nameEl);
+
+        // 中文名后面补英文国名；没有中文对照时上面显示的就是英文，不重复
+        if (row.zh && row.name) {
+          const enEl = document.createElement('span');
+          enEl.className = 'eh-biz-country';
+          enEl.textContent = row.name;
+          enEl.title = row.name;
+          nameWrap.appendChild(enEl);
+        }
+
+        const curEl = document.createElement('span');
+        curEl.className = 'eh-biz-cur';
+        curEl.textContent = row.code;
+        curEl.title = '当地法币：' + row.code;
+        nameWrap.appendChild(curEl);
+
+        head.appendChild(nameWrap);
+
+        // 状态标签放在最右侧：国名再长也不会把「玩家国籍 / 当前位置」挤掉；
+        // 两者是同一个国家时合成一个，同一行不说两遍
+        if (isHome || isHere) {
+          const markEl = document.createElement('span');
+          markEl.className = 'eh-tax-mark';
+          markEl.textContent = isHome && isHere ? '玩家国籍 · 当前位置' : isHome ? '玩家国籍' : '当前位置';
+          markEl.title =
+            isHome && isHere
+              ? '你的国籍国，也是你当前所在的国家'
+              : isHome
+                ? '你的国籍国'
+                : '你当前所在的国家';
+          head.appendChild(markEl);
+        }
+
+        el.appendChild(head);
+
+        const goldCell = (label, value, title) =>
+          '<span class="eh-biz-cell" title="' +
+          escapeHtml(title) +
+          '"><em>' +
+          label +
+          '</em><b>' +
+          (value == null ? '—' : goldIconHtml('eh-gold-ico--sm') + goldText(value)) +
+          '</b></span>';
+
+        const wageCell =
+          '<span class="eh-biz-cell" title="' +
+          escapeHtml(
+            '税前最低工资按「卖币换金」最优价折算：' +
+              (row.rate ? fxGold(row.rate) + ' 金 / 1 ' + row.code : '暂无汇率')
+          ) +
+          '"><em>税前最低工资</em><b>' +
+          (row.minWage == null ? '—' : wageText(row.minWage) + ' ' + escapeHtml(row.code)) +
+          '</b>' +
+          (row.wageGold == null
+            ? ''
+            : '<span class="eh-biz-gold">≈ ' + goldIconHtml('eh-gold-ico--sm') + goldText(row.wageGold) + '</span>') +
+          '</span>';
+
+        // 第一行三种税，第二行税前最低工资与其对应的税金（强制换行，别让格子自然折行打乱分组）
+        const meta = document.createElement('div');
+        meta.className = 'eh-biz-meta';
+        meta.innerHTML =
+          '<span class="eh-biz-cell"><em>增值税</em><b>' +
+          percentText(row.vat) +
+          '</b></span>' +
+          '<span class="eh-biz-cell"><em>进口税</em><b>' +
+          percentText(row.importTax) +
+          '</b></span>' +
+          '<span class="eh-biz-cell"><em>工资税</em><b>' +
+          percentText(row.workTax) +
+          '</b></span>' +
+          '<span class="eh-biz-break"></span>' +
+          wageCell +
+          goldCell('最低工资税金', row.taxGold, '工资税 × 税前最低工资，再按「卖币换金」最优价折算成黄金');
+        meta.title =
+          '增值税 ' +
+          percentText(row.vat) +
+          ' + 进口税 ' +
+          percentText(row.importTax) +
+          ' = ' +
+          percentText(totalOf(row)) +
+          '\n税前最低工资 ' +
+          (row.minWage == null ? '—' : wageText(row.minWage) + ' ' + row.code) +
+          ' ≈ ' +
+          (row.wageGold == null ? '暂无汇率' : goldText(row.wageGold) + ' 金') +
+          ' · 工资税 ' +
+          percentText(row.workTax) +
+          ' ⇒ 最低工资税金 ≈ ' +
+          (row.taxGold == null ? '—' : goldText(row.taxGold) + ' 金');
+        el.appendChild(meta);
+        return el;
+      }
+
+      /** 搜索匹配：中文名、英文名（不分大小写）、法币代码三路任一命中。 */
+      const matchesQuery = (row, keyword) => {
+        if (!keyword) return true;
+        if (row.name.toLowerCase().indexOf(keyword) !== -1) return true;
+        if (row.zh && row.zh.toLowerCase().indexOf(keyword) !== -1) return true;
+        if (row.code.toLowerCase().indexOf(keyword) !== -1) return true;
+        return false;
+      };
+
+      function renderList() {
+        if (!alive) return;
+        const keyword = query.trim().toLowerCase();
+        const matched = rows.filter((row) => matchesQuery(row, keyword));
+
+        const reachable = [];
+        const exiled = [];
+        matched.forEach((row) => (row.exiled ? exiled : reachable).push(row));
+        reachable.sort(comparator());
+        exiled.sort(comparator());
+
+        listEl.textContent = '';
+        reachable.forEach((row, index) => listEl.appendChild(buildRow(row, { index })));
+        exileListEl.textContent = '';
+        exiled.forEach((row) => exileListEl.appendChild(buildRow(row, { exile: true })));
+        exileEl.hidden = exiled.length === 0;
+
+        // 凭据还没到手时状态栏已经说明原因，别在下面再写一句「点刷新抓取」
+        const blocked =
+          (error && (error.code === 'NO_TOKEN' || error.code === 'UNAUTHORIZED')) ||
+          (market.state !== 'ok' && !updatedAt);
+        const none = reachable.length === 0 && exiled.length === 0;
+        emptyEl.hidden = Boolean(loading) || Boolean(blocked) || !none;
+        if (!none) return;
+        emptyEl.textContent = keyword
+          ? '没有匹配「' + query.trim() + '」的国家。'
+          : updatedAt
+            ? '这次没有读到任何国家数据，稍后可以点「刷新数据」再试。'
+            : '还没有国家数据，点「刷新数据」抓取一次。';
+      }
+
+      /** 共用提示里写的是「刷新行情」，这页的按钮叫「刷新数据」，换一下别让玩家找不到。 */
+      const tokenHint = () => authHint().replace('刷新行情', '刷新数据');
+
+      function paintStatus() {
+        if (!alive) return;
+        refreshBtn.disabled = loading;
+
+        if (loading) {
+          if (!progress.total) {
+            statusEl.textContent = '正在读取国家清单…';
+            return;
+          }
+          // 汇率和领土是串着跑的：汇率还没拉完时先报汇率，别让人以为卡住了
+          if (ratesLoading && progress.done === 0) {
+            statusEl.textContent = '正在拉取全球汇率（与「汇率」页共用）…';
+            return;
+          }
+          statusEl.textContent = '正在读取 ' + progress.done + '/' + progress.total + ' 个国家的领土…';
+          return;
+        }
+
+        if (market.state !== 'ok' && !updatedAt) {
+          statusEl.textContent = tokenHint();
+          statusEl.dataset.tone = 'warn';
+          return;
+        }
+
+        if (error) {
+          const code = error.code;
+          if (code === 'NO_TOKEN' || code === 'UNAUTHORIZED') {
+            statusEl.textContent = tokenHint();
+            statusEl.dataset.tone = code === 'UNAUTHORIZED' ? 'error' : 'warn';
+          } else if (code === 'TIMEOUT') {
+            statusEl.textContent = '请求超时，请稍后重试。';
+            statusEl.dataset.tone = 'error';
+          } else if (quotaHint(error) || error.limited) {
+            statusEl.textContent =
+              quotaHint(error) || '接口返回 429（请求过多或已达当日查询上限），请稍后再试。';
+            statusEl.dataset.tone = 'error';
+          } else {
+            statusEl.textContent = '读取失败：' + (error.message || '未知错误');
+            statusEl.dataset.tone = 'error';
+          }
+          return;
+        }
+
+        delete statusEl.dataset.tone;
+        if (!updatedAt) {
+          statusEl.textContent = '还没有国家数据，点「刷新数据」抓取一次。';
+          return;
+        }
+        const exiledCount = rows.filter((row) => row.exiled).length;
+        const rateNote = fxFeed.updatedAt ? ' · 汇率 ' + formatClock(fxFeed.updatedAt) : ' · 汇率未加载';
+        let suffix = failures ? ' · ' + failures + ' 个国家领土读取失败' : '';
+        // 个别国家被 429 拦下时整轮还是能出结果的，单独提醒一句额度
+        if (limited) suffix += '（含 429，可到「设置」页生成专用密钥）';
+        statusEl.textContent =
+          rows.length +
+          ' 个国家' +
+          (exiledCount ? '（含 ' + exiledCount + ' 个流亡政府）' : '') +
+          '\n更新于 ' +
+          formatClock(updatedAt) +
+          rateNote +
+          suffix;
+      }
+
+      const paint = () => {
+        paintStatus();
+        renderList();
+      };
+
+      /* ---------- 抓取 ---------- */
+
+      let offAuth = null;
+      /** 凭据晚到（面板先开、游戏还没发过请求）时补一轮，不用玩家手动刷新。 */
+      const armAuthRetry = () => {
+        if (offAuth) return;
+        offAuth = market.onAuth(() => {
+          offAuth = null;
+          if (!loading && !updatedAt) load(false);
+        });
+      };
+
+      /**
+       * 读一次账号的国籍国 / 当前所在国（只存 id，不存原始字段）。
+       * 走 playerFeed 的 2 分钟缓存，与「汇率」的置顶、「商品」的本国判断共用同一次请求。
+       */
+      async function readPlayer() {
+        let info = null;
+        try {
+          info = await playerFeed.ensure();
+        } catch (err) {
+          info = playerFeed.info || null;
+          ctx.log('账号读取失败（国籍 / 当前位置无法置顶）', (err && err.code) || (err && err.message) || err);
+        }
+        if (!alive) return;
+        myHomeId = info && info.nationalityId ? String(info.nationalityId) : null;
+        myHereId = info && info.countryId ? String(info.countryId) : null;
+      }
+
+      /**
+       * 领土（流亡政府判断）：逐个国家查 regionFeed。
+       * 缓存里已有时直接跳过（不计等待），所以先打开「工业」再切过来几乎立刻出结果。
+       */
+      async function loadLand(force) {
+        let cursor = 0;
+        const worker = async () => {
+          while (cursor < rows.length) {
+            if (!alive) return;
+            const row = rows[cursor];
+            cursor += 1;
+
+            const cached = force ? null : regionFeed.get(row.id);
+            if (cached) {
+              row.exiled = cached.length === 0;
+              progress = { done: progress.done + 1, total: progress.total };
+              if (alive) paintStatus();
+              continue;
+            }
+
+            try {
+              const list = await regionFeed.ensure(row.id, { force });
+              row.exiled = list.length === 0;
+            } catch (err) {
+              if (err && err.code === 'UNAUTHORIZED') throw err;
+              if (err && err.code === 'HTTP' && String(err.message) === 'HTTP_429') limited = true;
+              failures += 1;
+              ctx.log('领土读取失败', row.name + ' · ' + ((err && err.code) || 'ERROR'));
+            }
+            progress = { done: progress.done + 1, total: progress.total };
+            if (alive) paintStatus();
+            await fxSleep(FX_GAP);
+          }
+        };
+        await Promise.all(
+          Array.from({ length: Math.min(FX_CONCURRENCY, rows.length) }, () => worker())
+        );
+      }
+
+      /**
+       * 拉一遍税费表。汇率与领土各自走共享缓存：
+       * 刚拉过的国家命中 regionFeed 的 5 分钟缓存，行情命中 fxFeed 的 10 分钟缓存，
+       * 重新打开面板不会把上百个请求再打一遍。
+       */
+      function load(force) {
+        if (!alive || loading) return;
+        if (market.state !== 'ok') {
+          error = { code: market.state === 'expired' ? 'UNAUTHORIZED' : 'NO_TOKEN' };
+          paint();
+          armAuthRetry();
+          return;
+        }
+
+        loading = true;
+        error = null;
+        failures = 0;
+        limited = false;
+        ratesLoading = false;
+        progress = { done: 0, total: 0 };
+        paint();
+
+        (async () => {
+          try {
+            const countries = await fxFeed.ensureCountries();
+            if (!alive) return;
+
+            const next = (Array.isArray(countries) ? countries : []).map(buildDataRow).filter(Boolean);
+            if (!next.length) {
+              const empty = new Error('没有可用的国家清单');
+              empty.code = 'EMPTY_COUNTRIES';
+              throw empty;
+            }
+
+            rows = next;
+            refreshRates();
+            progress = { done: 0, total: rows.length };
+            paintStatus();
+
+            // 汇率：共用行情缓存，过期才重拉（和「汇率」页共用同一轮）
+            ratesLoading = true;
+            const rateJob = fxFeed
+              .ensure()
+              .catch((err) => {
+                ctx.log('汇率读取失败', (err && err.message) || err);
+              })
+              .then(() => {
+                ratesLoading = false;
+                if (!alive) return;
+                refreshRates();
+                paintStatus();
+              });
+
+            // summary 没带 laws：补一次 /countries（和「销售」共用缓存）
+            const lawsJob = needsLaws()
+              ? fxFeed
+                  .ensureTaxes()
+                  .catch((err) => {
+                    ctx.log('税率读取失败', (err && err.message) || err);
+                  })
+                  .then(() => {
+                    if (!alive) return;
+                    mergeLaws();
+                    refreshRates();
+                  })
+              : Promise.resolve();
+
+            // 账号（国籍 / 当前位置）只认登录凭据，单独一次 POST /account/getuser（2 分钟缓存）
+            const playerJob = readPlayer();
+
+            // 汇率与领土串着跑：两边都冷时各有一串请求，同时开会把并发推到 6，容易被 429
+            await Promise.all([lawsJob, rateJob, playerJob]);
+            if (!alive) return;
+            await loadLand(force);
+            if (!alive) return;
+            updatedAt = Date.now();
+          } catch (err) {
+            if (err && err.name === 'AbortError') return;
+            error = {
+              code: (err && err.code) || 'ERROR',
+              message: err && err.message,
+              limited
+            };
+            // 凭据过期后玩家重新登录（游戏发出新凭据）时自动补一轮
+            if (error.code === 'UNAUTHORIZED' || error.code === 'NO_TOKEN') armAuthRetry();
+          } finally {
+            loading = false;
+            ratesLoading = false;
+            if (alive) {
+              refreshRates();
+              paint();
+              // 面板内容高度变了，重新测一次，别沿用旧的
+              ctx.ui.reposition();
+            }
+          }
+        })();
+      }
+
+      on(refreshBtn, 'click', () => load(true));
+
+      on(queryEl, 'input', () => {
+        query = queryEl.value || '';
+        renderList();
+        ctx.ui.reposition();
+      });
+
+      // 面板在 Shadow DOM 内，游戏若在 document / window 上监听按键，拿到的 target 会被重定向成宿主元素，
+      // 很容易被当成「在页面里按键」（打字直接触发游戏快捷键、页面跳走）；这里把按键拦在组件内部。
+      ['keydown', 'keypress', 'keyup'].forEach((type) => {
+        on(queryEl, type, (event) => event.stopPropagation());
+      });
+
+      // 行情在别的标签页刷新完了：折金的两列跟着更新（不重复渲染正在抓取的列表）
+      const offFx = fxFeed.subscribe((kind) => {
+        if (kind !== 'done' || !alive || !rows.length) return;
+        refreshRates();
+        if (loading) return;
+        renderList();
+        paintStatus();
+        ctx.ui.reposition();
+      });
+
+      ctx.onDestroy(() => {
+        alive = false;
+        offFx();
+        if (offAuth) {
+          offAuth();
+          offAuth = null;
+        }
+      });
+
+      paintSort();
+      paint();
+      // 打开「税费」就先抓一轮：汇率与领土都命中共享缓存时几乎不花请求
       load(false);
     }
   });
