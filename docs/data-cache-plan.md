@@ -196,10 +196,10 @@ apiCache.stats()                           // 调试：hit / join / miss / coold
 
 ### 阶段 3：国家清单 / 税率 / 账号 / 资料
 
-- [ ] `ensureCountries` / `ensureTaxes` 改走 `apiCache`，补 60 秒失败冷却
-- [ ] `playerFeed` / `profileFeed` 改走 `apiCache`，保留失败冷却与 `onAuth` 补拉
-- [ ] `profileFeed` 换 id 时校验回写，丢弃旧账号结果
-- [ ] 验收：切标签不发请求；401 后不刷屏重试；`taxFor` / `wageLawsFor` / `currencyOfCountry` 结果与改造前一致
+- [x] `ensureCountries` / `ensureTaxes` 改走 `apiCache`，补 60 秒失败冷却（页面级条目 `ttl: 'page'`，换凭据时保留）
+- [x] `playerFeed` / `profileFeed` 改走 `apiCache`，保留失败冷却与 `onAuth` 补拉
+- [x] `profileFeed` 换 id 时校验回写，丢弃旧账号结果
+- [x] 验收：切标签不发请求；401 后不刷屏重试；`taxFor` / `wageLawsFor` / `currencyOfCountry` 结果与改造前一致（离线桩测试 31 条断言全过）
 
 ### 阶段 4：`coinBook`（收益最大）
 

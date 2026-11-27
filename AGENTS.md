@@ -34,11 +34,11 @@
 | 数据源 | 内容 | 缓存 | 使用方 |
 | --- | --- | --- | --- |
 | `apiCache`（请求层） | 接口级缓存与请求去重：key = 接口 + 规范化参数，负责 TTL、失败冷却、in-flight 合并、空结果标记与按前缀失效 | 见 §5 `9.0`（行情 10 分钟、账号 / 岗位 2 分钟、用量 60 秒、国家清单与税率页面级） | 全部数据源（迁移中：阶段 2 起逐个接入） |
-| `fxFeed` | 全球法币挂单；国家清单、税率与工资法 | 行情 10 分钟；国家清单一次；税率页面内缓存 | 汇率、商品销售、税费、`marketBadge` |
+| `fxFeed` | 全球法币挂单；国家清单、税率与工资法 | 行情 10 分钟；国家清单与税率页面级（均走 `apiCache`），失败冷却 60 秒 | 汇率、商品销售、税费、`marketBadge` |
 | `goodsSnapshot` → `goodsFeed` | 各国市场行情，抓完 `publish` 给 `goodsFeed` | 10 分钟（`GOODS_CACHE_MS`） | 市场页、`goodsAuto`、`marketBadge` |
 | `regionFeed` | 国家 → 地区清单（底层 `apiCache`，`ensure` / `refresh` 两个入口） | 10 分钟 | 市场页领土检查、`regionJump`、工业、税费 |
-| `playerFeed` | 账号 id、国籍 id、所在国 id（只这三个字段） | 2 分钟，失败冷却 60 秒 | 汇率置顶、商品销售、税费高亮、`marketBadge`、工作技能过滤取 id |
-| `profileFeed` | `GET /user/profile/{account_id}` 的 `economic_level`（公开资料，只取这一个字段） | 2 分钟，失败冷却 60 秒 | 工商「工作」技能过滤 |
+| `playerFeed` | 账号 id、国籍 id、所在国 id（只这三个字段） | 2 分钟，失败冷却 60 秒（`apiCache`） | 汇率置顶、商品销售、税费高亮、`marketBadge`、工作技能过滤取 id |
+| `profileFeed` | `GET /user/profile/{account_id}` 的 `economic_level`（公开资料，只取这一个字段） | 2 分钟，失败冷却 60 秒（`apiCache`，key 含 id） | 工商「工作」技能过滤 |
 | 工作（子面板内存缓存） | 遍历全部国家的 `GET /market/jobs/get?country_id=…&page=…` 岗位，按金价门槛存整轮结果 | 2 分钟，`destroy()` 后失效；不落盘 | 工商「工作」子面板 |
 
 - 所有数据请求统一走 `apiClient.call`（负责并发、凭据与错误分类），不要自己 `fetch`；该出口服务全插件，不只是行情。

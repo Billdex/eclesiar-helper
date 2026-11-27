@@ -3580,11 +3580,22 @@
       return removed;
     }
 
-    /** 整体清空：凭据变化（生成 / 移除密钥、401）与 destroy() 用。 */
-    function clear() {
+    /**
+     * 整体清空：destroy() 用。
+     * keepPage=true 时保留页面级条目（国家清单 / 税率），凭据变化走这个——
+     * 那些数据与凭据无关，没必要因为换了密钥再拉一遍。
+     */
+    function clear(keepPage) {
+      const kept = new Map();
+      if (keepPage) {
+        entries.forEach((entry, item) => {
+          if (entry.ttl === Infinity) kept.set(item, entry);
+        });
+      }
       epoch += 1;
       prefixStamps.clear();
       entries.clear();
+      kept.forEach((entry, item) => entries.set(item, entry));
       failures.clear();
       inflight.clear();
     }
@@ -4040,6 +4051,9 @@
           loginToken = '';
           expired = true;
         }
+        // 凭据失效：会过期的缓存全部作废，别拿旧凭据的数据继续显示
+        // （国家清单 / 税率与凭据无关，页面级缓存保留）
+        apiCache.clear(true);
         const error = new Error('UNAUTHORIZED');
         error.code = 'UNAUTHORIZED';
         error.source = usingApiKey ? 'api' : 'login';
@@ -4107,6 +4121,8 @@
         throw error;
       }
       apiExpired = false;
+      // 换了密钥：之前用旧凭据拉到的数据作废，下次进面板重新拉
+      apiCache.clear(true);
       return apiKey.value;
     }
 
@@ -4137,12 +4153,15 @@
       setKey(raw) {
         if (!apiKey.set(raw)) return false;
         apiExpired = false;
+        // 换了密钥：之前用旧凭据拉到的数据作废
+        apiCache.clear(true);
         return true;
       },
       /** 移除已保存的密钥，回到使用登录凭据。 */
       clearKey() {
         apiKey.clear();
         apiExpired = false;
+        apiCache.clear(true);
       }
     };
   })();
@@ -4387,13 +4406,18 @@
    */
   const fxFeed = (() => {
     const listeners = new Set();
+    /** 国家清单与税率都是页面级缓存：一次页面只拉一次，底层由 apiCache 去重与冷却。 */
+    const COUNTRIES_KEY = '/countries/summary';
+    const TAXES_KEY = '/countries';
+    const PAGE_OPTS = { ttl: 'page', namespace: 'countries' };
     let countries = null;
-    let countriesPromise = null;
+    /** 解析结果用条目对象本身做「版本」：条目被 invalidate / 刷新后换成新对象，重新解析一次。 */
+    let countriesEntry = null;
     /** 国家 id → { vat, importTax }（百分数，10 表示 10%）；只在「销售」视图用得到。 */
     let taxes = null;
     /** 国家 id → { workTax, minWage }；「税费」子面板用得到，和 taxes 来自同一次 /countries 请求。 */
     let wageLaws = null;
-    let taxesPromise = null;
+    let taxesEntry = null;
     let quotes = [];
     let updatedAt = 0;
     let loading = false;
@@ -4412,22 +4436,18 @@
       });
     };
 
-    /** 国家清单只取一次：两个标签都要用，短时间内也不会变。 */
+    /** 国家清单只取一次：两个标签都要用，短时间内也不会变（失效由 apiCache 负责）。 */
     function ensureCountries() {
-      if (countries) return Promise.resolve(countries);
-      if (!countriesPromise) {
-        countriesPromise = apiClient
-          .call('/countries/summary')
-          .then((data) => {
-            countries = Array.isArray(data) ? data : [];
-            return countries;
-          })
-          .catch((err) => {
-            countriesPromise = null;
-            throw err;
-          });
-      }
-      return countriesPromise;
+      return apiCache
+        .ensure(COUNTRIES_KEY, () => apiClient.call(COUNTRIES_KEY), PAGE_OPTS)
+        .then((entry) => {
+          if (!entry) return countries || [];
+          if (entry !== countriesEntry) {
+            countries = Array.isArray(entry.value) ? entry.value : [];
+            countriesEntry = entry;
+          }
+          return countries;
+        });
     }
 
     /** 税率字段容错：正常是 10（=10%），个别实现会给 0.1 这种比例。 */
@@ -4438,55 +4458,57 @@
       return num;
     };
 
+    /** /countries → 税率与工资法两张表；与 summary 分开请求，解析结果跟着缓存条目走。 */
+    function parseTaxes(list) {
+      const map = new Map();
+      const wageMap = new Map();
+      (Array.isArray(list) ? list : []).forEach((country) => {
+        if (!country || country.id == null) return;
+        const laws = country.laws || {};
+        const rawImport =
+          laws.import_taxes != null
+            ? laws.import_taxes
+            : laws.import_tax != null
+              ? laws.import_tax
+              : laws.importTax;
+        const vat = toPercent(laws.vat);
+        const importTax = toPercent(rawImport);
+        const workTax = toPercent(laws.work_tax != null ? laws.work_tax : laws.workTax);
+        const rawWage = laws.minimum_wage != null ? laws.minimum_wage : laws.minimumWage;
+        const wage = rawWage == null || rawWage === '' ? null : Number(rawWage);
+        const minWage = Number.isFinite(wage) && wage >= 0 ? wage : null;
+
+        if (vat != null || importTax != null) {
+          map.set(String(country.id), {
+            vat: vat == null ? 0 : vat,
+            importTax: importTax == null ? 0 : importTax
+          });
+        }
+        if (workTax != null || minWage != null) {
+          wageMap.set(String(country.id), { workTax: workTax, minWage: minWage });
+        }
+      });
+      return { taxes: map, wageLaws: wageMap };
+    }
+
     /**
      * 各国税率：/countries 的 laws.vat / laws.import_taxes，顺带把工资法
      * （laws.work_tax / laws.minimum_wage）也存下来给「税费」子面板用，不多发请求。
-     * 与 summary 分开请求，只在真正需要时拉一次，结果在页面内缓存。
+     * 只在真正需要时拉一次，结果在页面内缓存，失败 60 秒内不重试（由 apiCache 冷却）。
      */
     function ensureTaxes() {
-      if (taxes) return Promise.resolve(taxes);
-      if (!taxesPromise) {
-        taxesPromise = apiClient
-          .call('/countries')
-          .then((list) => {
-            const map = new Map();
-            const wageMap = new Map();
-            (Array.isArray(list) ? list : []).forEach((country) => {
-              if (!country || country.id == null) return;
-              const laws = country.laws || {};
-              const rawImport =
-                laws.import_taxes != null
-                  ? laws.import_taxes
-                  : laws.import_tax != null
-                    ? laws.import_tax
-                    : laws.importTax;
-              const vat = toPercent(laws.vat);
-              const importTax = toPercent(rawImport);
-              const workTax = toPercent(laws.work_tax != null ? laws.work_tax : laws.workTax);
-              const rawWage = laws.minimum_wage != null ? laws.minimum_wage : laws.minimumWage;
-              const wage = rawWage == null || rawWage === '' ? null : Number(rawWage);
-              const minWage = Number.isFinite(wage) && wage >= 0 ? wage : null;
-
-              if (vat != null || importTax != null) {
-                map.set(String(country.id), {
-                  vat: vat == null ? 0 : vat,
-                  importTax: importTax == null ? 0 : importTax
-                });
-              }
-              if (workTax != null || minWage != null) {
-                wageMap.set(String(country.id), { workTax: workTax, minWage: minWage });
-              }
-            });
-            taxes = map;
-            wageLaws = wageMap;
-            return taxes;
-          })
-          .catch((err) => {
-            taxesPromise = null;
-            throw err;
-          });
-      }
-      return taxesPromise;
+      return apiCache
+        .ensure(TAXES_KEY, () => apiClient.call(TAXES_KEY), PAGE_OPTS)
+        .then((entry) => {
+          if (!entry) return taxes;
+          if (entry !== taxesEntry) {
+            const parsed = parseTaxes(entry.value);
+            taxes = parsed.taxes;
+            wageLaws = parsed.wageLaws;
+            taxesEntry = entry;
+          }
+          return taxes;
+        });
     }
 
     async function load() {
@@ -4750,15 +4772,16 @@
    * 结果只存内存，不展示原字段、不打印、不上报、不落盘；响应里的 bearer 等字段一律忽略。
    */
   const playerFeed = (() => {
-    /** 缓存 2 分钟：换国家后最多 2 分钟就会重新读一次；期间不重复打接口。 */
-    const TTL = 2 * 60 * 1000;
-    /** 失败冷却：接口挂了就别每条价格都试一遍。 */
-    const RETRY = 60 * 1000;
+    /**
+     * 2 分钟缓存：换国家后最多 2 分钟就会重新读一次；期间不重复打接口。
+     * 失败冷却 60 秒由 apiCache 负责（凭据没捕获到时不冷却，登录后要能立刻再问）。
+     */
+    const KEY = '/account/getuser';
+    const OPTS = { ttl: 'account', namespace: 'player' };
 
     let info = null;
-    let at = 0;
-    let promise = null;
-    let failedAt = 0;
+    /** 解析结果用条目对象本身做「版本」，条目被清掉 / 刷新后重新解析。 */
+    let infoEntry = null;
 
     const pick = (data) => {
       const account = data && data.user && typeof data.user === 'object' ? data.user : data;
@@ -4777,34 +4800,16 @@
     };
 
     function ensure() {
-      const now = Date.now();
-      if (info && now - at < TTL) return Promise.resolve(info);
-      if (promise) return promise;
-      if (failedAt && now - failedAt < RETRY) {
-        if (info) return Promise.resolve(info);
-        return Promise.reject(Object.assign(new Error('COOLDOWN'), { code: 'COOLDOWN' }));
-      }
-
-      promise = apiClient
-        .call('/account/getuser', { login: true, form: {}, object: true })
-        .then((data) => {
-          info = pick(data);
-          at = Date.now();
-          failedAt = 0;
+      return apiCache
+        .ensure(KEY, () => apiClient.call(KEY, { login: true, form: {}, object: true }), OPTS)
+        .then((entry) => {
+          if (!entry) return info;
+          if (entry !== infoEntry) {
+            info = pick(entry.value);
+            infoEntry = entry;
+          }
           return info;
-        })
-        .catch((err) => {
-          // 还没捕获到凭据不算「接口坏了」：登录后要能立刻再问一次
-          const code = err && err.code;
-          if (code !== 'NO_TOKEN' && code !== 'UNAUTHORIZED') failedAt = Date.now();
-          throw err;
         });
-
-      const settle = () => {
-        promise = null;
-      };
-      promise.then(settle, settle);
-      return promise;
     }
 
     return {
@@ -4830,53 +4835,32 @@
    * 公开资料接口支持专用密钥，所以这里沿用 apiClient.call 的默认凭据优先级，不强制 login。
    */
   const profileFeed = (() => {
-    const TTL = 2 * 60 * 1000;
-    const RETRY = 60 * 1000;
+    const PREFIX = '/user/profile/';
+    const OPTS = { ttl: 'profile', namespace: 'profile' };
 
-    let currentId = null;
+    /** 当前关心的账号：晚到的旧账号结果直接丢掉，不覆盖新账号的技能等级。 */
+    let wantedId = 0;
     let level = null;
-    let loaded = false;
-    let at = 0;
-    let promise = null;
-    let failedAt = 0;
+    let levelEntry = null;
 
     function ensure(accountId) {
       const id = Number(accountId);
       if (!Number.isFinite(id) || id <= 0) return Promise.resolve(null);
-      const now = Date.now();
-      if (currentId === id && loaded && now - at < TTL) return Promise.resolve(level);
-      if (promise && currentId === id) return promise;
-      if (currentId === id && failedAt && now - failedAt < RETRY) {
-        if (loaded) return Promise.resolve(level);
-        return Promise.reject(Object.assign(new Error('COOLDOWN'), { code: 'COOLDOWN' }));
-      }
-
-      currentId = id;
-      promise = apiClient
-        .call('/user/profile/' + encodeURIComponent(String(id)), {
-          object: true,
-          noMethodRetry: true
-        })
-        .then((data) => {
-          const raw = data && data.economic_level;
-          const value = Number(raw);
-          level = raw != null && Number.isFinite(value) ? value : null;
-          loaded = true;
-          at = Date.now();
-          failedAt = 0;
+      const key = PREFIX + encodeURIComponent(String(id));
+      wantedId = id;
+      return apiCache
+        .ensure(key, () => apiClient.call(key, { object: true, noMethodRetry: true }), OPTS)
+        .then((entry) => {
+          if (wantedId !== id) return level;
+          if (!entry) return level;
+          if (entry !== levelEntry) {
+            const raw = entry.value && entry.value.economic_level;
+            const value = Number(raw);
+            level = raw != null && Number.isFinite(value) ? value : null;
+            levelEntry = entry;
+          }
           return level;
-        })
-        .catch((err) => {
-          const code = err && err.code;
-          if (code !== 'NO_TOKEN' && code !== 'UNAUTHORIZED') failedAt = Date.now();
-          throw err;
         });
-
-      const settle = () => {
-        promise = null;
-      };
-      promise.then(settle, settle);
-      return promise;
     }
 
     return {
