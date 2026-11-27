@@ -58,7 +58,7 @@
 - **默认都走 JSDMirror**：脚本头部的 `@updateURL`（元数据）与 `@downloadURL`（脚本本体）都指向 `https://cdn.jsdmirror.com/gh/Billdex/eclesiar-helper@main/…`。它是与 jsDelivr 路径完全兼容的国内镜像，解析到国内多家运营商的节点，分支缓存只有约 5 分钟，比 jsDelivr 的 12 小时短得多。Tampermonkey 定期检查更新时只拉几 KB 的元数据并比对 `@version`，**只有版本号变大才下载完整脚本**。
 - 面板「设置」页打开时会自动检查一次最新版本，同样只读元数据；失败可以点「重新检查」。
 - 发现新版本时「设置」页会出现「安装更新」按钮（指向 JSDMirror），点击后由 Tampermonkey 提示覆盖安装，本地的界面设置（悬浮球位置、上次所在标签页）会保留。
-- 面板里的检查把 JSDMirror、`cdn.jsdelivr.net`、JSDMirror 备用域名 `cdn.jsdmirror.cn` 与 GitHub raw 四个源**并行**问一遍（每个源单独限时 4 秒、带时间戳绕开 CDN 缓存），取其中最高的版本号——某个源缓存落后也不会漏掉更新。全部读不到时才提示失败，并保留三个手动安装链接。
+- 面板里的检查把 JSDMirror、`cdn.jsdelivr.net`、JSDMirror 备用域名 `cdn.jsdmirror.cn` 与 GitHub raw 四个源**并行**问一遍（每个源单独限时 4 秒），取其中最高的版本号——某个源缓存落后也不会漏掉更新。全部读不到时才提示失败，并保留三个手动安装链接。检查时会给地址加一个时间戳参数，绕开边缘节点上的旧缓存；CDN 中间层对「分支」的解析缓存不受这个参数影响，所以刚发布的几分钟到几小时内，仍可能出现「本地已是最新、CDN 还返回旧版本」——这是 CDN 侧的延迟，多刷几次或过一会儿再检查即可。
 - 油猴只支持一个 `@updateURL`，所以自动更新通道固定用 JSDMirror；它万一不可用，可以在「设置」页点「备用（jsDelivr）」或「备用（GitHub）」手动覆盖安装。
 - 如果装的是 v0.2.0 及更早的版本（`@updateURL` 还指向 jsDelivr），国内可能收不到这次切换：用上面的 JSDMirror 安装地址覆盖安装一次，之后就都走国内镜像了。
 
@@ -224,6 +224,7 @@ eclesiar-helper/
 ├── eclesiar-helper.user.js   # 用户脚本本体（唯一需要安装的文件）
 ├── eclesiar-helper.meta.js   # 只有元数据，油猴检查更新时只拉这个文件
 ├── README.md                 # 安装、功能与设计说明
+├── scripts/release.sh        # 仅作者使用的发布辅助脚本，玩家不需要
 └── AGENTS.md                 # 项目内的代理协作约定
 ```
 

@@ -23,7 +23,7 @@
    - 例外之二：`marketJump`。只在玩家从面板点「去市场」之后运行：跳到 `/market/{country_id}` 后，读 `sessionStorage` 里的意图，点一下游戏自己的商品 / 品质筛选按钮（只认文本或图标 `alt` 完全相等的可点控件——`button` / `role=button|tab|option` / `cursor:pointer`，带 `href` 的链接一律不点，最多重试 10 秒，点不到就放弃并清掉意图），不提交表单、不下单、不轮询。已经在同类页面、只换国家 / 币种时，只做两段 history 跳转（先 `/dashboard` 再目标，不点击游戏里的任何控件、不碰金额与买卖按钮），失败才整页刷新。玩家没点跳转时任何情况下都不执行。
 6. **扩展只走功能注册表**：新模块用 `features.register()`，不要改面板外壳或硬编码标签页。
 7. **版本号四处同步**：`eclesiar-helper.user.js` 的 `@version`、`eclesiar-helper.meta.js` 的 `@version`、`const VERSION`、`README.md` 的「当前版本」。
-8. **更新源地址固定**：`@updateURL` / `@downloadURL` / 设置页的「安装更新」都走 JSDMirror `https://cdn.jsdmirror.com/gh/Billdex/eclesiar-helper@main/…`（`CDN_RAW`；与 jsDelivr 路径完全兼容的国内镜像，解析到国内多线节点，分支缓存约 5 分钟）。备源顺序固定为 `cdn.jsdelivr.net`（`JSDELIVR_RAW`）→ `cdn.jsdmirror.cn`（`CDN_MIRROR_RAW`，同镜像的备用域名）→ `raw.githubusercontent.com`（`REPO_RAW`）。设置页的版本检查对 `UPDATE_META_URLS` 里的源**并行**请求并取最高 `@version`（带 `eh_t` 时间戳绕开 CDN 缓存），所以单个源缓存落后不会漏更新；油猴只支持一个 `@updateURL`，自动更新通道只能有一个，改主源要清楚这一点。改名或迁移仓库时这几处（含 `REPO_URL` / `CDN_RAW` / `JSDELIVR_RAW` / `CDN_MIRROR_RAW` / `REPO_RAW` / `UPDATE_META_URLS` / `UPDATE_INSTALL_URL` / `UPDATE_INSTALL_JSDELIVR` / `UPDATE_INSTALL_FALLBACK`、README 里的安装链接）必须一起改，否则老版本收不到更新。
+8. **更新源地址固定**：`@updateURL` / `@downloadURL` / 设置页的「安装更新」都走 JSDMirror `https://cdn.jsdmirror.com/gh/Billdex/eclesiar-helper@main/…`（`CDN_RAW`；与 jsDelivr 路径完全兼容的国内镜像，解析到国内多线节点，分支缓存约 5 分钟）。备源顺序固定为 `cdn.jsdelivr.net`（`JSDELIVR_RAW`）→ `cdn.jsdmirror.cn`（`CDN_MIRROR_RAW`，同镜像的备用域名）→ `raw.githubusercontent.com`（`REPO_RAW`）。设置页的版本检查对 `UPDATE_META_URLS` 里的源**并行**请求并取最高 `@version`（带 `eh_t` 时间戳只绕得开边缘节点缓存，中间层对分支的解析缓存仍要等它自己过期，最坏情况会滞后到小时级），所以单个源缓存落后不会漏更新；油猴只支持一个 `@updateURL`，自动更新通道只能有一个，改主源要清楚这一点。改名或迁移仓库时这几处（含 `REPO_URL` / `CDN_RAW` / `JSDELIVR_RAW` / `CDN_MIRROR_RAW` / `REPO_RAW` / `UPDATE_META_URLS` / `UPDATE_INSTALL_URL` / `UPDATE_INSTALL_JSDELIVR` / `UPDATE_INSTALL_FALLBACK`、README 里的安装链接）必须一起改，否则老版本收不到更新。
 
 ## 3. 目录
 
@@ -32,8 +32,14 @@ eclesiar-helper/
 ├── eclesiar-helper.user.js   # 脚本本体（唯一安装产物）
 ├── eclesiar-helper.meta.js   # 只有元数据，供油猴检查更新（@updateURL 指向它）
 ├── README.md                 # 给玩家看的安装 / 扩展文档
+├── scripts/
+│   └── release.sh            # 发布辅助：版本校验 + 刷新三个源的 CDN 缓存（不是安装产物）
+├── .jsdmirror-key            # 本地密钥（git 忽略，不入库；见 §9）
+├── .gitignore
 └── AGENTS.md
 ```
+
+`dev/`（本地调试页）、`backups/`、`.playwright-cli/`、`.jsdmirror-key` 都被 git 忽略，不要提交。
 
 ## 4. 常用命令
 
@@ -117,18 +123,25 @@ EclesiarHelper.features.register({
 
 ## 9. 发布
 
-1. 修改 `eclesiar-helper.user.js` 的 `@version`、`eclesiar-helper.meta.js` 的 `@version`、`const VERSION`，同步 README 的「当前版本」。
+发布 = 改版本号 → 推送 → **刷新三个源的缓存** → 确认生效。后两步用 `scripts/release.sh` 一次做完。
+
+1. 修改版本号（四处必须一致）：`eclesiar-helper.user.js` 的 `@version`、同文件的 `const VERSION`、`eclesiar-helper.meta.js` 的 `@version`、`README.md` 的「当前版本」。
 2. 更新 README 的能力表 / 说明。
-3. 提交并推送到 `main`（`updateURL` / `downloadURL` 都指向 JSDMirror 的 `main` 分支地址，推送后老版本即可在下次检查时看到更新）。
-4. JSDMirror 的分支缓存只有 `max-age=300`，等 5 分钟就会自然过期，**不需要 purge**；发布后确认两端都已拿到新版本：
-   ```bash
-   curl -s "https://cdn.jsdmirror.com/gh/Billdex/eclesiar-helper@main/eclesiar-helper.meta.js" | grep '@version'
-   curl -s "https://cdn.jsdelivr.net/gh/Billdex/eclesiar-helper@main/eclesiar-helper.meta.js" | grep '@version'
-   ```
-   jsDelivr 那份是备用源（分支 `s-maxage=43200`，最长 12 小时），要让它也立刻更新就调一次它的 purge 接口（回源到 GitHub raw，raw 自己还有 `max-age=300`，拿到的可能仍是旧文件，过几分钟再 purge 一次）：
-   ```bash
-   curl -s "https://purge.jsdelivr.net/gh/Billdex/eclesiar-helper@main/eclesiar-helper.meta.js"
-   ```
-   顺手也确认一下 JSDMirror 返回的 `.user.js` 与本地一致：`curl -s <镜像地址> | md5`（Windows 用 `certutil -hashfile` 比对）。
+3. 提交并推送到 `main`。
+4. 刷新缓存：`scripts/release.sh`（需要刷新时**每次推送都要跑**）。
+   - 参数：`--verify` 只校验版本与三源当前状态、不发刷新请求；`--no-wait` 发完请求就退出、不轮询。
+   - 脚本做的事：① 校验四处版本号一致 + 两个文件过 `node --check`；② 刷新三个源的缓存；③ 轮询 `@main` 直到三个源都返回新版本。
+   - **六个目标，缺一不可**：`eclesiar-helper.meta.js` 与 `eclesiar-helper.user.js` × 三个源（`cdn.jsdmirror.com`、`cdn.jsdmirror.cn`、`cdn.jsdelivr.net`）。只刷 `.meta.js` 会出现「提示有新版本、点安装下来还是旧的」。
+   - 三个源怎么刷：
+     - `cdn.jsdmirror.com` / `cdn.jsdmirror.cn` → `POST https://cache.jsdmirror.com/api/v1/purge`，请求头 `X-API-Key`，body `{"url":"<完整 URL>","method":"invalidate"}`，返回 `job_id`，通常 1 分钟内完成；
+     - `cdn.jsdelivr.net` → `GET https://purge.jsdelivr.net/gh/Billdex/eclesiar-helper@main/<文件名>`，无需 Key，返回 `"status": "finished"` 即成功。
+   - **顺序不能反**：先 push 再 purge。purge 会回源到 GitHub raw，而 raw 自己有 `max-age=300`；推完立刻刷可能刷到旧文件，脚本会轮询重试，实在不行过几分钟再跑一次 `--verify`。
+   - **密钥文件**：仓库根目录 `.jsdmirror-key`（已写进 `.gitignore`，**绝不入库、不贴进脚本 / README / 提交信息**）。写入规则：
+     - 纯文本，第一行非空且不以 `#` 开头的文本就是 Key；`#` 开头的行是注释，会被跳过；
+     - 首尾空白与 `\r` 会被自动去掉（Windows 记事本保存也能用）；
+     - 文件缺失或为空时，脚本只刷 jsDelivr 并打一条警告，不阻断发布；
+     - Key 只发给 `cache.jsdmirror.com`，脚本输出最多打印前 6 位掩码。
+   - 想换 provider 时用环境变量 `JSD_PROVIDER` 覆盖（默认交给服务端自己选）。
 5. 对外分享统一发**安装地址**，不要发仓库首页：首选 `https://cdn.jsdmirror.com/gh/Billdex/eclesiar-helper@main/eclesiar-helper.user.js`，备用 `https://cdn.jsdelivr.net/gh/Billdex/eclesiar-helper@main/eclesiar-helper.user.js`（`raw.githubusercontent.com` 在国内多被拦截，只作为最后备用）。文案模板见 README 的「分享给朋友」。
 6. 本地调试也可以把 `.user.js` 全文粘贴进 Tampermonkey 覆盖。
+7. **不要**把 `@updateURL` / `@downloadURL` 改成 tag 或 commit 地址：油猴的更新地址是写死在已安装副本里的，指向不可变引用会导致该版本永远「已是最新」、之后再也收不到更新。tag / commit 只用于「安装更新」链接与发版自检。
