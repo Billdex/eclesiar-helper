@@ -3,6 +3,3 @@
 dev/
 backups/
 .playwright-cli/
-
-# 发布用：JSDMirror 缓存刷新接口的 API Key（只存在本地，绝不入库）
-.jsdmirror-key
