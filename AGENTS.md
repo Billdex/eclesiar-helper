@@ -40,7 +40,7 @@
 | `profileFeed` | `GET /user/profile/{account_id}` 的 `economic_level`（公开资料，只取这一个字段） | 2 分钟，失败冷却 60 秒 | 工商「工作」技能过滤 |
 | 工作（子面板内存缓存） | 遍历全部国家的 `GET /market/jobs/get?country_id=…&page=…` 岗位，按金价门槛存整轮结果 | 2 分钟，`destroy()` 后失效；不落盘 | 工商「工作」子面板 |
 
-- 行情请求统一走 `market.call`（负责并发、凭据与错误分类），不要自己 `fetch`。
+- 所有数据请求统一走 `apiClient.call`（负责并发、凭据与错误分类），不要自己 `fetch`；该出口服务全插件，不只是行情。
 - 分页接口的 `pagination` 在响应根上，`call` 传 `{ object: true, full: true }` 才能拿到；`/market/jobs/get` 无岗位时可能不带 `data`，还要传 `allowEmpty`，并把 `total_records` 为 0 当作空结果，不要报「读取失败」；单页失败只跳过该页，不打断整轮。
 - 账号信息固定 `POST /account/getuser`（`{ login: true }`，见 §3 第 5 条）。
 - 领土接口 `GET /country/regions?country_id=…` 只发 GET（同地址 POST 会 404），`call` 要传 `noMethodRetry`；返回无 `data` 或空数组都表示已失去全部领土，需传 `allowEmpty` 才不当成坏载荷。

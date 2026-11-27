@@ -3437,12 +3437,14 @@
   const fxSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
   /**
-   * 市场接口凭据。
+   * 统一请求出口与凭据。
+   * 插件所有数据请求都从这里发出（行情、账号、地区、岗位、设置页用量都一样），
+   * 不只是「市场接口」：`/market` 只是其中一个接口前缀。
    * 登录 JWT 只从游戏自己发往 api.eclesiar.com 的请求里读取，仅保存在内存中：
    * 不写 localStorage、不打日志、不上报。
    * 若用户在「设置」页保存了专用 API 密钥，则所有插件请求优先用它。
    */
-  const market = (() => {
+  const apiClient = (() => {
     let loginToken = '';
     let seenAuth = false;
     let expired = false;
@@ -3771,12 +3773,12 @@
 
   /** 凭据不可用时的统一提示，汇率与商品共用。 */
   function authHint() {
-    if (market.mode === 'api') {
-      return market.state === 'expired'
+    if (apiClient.mode === 'api') {
+      return apiClient.state === 'expired'
         ? '专用 API 密钥已失效，请到「设置」页重新生成。'
         : '专用 API 密钥暂不可用，请到「设置」页检查。';
     }
-    const state = market.state;
+    const state = apiClient.state;
     if (state === 'expired') return '登录凭据已失效，请刷新游戏页面后再试。';
     if (state === 'unsupported') return '抓到接口请求了，但凭据格式不是 Bearer，请刷新游戏页面后再试。';
     return '尚未拿到登录凭据：先在游戏里打开任意页面（触发一次接口请求），再点「刷新行情」。';
@@ -4038,7 +4040,7 @@
     function ensureCountries() {
       if (countries) return Promise.resolve(countries);
       if (!countriesPromise) {
-        countriesPromise = market
+        countriesPromise = apiClient
           .call('/countries/summary')
           .then((data) => {
             countries = Array.isArray(data) ? data : [];
@@ -4068,7 +4070,7 @@
     function ensureTaxes() {
       if (taxes) return Promise.resolve(taxes);
       if (!taxesPromise) {
-        taxesPromise = market
+        taxesPromise = apiClient
           .call('/countries')
           .then((list) => {
             const map = new Map();
@@ -4113,7 +4115,7 @@
 
     async function load() {
       if (loading) return promise;
-      if (market.state !== 'ok') {
+      if (apiClient.state !== 'ok') {
         error = { code: 'NO_TOKEN' };
         notify('state');
         return null;
@@ -4159,11 +4161,11 @@
 
           const fetchEntry = async (quote) => {
             const [sell, buy] = await Promise.all([
-              market.call('/market/coin/get', {
+              apiClient.call('/market/coin/get', {
                 form: { currency_id: quote.id, transaction: 'SELL' },
                 signal
               }),
-              market.call('/market/coin/get', {
+              apiClient.call('/market/coin/get', {
                 form: { currency_id: quote.id, transaction: 'BUY' },
                 signal
               })
@@ -4407,7 +4409,7 @@
         return Promise.reject(Object.assign(new Error('COOLDOWN'), { code: 'COOLDOWN' }));
       }
 
-      promise = market
+      promise = apiClient
         .call('/account/getuser', { login: true, form: {}, object: true })
         .then((data) => {
           info = pick(data);
@@ -4449,7 +4451,7 @@
   /**
    * profileFeed：玩家经济技能在公开资料页里，getuser 与 attributes.stats.economic_aptitude 都不是它。
    * GET /user/profile/{account_id} 只取 economic_level，2 分钟缓存、失败冷却 60 秒。
-   * 公开资料接口支持专用密钥，所以这里沿用 market.call 的默认凭据优先级，不强制 login。
+   * 公开资料接口支持专用密钥，所以这里沿用 apiClient.call 的默认凭据优先级，不强制 login。
    */
   const profileFeed = (() => {
     const TTL = 2 * 60 * 1000;
@@ -4474,7 +4476,7 @@
       }
 
       currentId = id;
-      promise = market
+      promise = apiClient
         .call('/user/profile/' + encodeURIComponent(String(id)), {
           object: true,
           noMethodRetry: true
@@ -5106,7 +5108,7 @@
       });
 
       // 凭据晚到（面板先开、游戏还没发过请求）：账号能读到后补一次置顶，行情仍由玩家点刷新
-      const offAuth = market.onAuth(() => {
+      const offAuth = apiClient.onAuth(() => {
         if (alive && !pinEntries.length) loadPins();
       });
 
@@ -5269,7 +5271,7 @@
    */
   async function goodsFetchRegions(countryId, signal) {
     const path = '/country/regions?country_id=' + encodeURIComponent(String(countryId));
-    return market.call(path, { signal, noMethodRetry: true, allowEmpty: true });
+    return apiClient.call(path, { signal, noMethodRetry: true, allowEmpty: true });
   }
 
   /**
@@ -5417,14 +5419,14 @@
 
     /**
      * 凭据晚到的场景：面板可能在游戏还没发过任何接口请求时就打开了，
-     * 这时先挂一次 market.onAuth，等登录凭据被捕获后自动补一轮，
+     * 这时先挂一次 apiClient.onAuth，等登录凭据被捕获后自动补一轮，
      * 而不是让面板停在空列表上等玩家手动点「刷新行情」。
      * （与「商品市场自动加载比价数据」无关：那个开关只管游戏市场页的自动刷新。）
      */
     let offAuthRetry = null;
     const armAuthRetry = () => {
       if (offAuthRetry) return;
-      offAuthRetry = market.onAuth(() => {
+      offAuthRetry = apiClient.onAuth(() => {
         offAuthRetry = null;
         if (!loading && !updatedAt) load();
       });
@@ -5433,7 +5435,7 @@
     /** 拉一轮全球行情；并发调用共享同一个请求。 */
     function load() {
       if (loading) return promise;
-      if (market.state !== 'ok') {
+      if (apiClient.state !== 'ok') {
         error = { code: 'NO_TOKEN' };
         errorAt = Date.now();
         armAuthRetry();
@@ -5509,7 +5511,7 @@
 
               try {
                 // 不带 type/quality 时接口一次返回该国全部商品，一个市场只需一次请求
-                const data = await market.call('/market/get', {
+                const data = await apiClient.call('/market/get', {
                   form: { countryid: entry.id },
                   object: true,
                   signal
@@ -5681,8 +5683,8 @@
     const sync = () => {
       if (!enabled || destroyed || !booted) return;
       if (document.visibilityState === 'hidden') return;
-      // 凭据还没捕获到时先不动，由 market.onAuth 触发一次
-      if (market.state !== 'ok') return;
+      // 凭据还没捕获到时先不动，由 apiClient.onAuth 触发一次
+      if (apiClient.state !== 'ok') return;
       if (goodsSnapshot.loading) return;
 
       const now = Date.now();
@@ -5696,7 +5698,7 @@
 
     function start(immediate) {
       if (!enabled || destroyed) return;
-      if (!offAuth) offAuth = market.onAuth(sync);
+      if (!offAuth) offAuth = apiClient.onAuth(sync);
       if (!timer) timer = window.setInterval(sync, CHECK_MS);
       clearTimeout(kick);
       kick = window.setTimeout(sync, immediate ? 0 : BOOT_DELAY_MS);
@@ -6162,7 +6164,7 @@
           return;
         }
 
-        if (market.state !== 'ok') {
+        if (apiClient.state !== 'ok') {
           setStatus(tokenHint(), 'warn');
           return;
         }
@@ -6497,7 +6499,7 @@
       // 当前所在国家：挂载就读一次，读到后给对应行换配色（采购 / 销售都标）
       loadHere();
       // 凭据晚到（面板先开、游戏还没发过请求）：读到账号后再补一次高亮
-      const offAuth = market.onAuth(() => {
+      const offAuth = apiClient.onAuth(() => {
         if (alive && !hereCountryId) loadHere();
       });
       // 面板自己做主：有新鲜快照就直接复用，否则拉一轮。与「商品市场自动加载比价数据」无关
@@ -6693,7 +6695,7 @@
         if (now - currencyStartedAt < MAP_TIMEOUT) return;
         currencyPromise = null;
       }
-      if (market.state !== 'ok') return;
+      if (apiClient.state !== 'ok') return;
       if (currencyFailedAt && now - currencyFailedAt < MAP_RETRY) return;
 
       currencyStartedAt = now;
@@ -6735,11 +6737,11 @@
      * selling=true 查买单（卖币换金），false 查卖单（买币花金）。
      */
     function fetchRate(id, selling) {
-      if (market.state !== 'ok') return;
+      if (apiClient.state !== 'ok') return;
       const bucket = selling ? sellRates : rates;
       const waiting = selling ? sellPending : pending;
       waiting.add(id);
-      market
+      apiClient
         .call('/market/coin/get', { form: { currency_id: id, transaction: selling ? 'BUY' : 'SELL' } })
         .then((orders) => {
           const book = selling ? fxBook(null, orders) : fxBook(orders, null);
@@ -7263,7 +7265,7 @@
     fxFeed.subscribe((kind) => {
       if (running && kind === 'done') schedule();
     });
-    market.onAuth(() => {
+    apiClient.onAuth(() => {
       if (running) schedule();
     });
     // 面板「市场」页抓到新行情后，市场页上的「比全球最低贵多少」跟着刷新
@@ -7572,7 +7574,7 @@
       }
       if (pending) return;
       if (failedAt && Date.now() - failedAt < RETRY) return;
-      if (market.state !== 'ok') return;
+      if (apiClient.state !== 'ok') return;
 
       pending = regionFeed
         .ensure(id)
@@ -7599,7 +7601,7 @@
     function paint() {
       if (!running || !enabled) return;
       // 还没有凭据、也没有缓存数据：静默不画，等凭据到位或下一轮扫描，别在页面上留半条空栏
-      if (!list && market.state !== 'ok') {
+      if (!list && apiClient.state !== 'ok') {
         if (host && host.isConnected) host.remove();
         anchor = null;
         warningNode = null;
@@ -7721,7 +7723,7 @@
     }
 
     // 凭据晚到（面板先开、游戏还没发过请求）时补一轮，不用玩家手动刷新
-    market.onAuth(() => {
+    apiClient.onAuth(() => {
       if (!running) return;
       failedAt = 0;
       schedule();
@@ -8375,7 +8377,7 @@
         // 凭据还没到手时状态栏已经说明原因，别在下面再写一句「点刷新抓取」
         const blocked =
           (error && (error.code === 'NO_TOKEN' || error.code === 'UNAUTHORIZED')) ||
-          (market.state !== 'ok' && !updatedAt);
+          (apiClient.state !== 'ok' && !updatedAt);
         emptyEl.hidden = Boolean(loading) || Boolean(blocked);
         emptyEl.textContent = keyword
           ? '没有匹配「' + query.trim() + '」的地区。'
@@ -8401,7 +8403,7 @@
           return;
         }
 
-        if (market.state !== 'ok' && !updatedAt) {
+        if (apiClient.state !== 'ok' && !updatedAt) {
           statusEl.textContent = tokenHint();
           statusEl.dataset.tone = 'warn';
           return;
@@ -8450,7 +8452,7 @@
       /** 凭据晚到（面板先开、游戏还没发过请求）时补一轮，不用玩家手动刷新。 */
       const armAuthRetry = () => {
         if (offAuth) return;
-        offAuth = market.onAuth(() => {
+        offAuth = apiClient.onAuth(() => {
           offAuth = null;
           if (!loading && !updatedAt) load(false);
         });
@@ -8463,8 +8465,8 @@
        */
       function load(force) {
         if (!alive || loading) return;
-        if (market.state !== 'ok') {
-          error = { code: market.state === 'expired' ? 'UNAUTHORIZED' : 'NO_TOKEN' };
+        if (apiClient.state !== 'ok') {
+          error = { code: apiClient.state === 'expired' ? 'UNAUTHORIZED' : 'NO_TOKEN' };
           paint();
           armAuthRetry();
           return;
@@ -9043,7 +9045,7 @@
         // 凭据还没到手时状态栏已经说明原因，别在下面再写一句「点刷新抓取」
         const blocked =
           (error && (error.code === 'NO_TOKEN' || error.code === 'UNAUTHORIZED')) ||
-          (market.state !== 'ok' && !updatedAt);
+          (apiClient.state !== 'ok' && !updatedAt);
         const none = reachable.length === 0 && exiled.length === 0;
         emptyEl.hidden = Boolean(loading) || Boolean(blocked) || !none;
         if (!none) return;
@@ -9075,7 +9077,7 @@
           return;
         }
 
-        if (market.state !== 'ok' && !updatedAt) {
+        if (apiClient.state !== 'ok' && !updatedAt) {
           statusEl.textContent = tokenHint();
           statusEl.dataset.tone = 'warn';
           return;
@@ -9131,7 +9133,7 @@
       /** 凭据晚到（面板先开、游戏还没发过请求）时补一轮，不用玩家手动刷新。 */
       const armAuthRetry = () => {
         if (offAuth) return;
-        offAuth = market.onAuth(() => {
+        offAuth = apiClient.onAuth(() => {
           offAuth = null;
           if (!loading && !updatedAt) load(false);
         });
@@ -9200,8 +9202,8 @@
        */
       function load(force) {
         if (!alive || loading) return;
-        if (market.state !== 'ok') {
-          error = { code: market.state === 'expired' ? 'UNAUTHORIZED' : 'NO_TOKEN' };
+        if (apiClient.state !== 'ok') {
+          error = { code: apiClient.state === 'expired' ? 'UNAUTHORIZED' : 'NO_TOKEN' };
           paint();
           armAuthRetry();
           return;
@@ -9764,7 +9766,7 @@
       /** 凭据晚到（面板先开、游戏还没发过请求）时补一轮，不用玩家手动刷新。 */
       const armAuthRetry = () => {
         if (offAuth) return;
-        offAuth = market.onAuth(() => {
+        offAuth = apiClient.onAuth(() => {
           offAuth = null;
           if (!loading && !updatedAt) load(false);
         });
@@ -9837,7 +9839,7 @@
                   return;
                 }
                 requests += 1;
-                const payload = await market.call(url(page), opts);
+                const payload = await apiClient.call(url(page), opts);
                 const pg =
                   payload && payload.pagination && typeof payload.pagination === 'object'
                     ? payload.pagination
@@ -9892,8 +9894,8 @@
 
       function load(force) {
         if (!alive || loading) return;
-        if (market.state !== 'ok') {
-          error = { code: market.state === 'expired' ? 'UNAUTHORIZED' : 'NO_TOKEN' };
+        if (apiClient.state !== 'ok') {
+          error = { code: apiClient.state === 'expired' ? 'UNAUTHORIZED' : 'NO_TOKEN' };
           paint();
           armAuthRetry();
           return;
@@ -10422,8 +10424,8 @@
 
       /** 把「当前用哪套凭据」同步到界面上。 */
       const syncApi = () => {
-        const mode = market.mode;
-        const expired = market.state === 'expired';
+        const mode = apiClient.mode;
+        const expired = apiClient.state === 'expired';
         const usingApi = mode === 'api';
         const healthy = usingApi && !expired;
 
@@ -10488,12 +10490,12 @@
        */
       const loadUsage = async () => {
         if (!alive || usageLoading) return;
-        if (market.mode !== 'api' || market.state !== 'ok') return;
+        if (apiClient.mode !== 'api' || apiClient.state !== 'ok') return;
 
         usageLoading = true;
         syncApi();
         try {
-          const usage = await market.call('/account/apikey/usage', { login: true, object: true });
+          const usage = await apiClient.call('/account/apikey/usage', { login: true, object: true });
           if (!alive) return;
           const used = Number(usage && usage.used);
           const limit = Number(usage && usage.limit);
@@ -10554,7 +10556,7 @@
         syncApi();
         ctx.ui.reposition();
         try {
-          await market.generateKey();
+          await apiClient.generateKey();
           if (!alive) return;
           apiInputEl.value = '';
           sayApi('已保存密钥 ' + apiKey.masked);
@@ -10579,7 +10581,7 @@
           sayApi('请先粘贴密钥。', 'warn');
           return;
         }
-        if (!market.setKey(raw)) {
+        if (!apiClient.setKey(raw)) {
           sayApi('密钥格式不对：应以 eclesiar_ 开头，检查是否多了空格或漏了字符。', 'warn');
           return;
         }
@@ -10592,7 +10594,7 @@
       };
 
       const clearApiKey = () => {
-        market.clearKey();
+        apiClient.clearKey();
         resetUsage();
         syncApi();
         ctx.ui.reposition();
@@ -10863,7 +10865,7 @@
 
     try {
       loadState();
-      market.install();
+      apiClient.install();
       createShell();
       bindBall();
       bindPanel();
@@ -10912,7 +10914,7 @@
     fxFeed.cancel();
     // 地区缓存只存内存，销毁时一并丢掉；在途请求会自己结束，不会留下轮询
     regionFeed.clear();
-    market.uninstall();
+    apiClient.uninstall();
 
     features.forEach((feature) => {
       if (feature.__cleanups) {

@@ -169,13 +169,13 @@ apiCache.stats()                           // 调试：hit / join / miss / coold
 
 动因：`market` 是插件第一个功能（汇率 / 货币市场）留下的名字，现在已是全插件唯一的请求出口。`market` 与游戏的 `/market` 路由、市场页功能（`marketBadge` / `marketJump`）撞名，读代码时容易误判作用域；请求层重构期间还要不断在这一层加东西，先改干净，后续新增代码直接用新名，避免二次清扫。
 
-- [ ] 只改这一个对象：`const market = (() => { … })()` → `const apiClient = (() => { … })()`。**不要**动 `marketBadge` / `marketJump` / `market-calc` / 字符串里的 `/market/…` / `sessionStorage` 键 `eh:market-intent` / 注释里的游戏路由
-- [ ] 成员访问同步改名（当前实测 47 处）：`call` 7、`state` 22、`onAuth` 11、`mode` 3，`install` / `uninstall` / `generateKey` / `setKey` / `clearKey` 各 1
-- [ ] 模块头注释「市场接口凭据」改为「统一请求出口 / 凭据」，并注明它不仅服务行情
-- [ ] `AGENTS.md` 同步：§2.2「行情请求统一走 `market.call`（负责并发、凭据与错误分类）」与下一条分页接口说明改成 `apiClient.call`；§5 代码组织里该区段的描述一并核对
-- [ ] 不写兼容别名（不保留 `market` 指向同一对象）：该对象不在公开 API 上，无外部调用方
-- [ ] 验收：`grep -nE '\bmarket\.' eclesiar-helper.user.js` 归零（`marketBadge.` / `marketJump.` 不匹配该模式）；`node --check` 通过；§8 全量回归无行为差异，重点看汇率刷新、市场页标注、密钥生成 / 移除、`onAuth` 补拉、`destroy()`
-- [ ] 单独一次提交（`chore: 统一请求出口命名 market → apiClient`），便于单条回退；本阶段不动四处版本号
+- [x] 只改这一个对象：`const market = (() => { … })()` → `const apiClient = (() => { … })()`。**不要**动 `marketBadge` / `marketJump` / `market-calc` / 字符串里的 `/market/…` / `sessionStorage` 键 `eh:market-intent` / 注释里的游戏路由
+- [x] 成员访问同步改名（当前实测 47 处）：`call` 7、`state` 22、`onAuth` 11、`mode` 3，`install` / `uninstall` / `generateKey` / `setKey` / `clearKey` 各 1
+- [x] 模块头注释「市场接口凭据」改为「统一请求出口 / 凭据」，并注明它不仅服务行情
+- [x] `AGENTS.md` 同步：§2.2「行情请求统一走 `market.call`（负责并发、凭据与错误分类）」与下一条分页接口说明改成 `apiClient.call`；§5 代码组织里该区段的描述一并核对
+- [x] 不写兼容别名（不保留 `market` 指向同一对象）：该对象不在公开 API 上，无外部调用方
+- [x] 验收：`grep -nE '\bmarket\.' eclesiar-helper.user.js` 归零（`marketBadge.` / `marketJump.` 不匹配该模式）；`node --check` 通过；§8 全量回归无行为差异，重点看汇率刷新、市场页标注、密钥生成 / 移除、`onAuth` 补拉、`destroy()`
+- [x] 单独一次提交（`chore: 统一请求出口命名 market → apiClient`），便于单条回退；本阶段不动四处版本号
 
 ### 阶段 1：准备
 
