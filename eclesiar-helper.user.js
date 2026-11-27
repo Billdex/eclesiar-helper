@@ -2076,7 +2076,19 @@
   }
 
   .eh-job-headline { grid-row: 1; }
-  .eh-job-subtitle { grid-row: 2; flex-wrap: wrap; gap: 3px 8px; font-size: 9.5px; color: #7d8ba0; }
+
+  /* 副标题 / 雇主 / 地区是同一种说明文字，字号、字重、颜色统一在这里定义，
+     各行不要再单独覆盖（地区行的配置是基准；500 是补齐 9.5px 下数字、拉丁
+     字母比中文显细的观感）。公司类型 .eh-job-type 单独着色，不在此列 */
+  .eh-job-subtitle,
+  .eh-job-owner,
+  .eh-job-loc-text {
+    font-size: 9.5px;
+    font-weight: 500;
+    color: #9fadc2;
+  }
+
+  .eh-job-subtitle { grid-row: 2; flex-wrap: wrap; gap: 3px 3px; }
 
   .eh-job-name {
     flex: 1 1 auto;
@@ -2098,8 +2110,6 @@
     gap: 5px;
     min-width: 0;
     margin-top: 3px;
-    font-size: 9.5px;
-    color: #7d8ba0;
   }
 
   .eh-job-owner {
@@ -2109,11 +2119,9 @@
     gap: 5px;
     max-width: 100%;
     min-width: 0;
-    color: #7d8ba0;
-    font-size: 9.5px;
   }
 
-  .eh-job-owner-mark { flex: none; display: inline-flex; color: #7d8ba0; }
+  .eh-job-owner-mark { flex: none; display: inline-flex; color: #8d9bb0; }
   .eh-job-owner-mark svg { display: block; width: 11px; height: 11px; }
 
   .eh-job-owner-avatar {
@@ -2146,11 +2154,9 @@
     gap: 5px;
     margin-top: 3px;
     min-width: 0;
-    font-size: 9.5px;
-    color: #7d8ba0;
   }
 
-  .eh-job-pin { flex: none; display: inline-flex; color: #7d8ba0; }
+  .eh-job-pin { flex: none; display: inline-flex; color: #8d9bb0; }
   .eh-job-pin svg { display: block; width: 11px; height: 11px; }
 
   .eh-job-flag { width: 12px; height: 9px; font-size: 9px; }
@@ -2158,19 +2164,19 @@
   .eh-job-loc-text {
     min-width: 0;
     overflow: hidden;
-    font-size: 9.5px;
-    color: #9fadc2;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .eh-job-type {
-    padding: 0 5px;
-    border-radius: 4px;
-    background: rgba(201, 165, 74, .12);
-    color: #c9a54a;
-    line-height: 1.7;
+    color: #dcbb6b;
     white-space: nowrap;
+  }
+
+  /* 分隔点与地区行的「·」同款：字号、颜色都继承副标题，不再单独调暗调小 */
+  .eh-job-dot {
+    flex: none;
+    line-height: 1;
   }
 
   .eh-job-subtitle .eh-tax-mark { padding: 0 4px; font-size: 9px; }
@@ -9551,28 +9557,37 @@
         headline.appendChild(nameEl);
         title.appendChild(headline);
 
-        // 副标题：产业类型（中文）+ 职位数 + 技能要求
+        // 副标题：产业类型（中文，仅此项高亮）· 职位数 · 技能要求
         const subtitle = document.createElement('div');
         subtitle.className = 'eh-job-subtitle';
+        const appendSub = (node) => {
+          if (subtitle.childNodes.length) {
+            const dot = document.createElement('span');
+            dot.className = 'eh-job-dot';
+            dot.textContent = '·';
+            subtitle.appendChild(dot);
+          }
+          subtitle.appendChild(node);
+        };
         if (row.type) {
           const typeEl = document.createElement('span');
           typeEl.className = 'eh-job-type';
           typeEl.textContent = JOB_TYPE_ZH[row.type] || row.type;
           typeEl.title = row.type;
-          subtitle.appendChild(typeEl);
+          appendSub(typeEl);
         }
         const amountEl = document.createElement('span');
         amountEl.textContent = row.amount + ' 个职位';
-        subtitle.appendChild(amountEl);
+        appendSub(amountEl);
         const skillEl = document.createElement('span');
         skillEl.textContent = '技能 ≥ ' + row.skill;
         skillEl.title = '最低技能要求';
-        subtitle.appendChild(skillEl);
+        appendSub(skillEl);
         if (isHere) {
           const markEl = document.createElement('span');
           markEl.className = 'eh-tax-mark';
           markEl.textContent = '当前位置';
-          subtitle.appendChild(markEl);
+          appendSub(markEl);
         }
         title.appendChild(subtitle);
         main.appendChild(title);
