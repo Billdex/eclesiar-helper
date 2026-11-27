@@ -44,7 +44,7 @@ apiClient.call（凭据 / 超时 / 错误分类）→ fetch
 | 批量加载句柄（原 `fxRound`） | 一次 `coinBook.load(targets)` 的返回值：目标 id 集合、`startedAt`、`progress { done, total, phase, retryIndex, retryTotal }`、`failedKeys`、`limited(429)` | 面板持有引用，批结束即丢弃；**不常驻** |
 | `regionIndex` | 国家 → 地区清单索引，判定流亡政府（无 `data` / 空数组） | 随 10 分钟 key |
 | `goodsSnapshot` | 各国市场挂单快照，抓完 `publish` 给 `goodsFeed` | 随 10 分钟 key |
-| `player` / `profile` | 账号三字段 / `economic_level` | 2 分钟 |
+| `player` / `profile` | 账号三字段 / `economic_level` | 10 秒 |
 | `jobPages` | 岗位页缓存（`country_id` + `page`）与去重 | 2 分钟 |
 
 **结论：面板的数据状态与缓存时间直接读 `coinBook`（时间取 `lastBatch.okKeys` 里最旧的 `at`），不需要 `fxRound` 这样的常驻对象。** 判断当前数据是否可用（有没有挂单、`empty`、每币种 `at`、买卖两侧报价）全部来自 key 本身；「一轮刷新」只产生一个临时的批次句柄，用来驱动进度条、重试阶段与失败计数，批结束就丢。
@@ -66,8 +66,9 @@ apiClient.call（凭据 / 超时 / 错误分类）→ fetch
 | 命名 | 请求出口 `market` 改名 `apiClient`（`apiClient.call` / `.mode` / `.state` / `.onAuth`），与 `apiCache` 组成 `api*` 系列；公开命名空间 `window.EclesiarHelper` 已占用 `api` 标识符，故不取 `api` |
 | 轮次对象 | 取消常驻 `fxRound`：改为 `coinBook.load(targets)` 返回的**批次句柄**，面板只持有当前批，结束即丢弃（见 §2.1） |
 | 汇率「更新于」 | 取**最近一次批量刷新中成功的那批** key 的最旧 `at`（`min(at)` over `lastBatch.okKeys ∩ 当前目标集合`），失败项只报数量、不拉低时间；含义是「这屏数据里最旧的有效数据到此为止」。不再用「本轮结束时刻」`Date.now()`。从未成功过的币种只计入失败数，不参与 `min` |
+| 账号 / 资料 TTL | `/account/getuser` 与 `/user/profile/{id}` 由 2 分钟缩短到 **10 秒**：游戏内旅行、换国籍、升级都会改这两个数据，而这两个接口只在功能读取时触发（无定时器），面板不开就几乎不请求。失败冷却维持 60 秒，避免失效凭据被打成高频重试 |
 
-说明：本期不动 `playerFeed` / `profileFeed`（2 分钟）与岗位页（2 分钟）的 TTL，它们与「换国后尽快更新」「岗位刷新」的既有口径绑定。若后续要求也统一 10 分钟，只改 §5 的 TTL 常量，但会延长换国后的置顶 / 高亮延迟。
+说明：`playerFeed` / `profileFeed` 本期改为 10 秒（见 §5），因为它们描述的是玩家自身状态，旅行 / 换国籍 / 升级都会立刻改变；读它们的都是用户触发的动作，`apiCache` 不轮询，所以请求量随交互而非时间增长。岗位页保持 2 分钟，与「刷新岗位」的既有口径绑定。
 
 ## 4. 请求层设计
 
@@ -136,8 +137,8 @@ apiCache.stats()                           // 调试：hit / join / miss / coold
 | 单国市场挂单 | `/market/get` + `{countryid}` | 10 分钟 | `goodsSnapshot` 的底层 |
 | 单国地区 | `/country/regions` + `{country_id}` | 10 分钟 | 由 5 分钟上调，流亡判断最迟 10 分钟跟上 |
 | 岗位页 | `/market/jobs/get` + `{country_id, page}` | 2 分钟 | 门槛不进 key |
-| 账号 | `/account/getuser` | 2 分钟 | 单例 |
-| 公开资料 | `/user/profile/{id}` | 2 分钟 | key 含 id |
+| 账号 | `/account/getuser` | **10 秒** | 单例；失败冷却仍 60 秒 |
+| 公开资料 | `/user/profile/{id}` | **10 秒** | key 含 id；失败冷却仍 60 秒 |
 | 接口用量 | `/account/apikey/usage` | 60 秒 | 新增，替代「每次进页面」 |
 
 ### 5.1 请求层与数据层的边界
@@ -198,6 +199,7 @@ apiCache.stats()                           // 调试：hit / join / miss / coold
 
 - [x] `ensureCountries` / `ensureTaxes` 改走 `apiCache`，补 60 秒失败冷却（页面级条目 `ttl: 'page'`，换凭据时保留）
 - [x] `playerFeed` / `profileFeed` 改走 `apiCache`，保留失败冷却与 `onAuth` 补拉
+- [x] `API_TTL.account` / `API_TTL.profile` 由 2 分钟改为 10 秒（失败冷却仍 60 秒）：两个接口只描述玩家自身状态，且只在功能读取时触发，不轮询
 - [x] `profileFeed` 换 id 时校验回写，丢弃旧账号结果
 - [x] 验收：切标签不发请求；401 后不刷屏重试；`taxFor` / `wageLawsFor` / `currencyOfCountry` 结果与改造前一致（离线桩测试 31 条断言全过）
 

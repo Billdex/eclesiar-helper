@@ -3289,7 +3289,8 @@
   /**
    * 请求层各类数据的 TTL（毫秒）。
    * 行情类（币种挂单、各国市场挂单、地区清单）统一 10 分钟，不做后台续期；
-   * 账号 / 岗位沿用既有 2 分钟（换国、改门槛后要尽快跟上）；
+   * 账号 / 公开资料 10 秒（旅行、换国籍、升级都会改，且只在读取时触发）；
+   * 岗位页沿用 2 分钟（改门槛只补缺失页）；
    * page 表示「一次页面只拉一次」，destroy 前不过期。
    */
   const API_TTL = {
@@ -3297,8 +3298,10 @@
     goods: 10 * 60 * 1000,
     regions: 10 * 60 * 1000,
     jobPage: 2 * 60 * 1000,
-    account: 2 * 60 * 1000,
-    profile: 2 * 60 * 1000,
+    // 账号与公开资料描述的是玩家自身状态（旅行 / 换国籍 / 升级都会改），
+    // 只在功能读取时触发、不轮询，所以给 10 秒也不会变成高频请求
+    account: 10 * 1000,
+    profile: 10 * 1000,
     usage: 60 * 1000,
     page: Infinity
   };
@@ -4966,7 +4969,7 @@
    */
   const playerFeed = (() => {
     /**
-     * 2 分钟缓存：换国家后最多 2 分钟就会重新读一次；期间不重复打接口。
+     * 10 秒缓存：旅行 / 换国籍后最多 10 秒就会重新读一次；期间不重复打接口。
      * 失败冷却 60 秒由 apiCache 负责（凭据没捕获到时不冷却，登录后要能立刻再问）。
      */
     const KEY = '/account/getuser';
@@ -5024,7 +5027,7 @@
 
   /**
    * profileFeed：玩家经济技能在公开资料页里，getuser 与 attributes.stats.economic_aptitude 都不是它。
-   * GET /user/profile/{account_id} 只取 economic_level，2 分钟缓存、失败冷却 60 秒。
+   * GET /user/profile/{account_id} 只取 economic_level，10 秒缓存、失败冷却 60 秒。
    * 公开资料接口支持专用密钥，所以这里沿用 apiClient.call 的默认凭据优先级，不强制 login。
    */
   const profileFeed = (() => {
@@ -6529,7 +6532,7 @@
       /**
        * 当前所在国家（playerFeed 的 countryId）：
        * 只取 id、只存内存，用来给列表里对应国家换一套配色（不置顶、不改排序）。
-       * 采购模式也要标，所以挂载就读一次；与「销售」的国籍读取共用同一份缓存（2 分钟）。
+       * 采购模式也要标，所以挂载就读一次；与「销售」的国籍读取共用同一份缓存（10 秒）。
        */
       const loadHere = () => {
         if (!alive || hereLoading) return;
@@ -7011,7 +7014,7 @@
        */
       const load = () => {
         if (!alive) return;
-        // 人可能已经换了国家：刷新时顺手重读一次（playerFeed 自带 2 分钟缓存）
+        // 人可能已经换了国家：刷新时顺手重读一次（playerFeed 自带 10 秒缓存）
         loadHere();
         if (mode === 'sell') {
           loadPlayer();
@@ -9179,7 +9182,7 @@
       let updatedAt = 0;
       let rows = [];
       let query = '';
-      /** 账号的国籍国 / 当前所在国（只存 id，来自 playerFeed，2 分钟缓存，两个模块共用）。 */
+      /** 账号的国籍国 / 当前所在国（只存 id，来自 playerFeed，10 秒缓存，两个模块共用）。 */
       let myHomeId = null;
       let myHereId = null;
 
@@ -9656,7 +9659,7 @@
 
       /**
        * 读一次账号的国籍国 / 当前所在国（只存 id，不存原始字段）。
-       * 走 playerFeed 的 2 分钟缓存，与「汇率」的置顶、「市场」的本国判断共用同一次请求。
+       * 走 playerFeed 的 10 秒缓存，与「汇率」的置顶、「市场」的本国判断共用同一次请求。
        */
       async function readPlayer() {
         let info = null;
@@ -9782,7 +9785,7 @@
                   })
               : Promise.resolve();
 
-            // 账号（国籍 / 当前位置）只认登录凭据，单独一次 POST /account/getuser（2 分钟缓存）
+            // 账号（国籍 / 当前位置）只认登录凭据，单独一次 POST /account/getuser（10 秒缓存）
             const playerJob = readPlayer();
 
             // 汇率与领土串着跑：两边都冷时各有一串请求，同时开会把并发推到 6，容易被 429
@@ -10296,7 +10299,7 @@
         });
       };
 
-      /** 账号字段只认登录凭据，走 playerFeed 的 2 分钟缓存；读不到时技能过滤与高亮自动降级。 */
+      /** 账号字段只认登录凭据，走 playerFeed 的 10 秒缓存；读不到时技能过滤与高亮自动降级。 */
       async function readPlayer() {
         let info = null;
         try {

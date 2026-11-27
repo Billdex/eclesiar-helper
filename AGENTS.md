@@ -33,13 +33,13 @@
 
 | 数据源 | 内容 | 缓存 | 使用方 |
 | --- | --- | --- | --- |
-| `apiCache`（请求层） | 接口级缓存与请求去重：key = 接口 + 规范化参数，负责 TTL、失败冷却、in-flight 合并、空结果标记、按前缀失效与「在途结果不落回旧缓存」 | 见 §5 `9.0`（行情 10 分钟、账号 / 岗位 2 分钟、用量 60 秒、国家清单与税率页面级） | 全部数据源 |
+| `apiCache`（请求层） | 接口级缓存与请求去重：key = 接口 + 规范化参数，负责 TTL、失败冷却、in-flight 合并、空结果标记、按前缀失效与「在途结果不落回旧缓存」 | 见 §5 `9.0`（行情 10 分钟、账号 / 公开资料 10 秒、岗位 2 分钟、用量 60 秒、国家清单与税率页面级） | 全部数据源 |
 | `coinBook` | 单币种挂单簿（`/market/coin/get`，买卖各一个 key）：`quote` / `ensureMany` / `load` 批次句柄 | 10 分钟（`API_TTL.coin`），失败冷却 60 秒 | 汇率、商品销售、税费折金、`marketBadge` |
 | `fxFeed` | 国家清单、税率与工资法；「汇率」面板的展示快照（`quotes` 只是 coinBook 的渲染视图） | 国家清单与税率页面级（`apiCache`），失败冷却 60 秒 | 汇率、商品销售、税费、`marketBadge`（国家清单） |
 | `goodsSnapshot` → `goodsFeed` | 各国市场行情，抓完 `publish` 给 `goodsFeed`；单国 `/market/get` 的解析结果存在 `apiCache` | 10 分钟（`GOODS_CACHE_MS` / `API_TTL.goods`），空市场也记 | 市场页、`goodsAuto`、`marketBadge` |
 | `regionFeed` | 国家 → 地区清单（底层 `apiCache`，`ensure` / `refresh` 两个入口） | 10 分钟 | 市场页领土检查、`regionJump`、工业、税费 |
-| `playerFeed` | 账号 id、国籍 id、所在国 id（只这三个字段） | 2 分钟，失败冷却 60 秒（`apiCache`） | 汇率置顶、商品销售、税费高亮、`marketBadge`、工作技能过滤取 id |
-| `profileFeed` | `GET /user/profile/{account_id}` 的 `economic_level`（公开资料，只取这一个字段） | 2 分钟，失败冷却 60 秒（`apiCache`，key 含 id） | 工商「工作」技能过滤 |
+| `playerFeed` | 账号 id、国籍 id、所在国 id（只这三个字段） | 10 秒，失败冷却 60 秒（`apiCache`） | 汇率置顶、商品销售、税费高亮、`marketBadge`、工作技能过滤取 id |
+| `profileFeed` | `GET /user/profile/{account_id}` 的 `economic_level`（公开资料，只取这一个字段） | 10 秒，失败冷却 60 秒（`apiCache`，key 含 id） | 工商「工作」技能过滤 |
 | 工作（页级缓存） | 遍历全部国家的 `GET /market/jobs/get?country_id=…&page=…` 岗位；缓存 key = 国家 + 页，门槛只决定读到第几页 | `apiCache` 2 分钟（空页也记），`destroy()` 后失效；不落盘 | 工商「工作」子面板 |
 
 - 所有数据请求统一走 `apiClient.call`（负责并发、凭据与错误分类），不要自己 `fetch`；该出口服务全插件，不只是行情。请求的缓存与去重统一交给 `apiCache`，不要在各数据源里再写一套。
@@ -80,7 +80,7 @@
 
 5. **数据与隐私**：不读取 Cookie 值，不上报任何数据，日志不打印玩家数据。允许读取的范围只有：
    - 登录 JWT：只从游戏发往 `api.eclesiar.com` 的请求头里捕获，仅存内存，不落盘、不打印、不上报；
-   - 账号字段：只读账号 id（`getuser` 的 `id`，仅用于拼公开资料地址）、国籍 id（`nationality.id` / `nationality_id`）与当前所在国 id（`region.country.id`），统一走 `playerFeed`（2 分钟缓存）；经济技能单独走 `GET /user/profile/{account_id}` 的 `economic_level`（`profileFeed`，2 分钟缓存），只存内存、不展示原值、不落盘、不打日志；
+   - 账号字段：只读账号 id（`getuser` 的 `id`，仅用于拼公开资料地址）、国籍 id（`nationality.id` / `nationality_id`）与当前所在国 id（`region.country.id`），统一走 `playerFeed`（10 秒缓存）；经济技能单独走 `GET /user/profile/{account_id}` 的 `economic_level`（`profileFeed`，10 秒缓存），只存内存、不展示原值、不落盘、不打日志；
    - 账号接口固定 `POST /account/getuser`（当前登录账号），必须传 `{ login: true }`：只认游戏登录凭据，带专用密钥会 401；`/account` 是按 `account_id` 查别人，不要用；响应里的 `bearer` 必须忽略。
    唯一允许落盘的凭据是玩家在「设置」页主动生成 / 粘贴的**专用 API 密钥**（`eclesiar_prod_…`，`localStorage` 键 `api-key`），插件请求优先用它；不得打印完整密钥，不得发给任何第三方。
    `sessionStorage` 只允许 `eh:market-intent`（跳转意图，10 分钟过期，消费后立即删除）与 `eh:debug`（地址上出现过 `eh-debug=1` 后置位，供 SPA 跳转丢 query 后继续打印调试日志）。其它持久化一律不允许。
