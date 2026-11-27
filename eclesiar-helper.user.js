@@ -4527,6 +4527,15 @@
       return entry.value.reduce((sum, level) => sum + level.qty, 0);
     }
 
+    /**
+     * 该币种买卖两侧是否都有**未过期**缓存。
+     * 「全命中就别跑一轮」的快路径用它判断，避免每个币种仍走一遍 ensure + 60ms 间隔，
+     * 让面板显示一轮根本不发请求的假进度。
+     */
+    function ready(currencyId) {
+      return apiCache.fresh(sideKey(currencyId, 'SELL')) && apiCache.fresh(sideKey(currencyId, 'BUY'));
+    }
+
     /** 并发跑一组任务（默认 3 并发 + 60ms 间隔，与接口的既有限速口径一致）。 */
     async function pool(tasks, worker) {
       let cursor = 0;
@@ -4625,6 +4634,8 @@
             if (handle.cancelled) return;
             const id = queue[cursor];
             cursor += 1;
+            // ensure 模式下两侧都命中缓存：不发请求，也不用等 60ms 的请求间隔
+            const cached = mode === 'ensure' && ready(id);
             let ok = true;
             try {
               await attempt(id);
@@ -4638,7 +4649,7 @@
             handle.progress = Object.assign({}, handle.progress, { done: handle.progress.done + 1 });
             step(id, !ok);
             if (typeof options.onProgress === 'function') options.onProgress(handle);
-            await fxSleep(FX_GAP);
+            if (!cached) await fxSleep(FX_GAP);
           }
         };
 
@@ -4733,6 +4744,7 @@
       bestPrice,
       sellCapacity,
       ensureMany,
+      ready,
       load,
       cancel() {
         if (batch) batch.cancelled = true;
@@ -4802,7 +4814,10 @@
     let taxesEntry = null;
     /** 「汇率」面板的展示快照（含 pending 行）；数据本身在 coinBook 里，这里只做渲染。 */
     let quotes = [];
+    /** 正在读行情（要发请求）：界面据此显示进度、禁用刷新按钮。 */
     let loading = false;
+    /** 已有一轮在跑（含「全部命中缓存、不发请求」的快路径），用来防重入。 */
+    let resolving = false;
     let error = null;
     /** 本次刷新国家清单失败、退回上一份清单时置位；只影响状态栏文案。 */
     let countriesStale = false;
@@ -4939,17 +4954,15 @@
      * （打开面板、别的标签要用汇率）。数据一律写进 coinBook，这里只维护 quotes 快照与状态。
      */
     function run(mode) {
-      if (loading) return promise;
+      if (resolving) return promise;
       if (apiClient.state !== 'ok') {
         error = { code: 'NO_TOKEN' };
         notify('state');
         return null;
       }
 
-      loading = true;
+      resolving = true;
       error = null;
-      progress = { phase: 'fetch', done: 0, total: 0, retryIndex: 0, retryTotal: 0 };
-      notify('state');
 
       promise = (async () => {
         try {
@@ -4962,8 +4975,40 @@
             throw empty;
           }
 
-          quotes = list;
+          // 全部命中 10 分钟缓存：直接从挂单簿拼快照。
+          // 否则仍会逐币种走 ensure + 60ms 间隔，面板上显示一轮根本不发请求的假进度。
+          if (mode === 'ensure' && list.every((item) => coinBook.ready(item.id))) {
+            const filled = [];
+            list.forEach((item) => {
+              const book = coinBook.quote(item.id);
+              if (!book || book.empty) return;
+              filled.push(
+                Object.assign({}, item, { asks: book.asks, bids: book.bids, status: 'ok' })
+              );
+            });
+            // 行集合没变就只刷新状态，别整表重建（切回本页时几乎零动作）
+            const same =
+              quotes.length === filled.length &&
+              filled.every((item, index) => quotes[index] && quotes[index].id === item.id);
+            if (!same) {
+              quotes = filled;
+              notify('reset');
+            }
+            progress = {
+              phase: 'idle',
+              done: filled.length,
+              total: filled.length,
+              retryIndex: 0,
+              retryTotal: 0
+            };
+            return;
+          }
+
+          loading = true;
           progress = { phase: 'fetch', done: 0, total: list.length, retryIndex: 0, retryTotal: 0 };
+          notify('state');
+
+          quotes = list;
           notify('reset');
 
           const handle = coinBook.load(list.map((item) => item.id), {
@@ -4992,6 +5037,7 @@
           };
           notify('reset');
         } finally {
+          resolving = false;
           loading = false;
           promise = null;
           notify('done');
@@ -5048,9 +5094,19 @@
       /**
        * 这屏数据里最旧的一份有效数据时间：取最近一次整批成功中、当前列表里那些货币的最旧值。
        * 不用「本轮结束时刻」，否则比真实数据新；长期失败的货币不参与，不拉低时间。
+       * 没有「整批成功」记录时（例如缓存是商品市场页标注单独补的）退回逐行取最旧。
        */
       get updatedAt() {
-        return coinBook.oldestAt(quotes.map((item) => item.id));
+        const ids = quotes.map((item) => item.id);
+        const fromBatch = coinBook.oldestAt(ids);
+        if (fromBatch) return fromBatch;
+        let oldest = 0;
+        ids.forEach((id) => {
+          const book = coinBook.quote(id);
+          if (!book || !book.at) return;
+          if (!oldest || book.at < oldest) oldest = book.at;
+        });
+        return oldest;
       },
       get error() {
         return error;

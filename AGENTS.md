@@ -174,6 +174,7 @@ scripts/release.sh                     # 合并推送后刷新 jsDelivr 缓存�
 - 不加 `force` 布尔：功能层直接调用 `refresh`，不要把「要不要绕过 TTL」包装成参数往数据层透传。页面级 key（国家清单 / 税率）由 `fxFeed.loadCountries(mode)` / `ensureTaxes` / `refreshTaxes` 两个入口分派。
 - `refresh` 不传 `opts` 时沿用该 key 上次登记的 `ttl` / `empty` 谓词 / `namespace`；新增 key 时仍然要显式传 `opts`。
 - 「更新于」一律取**这屏里最旧的一份数据时间**（`coinBook.oldestAt` / `regionFeed.atOf` / `goodsSnapshot.updatedAt`），不要用「本轮结束时刻」冒充新鲜度；`goodsSnapshot.checkedAt` 只用于「多久后再自动拉一轮」的调度。
+- 数据源在「这一批 key 全部命中、且都没过期」时要走快路径：直接从缓存条目拼装展示结构，**不要再逐个 key 走一遍 `ensure` 与并发间隔**。否则界面会出现一轮根本不发请求的假进度（汇率面板曾每次进页都显示「正在拉取挂单」，45 个币种白等近 1 秒）。判断用 `coinBook.ready(id)` 这类「两层侧是否 fresh」，不要用 `peek`。
 - 共享请求不透传调用方 `signal`：取消只表示「不再发起新 key」，已发出的请求不 abort（超时由 `apiClient.call` 的 10 秒负责）。
 - 空结果（无挂单 / 无地区 / 空岗位页）是有效缓存，用 `opts.empty` 标记；错误不写入缓存，只记失败时间用于冷却（`NO_TOKEN` / `UNAUTHORIZED` 不冷却，429 冷却 5 分钟，其余 60 秒）。
 - `apiCache` 不轮询、不起定时器，只被动响应 `ensure` / `refresh`；调试统计用 `?eh-debug=1` 或控制台 `EclesiarHelper.cache.stats()`。
