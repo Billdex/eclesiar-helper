@@ -2034,13 +2034,14 @@
 
   .eh-job-main { min-width: 0; }
 
-  /* 标题区：公司图标占满两行，第一行产业类型 + 公司名，第二行职位数 + 技能要求 */
+  /* 标题区：公司图标占满两行，第一行产业类型 + 公司名，第二行职位数 + 技能要求。
+     图标 28px + 5px 间距与底部两行的图标块（11 + 5 + 12）同宽同距，四行文字共用一个左边界 */
   .eh-job-title {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
     grid-template-rows: 14px 14px;
     align-items: center;
-    column-gap: 6px;
+    column-gap: 5px;
     row-gap: 1px;
   }
 
@@ -2088,8 +2089,9 @@
     white-space: nowrap;
   }
 
-  /* 雇主行与地区行是同一块底部信息：标记 11px + 标识 14px + 5px 间距，
-     两处间距必须一致，文字列才会落在同一条竖线上（改一处要同步改另一处） */
+  /* 雇主行与地区行是同一块底部信息：标记 11px + 5px 间距 + 标识 12px = 28px，
+     正好等于标题区公司图标的宽度，标识才不会顶出图标列；两处间距也必须一致，
+     文字列才会落在同一条竖线上（改一处要同步改另一处） */
   .eh-job-line {
     display: flex;
     align-items: center;
@@ -2116,8 +2118,8 @@
 
   .eh-job-owner-avatar {
     flex: none;
-    width: 14px;
-    height: 14px;
+    width: 12px;
+    height: 12px;
     border-radius: 50%;
     object-fit: cover;
     background: rgba(255, 255, 255, .06);
@@ -2127,12 +2129,12 @@
     display: inline-grid;
     flex: none;
     place-items: center;
-    width: 14px;
-    height: 14px;
+    width: 12px;
+    height: 12px;
     border-radius: 50%;
     background: rgba(255, 255, 255, .06);
     color: #9fadc2;
-    font-size: 10px;
+    font-size: 9px;
   }
 
   .eh-job-owner > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -2151,7 +2153,7 @@
   .eh-job-pin { flex: none; display: inline-flex; color: #7d8ba0; }
   .eh-job-pin svg { display: block; width: 11px; height: 11px; }
 
-  .eh-job-flag { width: 14px; height: 10px; font-size: 10px; }
+  .eh-job-flag { width: 12px; height: 9px; font-size: 9px; }
 
   .eh-job-loc-text {
     min-width: 0;
