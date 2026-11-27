@@ -2,7 +2,7 @@
 // @name         Eclesiar 助手
 // @name:en      Eclesiar Helper
 // @namespace    https://github.com/Billdex/eclesiar-helper
-// @version      0.2.0
+// @version      0.2.1
 // @description  Eclesiar 经济 / 政治计算辅助插件：悬浮球面板 + 全球汇率总览 + 各国市场商品金价比价与销售税后收益估算 + 各国地区工业数据总览，商品市场列表与上架表单直接标注折算金价，并可一键跳转该国的地区页面。
 // @description:en Eclesiar helper: floating panel + exchange rates + cross-market goods pricing and after-tax sale revenue in gold + a sortable overview of every region's industry data, plus one-click jumps to a country's regions.
 // @author       billdex
@@ -14,8 +14,8 @@
 // @homepageURL  https://github.com/Billdex/eclesiar-helper
 // @supportURL   https://github.com/Billdex/eclesiar-helper/issues
 // @source       https://github.com/Billdex/eclesiar-helper
-// @updateURL    https://cdn.jsdelivr.net/gh/Billdex/eclesiar-helper@main/eclesiar-helper.meta.js
-// @downloadURL  https://cdn.jsdelivr.net/gh/Billdex/eclesiar-helper@main/eclesiar-helper.user.js
+// @updateURL    https://cdn.jsdmirror.com/gh/Billdex/eclesiar-helper@main/eclesiar-helper.meta.js
+// @downloadURL  https://cdn.jsdmirror.com/gh/Billdex/eclesiar-helper@main/eclesiar-helper.user.js
 // ==/UserScript==
 
 /**
@@ -43,15 +43,31 @@
    * 1. 常量与工具
    * ========================================================================= */
 
-  const VERSION = '0.2.0';
+  const VERSION = '0.2.1';
   const REPO_URL = 'https://github.com/Billdex/eclesiar-helper';
-  /** jsDelivr 的 GitHub 镜像：国内可达，更新检查与安装都以它为主。 */
-  const CDN_RAW = 'https://cdn.jsdelivr.net/gh/Billdex/eclesiar-helper@main/';
-  /** GitHub raw 在国内常被拦，只作为备用。 */
+  /**
+   * JSDMirror：与 jsDelivr 路径完全兼容的国内镜像（腾讯 EdgeOne 多线节点，分支缓存只有 5 分钟），
+   * 下载与自动更新都以它为主。cdn.jsdelivr.net 在国内常被限速或拦截，只作为第一备源。
+   */
+  const CDN_RAW = 'https://cdn.jsdmirror.com/gh/Billdex/eclesiar-helper@main/';
+  /** jsDelivr 官方源：海外网络以及镜像不可用时的备源。 */
+  const JSDELIVR_RAW = 'https://cdn.jsdelivr.net/gh/Billdex/eclesiar-helper@main/';
+  /** JSDMirror 的备用域名（阿里 ESA），主域名解析异常时顶上。 */
+  const CDN_MIRROR_RAW = 'https://cdn.jsdmirror.cn/gh/Billdex/eclesiar-helper@main/';
+  /** GitHub raw 在国内常被拦，只作为最后备用。 */
   const REPO_RAW = 'https://raw.githubusercontent.com/Billdex/eclesiar-helper/main/';
-  /** 版本号只从元数据文件读，检查更新时不需要下载整个脚本。 */
-  const UPDATE_META_URLS = [CDN_RAW + 'eclesiar-helper.meta.js', REPO_RAW + 'eclesiar-helper.meta.js'];
+  /**
+   * 版本号只从元数据文件读，检查更新时不需要下载整个脚本。
+   * 几个源并行请求、取其中最高的版本号：某个源缓存落后（jsDelivr 分支最长 12 小时）也不会漏更新。
+   */
+  const UPDATE_META_URLS = [
+    CDN_RAW + 'eclesiar-helper.meta.js',
+    JSDELIVR_RAW + 'eclesiar-helper.meta.js',
+    CDN_MIRROR_RAW + 'eclesiar-helper.meta.js',
+    REPO_RAW + 'eclesiar-helper.meta.js'
+  ];
   const UPDATE_INSTALL_URL = CDN_RAW + 'eclesiar-helper.user.js';
+  const UPDATE_INSTALL_JSDELIVR = JSDELIVR_RAW + 'eclesiar-helper.user.js';
   const UPDATE_INSTALL_FALLBACK = REPO_RAW + 'eclesiar-helper.user.js';
   const NS = 'eclesiar-helper';
   const ROOT_ID = NS + '-root';
@@ -8234,33 +8250,46 @@
     return signal ? AbortSignal.any([signal, AbortSignal.timeout(UPDATE_CHECK_TIMEOUT)]) : AbortSignal.timeout(UPDATE_CHECK_TIMEOUT);
   }
 
+  /** CDN 都按完整 URL 缓存，带上时间戳才能绕开边缘节点里那份缓存了几小时的旧元数据。 */
+  function bustMetaUrl(url) {
+    return url + (url.indexOf('?') === -1 ? '?' : '&') + 'eh_t=' + Date.now();
+  }
+
+  /** 读一个源上的 @version；失败不抛错，交给上层用其它源，错误原样带回去便于区分超时。 */
+  async function readMetaVersion(url, signal) {
+    try {
+      const response = await window.fetch(bustMetaUrl(url), {
+        cache: 'no-cache',
+        credentials: 'omit',
+        signal: withTimeout(signal)
+      });
+      if (!response.ok) return { version: '', error: new Error('HTTP_' + response.status) };
+      const text = await response.text();
+      const match = /^\s*\/\/\s*@version\s+(\S+)/m.exec(text);
+      return match ? { version: match[1], error: null } : { version: '', error: new Error('BAD_META') };
+    } catch (err) {
+      return { version: '', error: err };
+    }
+  }
+
   /**
    * 只读取元数据文件里的 @version（几行注释而已），
    * 检查更新的流量与脚本体积无关，确认有新版本再让玩家手动安装。
-   * 每个源单独限时：raw 在某些网络下会一直挂着，不能让它吃掉备用源的时间。
+   * 几个源并行、各自限时：取其中最高的版本号，某个源缓存落后或挂住都不影响结论。
    */
   async function fetchLatestVersion(signal) {
-    let lastError = null;
-    for (let i = 0; i < UPDATE_META_URLS.length; i += 1) {
-      if (signal && signal.aborted) break;
-      try {
-        const response = await window.fetch(UPDATE_META_URLS[i], {
-          cache: 'no-cache',
-          credentials: 'omit',
-          signal: withTimeout(signal)
-        });
-        if (!response.ok) throw new Error('HTTP_' + response.status);
-        const text = await response.text();
-        const match = /^\s*\/\/\s*@version\s+(\S+)/m.exec(text);
-        if (!match) throw new Error('BAD_META');
-        return match[1];
-      } catch (err) {
-        // 外部主动取消（重新检查 / 关闭面板）要立刻停，单源超时则换下一个源
-        if (signal && signal.aborted) throw err;
-        lastError = err;
-      }
-    }
-    throw lastError || new Error('NO_SOURCE');
+    const results = await Promise.all(UPDATE_META_URLS.map((url) => readMetaVersion(url, signal)));
+    let latest = '';
+    let timedOut = false;
+    results.forEach((item) => {
+      if (item.version && compareVersions(item.version, latest) > 0) latest = item.version;
+      const name = item.error && item.error.name;
+      if (name === 'AbortError' || name === 'TimeoutError') timedOut = true;
+    });
+    if (latest) return latest;
+    const error = new Error(timedOut ? 'TIMEOUT' : 'NO_SOURCE');
+    error.timeout = timedOut;
+    throw error;
   }
 
   registerFeature({
@@ -8278,8 +8307,9 @@
           </div>
           <p class="eh-note" data-role="update-note" hidden></p>
           <p class="eh-links">
-            <a href="${UPDATE_INSTALL_URL}" target="_blank" rel="noopener noreferrer">手动安装（jsDelivr）</a>
-            <a href="${UPDATE_INSTALL_FALLBACK}" target="_blank" rel="noopener noreferrer">备用地址（GitHub）</a>
+            <a href="${UPDATE_INSTALL_URL}" target="_blank" rel="noopener noreferrer">手动安装（JSDMirror）</a>
+            <a href="${UPDATE_INSTALL_JSDELIVR}" target="_blank" rel="noopener noreferrer">备用（jsDelivr）</a>
+            <a href="${UPDATE_INSTALL_FALLBACK}" target="_blank" rel="noopener noreferrer">备用（GitHub）</a>
           </p>
         </div>
         <div class="eh-section">
@@ -8619,7 +8649,7 @@
         } catch (err) {
           if (!alive || controller !== current) return;
           const name = err && err.name;
-          const timeout = name === 'AbortError' || name === 'TimeoutError';
+          const timeout = Boolean(err && err.timeout) || name === 'AbortError' || name === 'TimeoutError';
           noteEl.hidden = false;
           noteEl.className = 'eh-note is-warn';
           noteEl.textContent = timeout
