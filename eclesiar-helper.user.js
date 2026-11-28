@@ -2,7 +2,7 @@
 // @name         Eclesiar 助手
 // @name:en      Eclesiar Helper
 // @namespace    https://github.com/Billdex/eclesiar-helper
-// @version      0.2.5
+// @version      0.2.7
 // @description  Eclesiar 经济 / 政治计算辅助插件：悬浮球面板 + 全球汇率总览 + 各国市场商品金价比价与销售税后收益估算 + 各国地区工业数据与税负 / 最低工资总览 + 各国招工信息按税后薪资金价排序，商品市场列表与上架表单直接标注折算金价，并可一键跳转游戏对应页面。
 // @description:en Eclesiar helper: floating panel + exchange rates + cross-market goods pricing and after-tax sale revenue in gold + sortable overviews of every region's industry data and every country's taxes and minimum wage + job listings ranked by after-tax pay in gold, plus one-click jumps to the matching game pages.
 // @author       billdex
@@ -43,7 +43,7 @@
    * 1. 常量与工具
    * ========================================================================= */
 
-  const VERSION = '0.2.5';
+  const VERSION = '0.2.7';
   const REPO_URL = 'https://github.com/Billdex/eclesiar-helper';
   /** 主源：jsDelivr 官方。自动更新与「安装更新」都以它为准，不接受任何第三方密钥。 */
   const CDN_RAW = 'https://cdn.jsdelivr.net/gh/Billdex/eclesiar-helper@main/';
@@ -2034,13 +2034,14 @@
 
   .eh-job-main { min-width: 0; }
 
-  /* 标题区：公司图标占满两行，第一行产业类型 + 公司名，第二行职位数 + 技能要求 */
+  /* 标题区：公司图标占满两行，第一行产业类型 + 公司名，第二行职位数 + 技能要求。
+     图标 28px + 5px 间距与底部两行的图标块（11 + 5 + 12）同宽同距，四行文字共用一个左边界 */
   .eh-job-title {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
     grid-template-rows: 14px 14px;
     align-items: center;
-    column-gap: 6px;
+    column-gap: 5px;
     row-gap: 1px;
   }
 
@@ -2075,7 +2076,19 @@
   }
 
   .eh-job-headline { grid-row: 1; }
-  .eh-job-subtitle { grid-row: 2; flex-wrap: wrap; gap: 3px 8px; font-size: 9.5px; color: #7d8ba0; }
+
+  /* 副标题 / 雇主 / 地区是同一种说明文字，字号、字重、颜色统一在这里定义，
+     各行不要再单独覆盖（地区行的配置是基准；500 是补齐 9.5px 下数字、拉丁
+     字母比中文显细的观感）。公司类型 .eh-job-type 单独着色，不在此列 */
+  .eh-job-subtitle,
+  .eh-job-owner,
+  .eh-job-loc-text {
+    font-size: 9.5px;
+    font-weight: 500;
+    color: #9fadc2;
+  }
+
+  .eh-job-subtitle { grid-row: 2; flex-wrap: wrap; gap: 3px 3px; }
 
   .eh-job-name {
     flex: 1 1 auto;
@@ -2088,34 +2101,33 @@
     white-space: nowrap;
   }
 
+  /* 雇主行与地区行是同一块底部信息：标记 11px + 5px 间距 + 标识 12px = 28px，
+     正好等于标题区公司图标的宽度，标识才不会顶出图标列；两处间距也必须一致，
+     文字列才会落在同一条竖线上（改一处要同步改另一处） */
   .eh-job-line {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 5px;
     min-width: 0;
     margin-top: 3px;
-    font-size: 9.5px;
-    color: #7d8ba0;
   }
 
   .eh-job-owner {
     display: inline-flex;
     flex: 0 1 auto;
     align-items: center;
-    gap: 4px;
+    gap: 5px;
     max-width: 100%;
     min-width: 0;
-    color: #7d8ba0;
-    font-size: 9.5px;
   }
 
-  .eh-job-owner-mark { flex: none; display: inline-flex; color: #7d8ba0; }
+  .eh-job-owner-mark { flex: none; display: inline-flex; color: #8d9bb0; }
   .eh-job-owner-mark svg { display: block; width: 11px; height: 11px; }
 
   .eh-job-owner-avatar {
     flex: none;
-    width: 14px;
-    height: 14px;
+    width: 12px;
+    height: 12px;
     border-radius: 50%;
     object-fit: cover;
     background: rgba(255, 255, 255, .06);
@@ -2125,12 +2137,12 @@
     display: inline-grid;
     flex: none;
     place-items: center;
-    width: 14px;
-    height: 14px;
+    width: 12px;
+    height: 12px;
     border-radius: 50%;
     background: rgba(255, 255, 255, .06);
     color: #9fadc2;
-    font-size: 10px;
+    font-size: 9px;
   }
 
   .eh-job-owner > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -2142,31 +2154,29 @@
     gap: 5px;
     margin-top: 3px;
     min-width: 0;
-    font-size: 9.5px;
-    color: #7d8ba0;
   }
 
-  .eh-job-pin { flex: none; display: inline-flex; color: #7d8ba0; }
+  .eh-job-pin { flex: none; display: inline-flex; color: #8d9bb0; }
   .eh-job-pin svg { display: block; width: 11px; height: 11px; }
 
-  .eh-job-flag { width: 14px; height: 10px; font-size: 10px; }
+  .eh-job-flag { width: 12px; height: 9px; font-size: 9px; }
 
   .eh-job-loc-text {
     min-width: 0;
     overflow: hidden;
-    font-size: 9.5px;
-    color: #9fadc2;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .eh-job-type {
-    padding: 0 5px;
-    border-radius: 4px;
-    background: rgba(201, 165, 74, .12);
-    color: #c9a54a;
-    line-height: 1.7;
+    color: #dcbb6b;
     white-space: nowrap;
+  }
+
+  /* 分隔点与地区行的「·」同款：字号、颜色都继承副标题，不再单独调暗调小 */
+  .eh-job-dot {
+    flex: none;
+    line-height: 1;
   }
 
   .eh-job-subtitle .eh-tax-mark { padding: 0 4px; font-size: 9px; }
@@ -2758,11 +2768,24 @@
       const btn = tabButtonFor(feature.id);
       if (btn) btn.focus();
     }
+
+    // 标签被显示时才通知：面板没开时切标签不该发请求
+    if (state.open && feature.__showHooks) {
+      feature.__showHooks.forEach((fn) => {
+        try {
+          fn();
+        } catch (err) {
+          warn('功能「' + feature.title + '」显示回调异常', err);
+        }
+      });
+    }
   }
 
   function createFeatureContext(feature) {
     const cleanups = [];
+    const showHooks = [];
     feature.__cleanups = cleanups;
+    feature.__showHooks = showHooks;
 
     return {
       version: VERSION,
@@ -2783,6 +2806,13 @@
       },
       onDestroy(fn) {
         if (typeof fn === 'function') cleanups.push(fn);
+      },
+      /**
+       * 这个标签每次被显示（面板重新打开 / 切到它）时调用一次。
+       * 用来把「什么时候去读」收在一处：命中 TTL 就不发请求，过期才重读。
+       */
+      onShow(fn) {
+        if (typeof fn === 'function') showHooks.push(fn);
       },
       log: (...args) => log('[' + feature.id + ']', ...args)
     };
@@ -3274,6 +3304,431 @@
    * 9. 内置功能
    * ========================================================================= */
 
+  /* -------- 9.0 数据访问层：接口级缓存与请求去重 -------- */
+
+  /**
+   * 请求层各类数据的 TTL（毫秒）。
+   * 行情类（币种挂单、各国市场挂单、地区清单）统一 10 分钟，不做后台续期；
+   * 账号 / 公开资料 10 秒（旅行、换国籍、升级都会改，且只在读取时触发）；
+   * 岗位页沿用 2 分钟（改门槛只补缺失页）；
+   * page 表示「一次页面只拉一次」，destroy 前不过期。
+   */
+  const API_TTL = {
+    coin: 10 * 60 * 1000,
+    goods: 10 * 60 * 1000,
+    regions: 10 * 60 * 1000,
+    jobPage: 2 * 60 * 1000,
+    // 账号与公开资料描述的是玩家自身状态（旅行 / 换国籍 / 升级都会改），
+    // 只在功能读取时触发、不轮询，所以给 10 秒也不会变成高频请求
+    account: 10 * 1000,
+    profile: 10 * 1000,
+    usage: 60 * 1000,
+    page: Infinity
+  };
+  /** 普通失败后的重试冷却：错误不写缓存，只在这段时间内不再问同一个 key。 */
+  const API_COOLDOWN = 60 * 1000;
+  /** 429 多半是当日额度用尽，冷却久一点，别把额度打光。 */
+  const API_COOLDOWN_429 = 5 * 60 * 1000;
+
+  /**
+   * 接口缓存（请求层）。key 只由「接口 + 参数」决定，不认功能：
+   * 谁能共享就给谁共享，功能层不再自己维护接口缓存。
+   *
+   * - ensure：命中即返回；同 key 有 in-flight 就合并；冷却期内直接失败
+   * - refresh：绕过 TTL 重新请求（给「刷新」按钮用），失败保留旧值并标 stale
+   * - peek / fresh：只读查询，fresh 才带 TTL 判断（判「要不要发请求」一律用 fresh）
+   * - invalidate：按前缀删除（凭据变化、明确丢弃旧数据）
+   * - clear：destroy / 换凭据时整体清空
+   *
+   * 不透传调用方的 signal：请求可能被多个面板共享，取消只意味着「不再发起新 key」，
+   * 已经发出的请求不会被某个调用方 abort；超时由 apiClient.call 负责。
+   * 也不起定时器：只被动响应 ensure / refresh，不轮询。
+   */
+  const apiCache = (() => {
+    /** key → { key, value, at, ttl, empty, emptyPick, stale, namespace, loader } */
+    const entries = new Map();
+    /** key → { at, code, retryAt }；错误不写缓存，只留失败时间用来冷却。 */
+    const failures = new Map();
+    /** key → promise */
+    const inflight = new Map();
+    const counters = { hit: 0, join: 0, miss: 0, cooldown: 0, refresh: 0, fail: 0, request: 0 };
+    /**
+     * 失效代数：`invalidate(prefix)` 给该前缀加一代，`clear()` 把 epoch 整体加一。
+     * 请求发出时记下当时的代数，回来时对不上就把结果丢掉——
+     * 否则「换凭据 / 丢弃旧数据」之后，在途的旧请求会把自己的结果又写回缓存。
+     * 按前缀记而不是按 key 记：在途请求的 key 还没进缓存，按 key 记不上。
+     */
+    let epoch = 0;
+    const prefixStamps = new Map();
+    const stampOf = (item) => {
+      let signature = String(epoch);
+      prefixStamps.forEach((value, prefix) => {
+        if (item.indexOf(prefix) === 0) signature += '|' + prefix + '@' + value;
+      });
+      return signature;
+    };
+
+    /** 参数按名排序后拼接，保证同样的调用得到同一个 key。 */
+    function key(path, params) {
+      const base = String(path == null ? '' : path);
+      if (!params) return base;
+      const pairs = Object.keys(params)
+        .filter((name) => params[name] !== undefined && params[name] !== null)
+        .sort()
+        .map((name) => name + '=' + String(params[name]));
+      return pairs.length ? base + '?' + pairs.join('&') : base;
+    }
+
+    /** ttl 可以写数字，也可以写 API_TTL 的键名。 */
+    const ttlOf = (opts) => {
+      const raw = opts && opts.ttl;
+      if (typeof raw === 'number') return raw;
+      if (typeof raw === 'string' && API_TTL[raw] != null) return API_TTL[raw];
+      return API_TTL.goods;
+    };
+
+    /** 空结果（无挂单 / 无地区 / 空岗位页）也是有效缓存，与「未加载」严格区分。 */
+    const isEmpty = (value, opts) => {
+      const pick = opts && opts.empty;
+      if (typeof pick === 'function') return pick(value) === true;
+      return Array.isArray(value) && value.length === 0;
+    };
+
+    /**
+     * 凭据问题不冷却（补到凭据后要能立刻重试）；
+     * 调用方显式给的 cooldown 优先；429 冷却 5 分钟；其它默认 60 秒。
+     */
+    const cooldownOf = (err, opts) => {
+      const code = err && err.code;
+      if (code === 'NO_TOKEN' || code === 'UNAUTHORIZED') return 0;
+      const custom = opts && opts.cooldown;
+      if (typeof custom === 'number') return custom;
+      if (code === 'HTTP' && String(err && err.message) === 'HTTP_429') return API_COOLDOWN_429;
+      return API_COOLDOWN;
+    };
+
+    /* ---- key 级订阅：缓存写入 / 删除后通知（学 SWR 的 cache 订阅） ---- */
+
+    /**
+     * 订阅「某个 key 的缓存变了」。test 可以是前缀字符串，也可以是 (key) => boolean；
+     * 回调收到本帧内变化的 key 数组（同一帧里几十个 key 只叫一次）。
+     * 只用来驱动界面重绘：回调里只读数据，别再发请求，否则容易自己触发自己。
+     */
+    const watchers = new Set();
+    const pendingKeys = new Set();
+    let flushQueued = false;
+
+    function notifyWatchers() {
+      flushQueued = false;
+      if (!pendingKeys.size) return;
+      const changed = [...pendingKeys];
+      pendingKeys.clear();
+      if (!watchers.size) return;
+      watchers.forEach((item) => {
+        let hit = null;
+        for (let i = 0; i < changed.length; i += 1) {
+          if (!item.test(changed[i])) continue;
+          if (!hit) hit = [];
+          hit.push(changed[i]);
+        }
+        if (!hit) return;
+        try {
+          item.fn(hit);
+        } catch (err) {
+          warn('缓存订阅回调异常', err);
+        }
+      });
+    }
+
+    /** 按帧合并：后台标签页里 rAF 会暂停，回退到 setTimeout（界面不可见，语义不变）。 */
+    function emitKey(item) {
+      pendingKeys.add(item);
+      if (flushQueued) return;
+      flushQueued = true;
+      if (typeof requestAnimationFrame === 'function') requestAnimationFrame(notifyWatchers);
+      else setTimeout(notifyWatchers, 16);
+    }
+
+    function watch(test, fn) {
+      if (typeof fn !== 'function') return () => {};
+      const match =
+        typeof test === 'function'
+          ? test
+          : (item) => item.indexOf(String(test == null ? '' : test)) === 0;
+      const item = { test: match, fn };
+      watchers.add(item);
+      return () => watchers.delete(item);
+    }
+
+    const writeEntry = (key, value, loader, opts) => {
+      const entry = {
+        key,
+        value,
+        at: Date.now(),
+        ttl: ttlOf(opts),
+        empty: isEmpty(value, opts),
+        // 空结果谓词留着：refresh 不传 opts 时要沿用同一套判定，别退回默认规则
+        emptyPick: opts && typeof opts.empty === 'function' ? opts.empty : null,
+        stale: false,
+        namespace: (opts && opts.namespace) || '',
+        loader
+      };
+      entries.set(key, entry);
+      failures.delete(key);
+      emitKey(key);
+      return entry;
+    };
+
+    /** 只清掉自己登记的那个 promise，避免把同 key 后续新起的请求一起抹掉。 */
+    const settle = (key, pending) => {
+      if (inflight.get(key) === pending) inflight.delete(key);
+    };
+
+    /**
+     * 真正发一次请求。loader 收到 key（便于由 key 反解参数），返回 Promise。
+     * 失败不写缓存；已有旧值时只标 stale，不删除（面板继续显示上次成功的数据）。
+     */
+    function run(key, loader, opts, mode) {
+      const mine = stampOf(key);
+      counters.request += 1;
+      if (DEBUG) log('apiCache', mode, key, '请求 #' + counters.request);
+
+      let pending;
+      pending = Promise.resolve()
+        .then(() => loader(key))
+        .then(
+          (value) => {
+            settle(key, pending);
+            // 期间被 invalidate / clear 过（换凭据 / destroy）：结果作废，别写回去
+            if (mine !== stampOf(key)) return null;
+            const entry = writeEntry(key, value, loader, opts);
+            if (DEBUG) log('apiCache', mode, key, '成功', entry.empty ? '（空结果）' : '');
+            return entry;
+          },
+          (err) => {
+            settle(key, pending);
+            if (mine !== stampOf(key)) throw err;
+            const wait = cooldownOf(err, opts);
+            if (wait > 0) {
+              const now = Date.now();
+              failures.set(key, { at: now, code: (err && err.code) || '', retryAt: now + wait });
+            }
+            counters.fail += 1;
+            const previous = entries.get(key);
+            if (previous) previous.stale = true;
+            if (DEBUG) {
+              log(
+                'apiCache',
+                mode,
+                key,
+                '失败',
+                (err && err.code) || err,
+                wait > 0 ? '冷却 ' + Math.round(wait / 1000) + 's' : '不冷却',
+                previous ? '（保留旧值）' : ''
+              );
+            }
+            throw err;
+          }
+        );
+      inflight.set(key, pending);
+      return pending;
+    }
+
+    /**
+     * 命中即返回（返回缓存条目 { value, at, empty, stale }，不是裸载荷）；
+     * 同 key 有 in-flight 就合并；冷却期内直接失败，不重复问同一个 key。
+     */
+    function ensure(key, loader, opts) {
+      const cached = entries.get(key);
+      if (cached && Date.now() - cached.at < cached.ttl) {
+        counters.hit += 1;
+        if (DEBUG) log('apiCache', 'ensure', key, 'hit');
+        return Promise.resolve(cached);
+      }
+      const joining = inflight.get(key);
+      if (joining) {
+        counters.join += 1;
+        if (DEBUG) log('apiCache', 'ensure', key, 'join');
+        return joining;
+      }
+      const blocked = failures.get(key);
+      if (blocked && Date.now() < blocked.retryAt) {
+        counters.cooldown += 1;
+        if (DEBUG) log('apiCache', 'ensure', key, 'cooldown');
+        const error = new Error('COOLDOWN');
+        error.code = 'COOLDOWN';
+        error.reason = blocked.code;
+        error.retryAt = blocked.retryAt;
+        return Promise.reject(error);
+      }
+      counters.miss += 1;
+      return run(key, loader, opts, 'ensure');
+    }
+
+    /**
+     * 忽略 TTL 重新请求；已有 in-flight 就复用（不并发第二次），失败不删旧值。
+     * 不传 opts 时沿用这个 key 上次登记的口径（ttl / empty 谓词 / namespace），
+     * 免得「少传一个 opts 就把 10 秒的账号缓存改写成 10 分钟」这类静默漂移。
+     * 批量刷新由各功能自己按并发跑（要进度与失败计数），这里不做批量入口。
+     */
+    function refresh(key, loader, opts) {
+      const joining = inflight.get(key);
+      if (joining) {
+        counters.join += 1;
+        if (DEBUG) log('apiCache', 'refresh', key, 'join');
+        return joining;
+      }
+      const previous = entries.get(key);
+      const pick = loader || (previous || {}).loader;
+      if (typeof pick !== 'function') {
+        const error = new Error('NO_LOADER');
+        error.code = 'NO_LOADER';
+        return Promise.reject(error);
+      }
+      const effective =
+        opts ||
+        (previous
+          ? { ttl: previous.ttl, namespace: previous.namespace, empty: previous.emptyPick || undefined }
+          : undefined);
+      counters.refresh += 1;
+      return run(key, pick, effective, 'refresh');
+    }
+
+    /**
+     * 按前缀删除（下次 ensure 才会重新请求）。这是「丢弃旧数据」，
+     * 只适用于凭据变化 / 明确要求重抓；面板上的「刷新」请用 refresh*。
+     */
+    function invalidate(prefix) {
+      const wanted = prefix == null || prefix === '' ? null : String(prefix);
+      let removed = 0;
+      const dropped = [];
+      // 先换代：在途请求回来时会因此丢弃结果，否则会把刚删掉的数据写回缓存
+      if (wanted) prefixStamps.set(wanted, (prefixStamps.get(wanted) || 0) + 1);
+      else epoch += 1;
+      [...entries.keys()].forEach((item) => {
+        if (wanted && item.indexOf(wanted) !== 0) return;
+        entries.delete(item);
+        dropped.push(item);
+        removed += 1;
+      });
+      [...failures.keys()].forEach((item) => {
+        if (wanted && item.indexOf(wanted) !== 0) return;
+        failures.delete(item);
+      });
+      // 删掉的条目也要通知：订阅方得知道「这份数据没了」，而不是继续显示旧快照
+      dropped.forEach(emitKey);
+      if (DEBUG && removed) log('apiCache', 'invalidate', wanted || '*', '删除 ' + removed + ' 条');
+      return removed;
+    }
+
+    /**
+     * 整体清空：destroy() 用。
+     * keepPage=true 时保留页面级条目（国家清单 / 税率），凭据变化走这个——
+     * 那些数据与凭据无关，没必要因为换了密钥再拉一遍。
+     */
+    function clear(keepPage) {
+      const kept = new Map();
+      const dropped = [];
+      entries.forEach((entry, item) => {
+        // keepPage 时页面级条目（国家清单 / 税率）与凭据无关，保留且不通知
+        if (keepPage && entry.ttl === Infinity) kept.set(item, entry);
+        else dropped.push(item);
+      });
+      epoch += 1;
+      prefixStamps.clear();
+      entries.clear();
+      kept.forEach((entry, item) => entries.set(item, entry));
+      failures.clear();
+      inflight.clear();
+      dropped.forEach(emitKey);
+      // 整体清空（destroy）时连计数一起归零，方便验收「destroy 后 stats 归零」
+      if (!keepPage) resetStats();
+    }
+
+    /** 只读查询，不触发请求。 */
+    function peek(item) {
+      const entry = entries.get(item);
+      if (!entry) return null;
+      return { value: entry.value, at: entry.at, empty: entry.empty, stale: entry.stale };
+    }
+
+    /**
+     * 该 key 是否已有**未过期**的缓存（只读，不触发请求）。
+     * 与 peek 的区别：peek 只看「有没有这条」，判「要不要发请求」必须用这个，
+     * 否则过期条目会被当成命中，明明会发请求却不计入请求上限。
+     */
+    function fresh(item) {
+      const entry = entries.get(item);
+      return Boolean(entry) && Date.now() - entry.at < entry.ttl;
+    }
+
+    /** 该 key 是否已有在途请求（「刷新」想在它结束后补一次时用）。 */
+    function busy(item) {
+      return inflight.has(item);
+    }
+
+    function stats() {
+      return {
+        hit: counters.hit,
+        join: counters.join,
+        miss: counters.miss,
+        cooldown: counters.cooldown,
+        refresh: counters.refresh,
+        fail: counters.fail,
+        /** 逻辑请求数（apiClient 内部兜底重试之前），用来对比迁移前后的请求量。 */
+        request: counters.request,
+        entries: entries.size,
+        failures: failures.size,
+        inflight: inflight.size,
+        /** 订阅方数量：用来确认面板 destroy 后没有残留订阅。 */
+        watchers: watchers.size
+      };
+    }
+
+    /** 一轮结束后打一条汇总（?eh-debug=1 下用来对比迁移前后的真实请求数）。 */
+    function report(label) {
+      const snapshot = stats();
+      if (DEBUG) {
+        log(
+          'apiCache 汇总' + (label ? '（' + label + '）' : ''),
+          '请求 ' + snapshot.request,
+          'hit ' + snapshot.hit,
+          'join ' + snapshot.join,
+          'miss ' + snapshot.miss,
+          'cooldown ' + snapshot.cooldown,
+          'refresh ' + snapshot.refresh,
+          'fail ' + snapshot.fail,
+          '条目 ' + snapshot.entries
+        );
+      }
+      return snapshot;
+    }
+
+    /** 调试用：计数清零，便于只看某一轮。 */
+    function resetStats() {
+      Object.keys(counters).forEach((name) => {
+        counters[name] = 0;
+      });
+      return stats();
+    }
+
+    return {
+      key,
+      peek,
+      fresh,
+      busy,
+      ensure,
+      refresh,
+      invalidate,
+      clear,
+      /** 订阅 key 级缓存变化（前缀或谓词）；返回退订函数，必须挂到 ctx.onDestroy。 */
+      watch,
+      stats,
+      report,
+      resetStats
+    };
+  })();
+
   /* -------- 9.1 汇率总览：接口、凭据与计算 -------- */
 
   const FX_API = 'https://api.eclesiar.com';
@@ -3427,12 +3882,14 @@
   const fxSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
   /**
-   * 市场接口凭据。
+   * 统一请求出口与凭据。
+   * 插件所有数据请求都从这里发出（行情、账号、地区、岗位、设置页用量都一样），
+   * 不只是「市场接口」：`/market` 只是其中一个接口前缀。
    * 登录 JWT 只从游戏自己发往 api.eclesiar.com 的请求里读取，仅保存在内存中：
    * 不写 localStorage、不打日志、不上报。
    * 若用户在「设置」页保存了专用 API 密钥，则所有插件请求优先用它。
    */
-  const market = (() => {
+  const apiClient = (() => {
     let loginToken = '';
     let seenAuth = false;
     let expired = false;
@@ -3652,6 +4109,8 @@
           loginToken = '';
           expired = true;
         }
+        // 凭据失效：会过期的缓存全部作废，别拿旧凭据的数据继续显示
+        dropSessionCache();
         const error = new Error('UNAUTHORIZED');
         error.code = 'UNAUTHORIZED';
         error.source = usingApiKey ? 'api' : 'login';
@@ -3719,6 +4178,8 @@
         throw error;
       }
       apiExpired = false;
+      // 换了密钥：之前用旧凭据拉到的数据作废，下次进面板重新拉
+      dropSessionCache();
       return apiKey.value;
     }
 
@@ -3749,24 +4210,27 @@
       setKey(raw) {
         if (!apiKey.set(raw)) return false;
         apiExpired = false;
+        // 换了密钥：之前用旧凭据拉到的数据作废
+        dropSessionCache();
         return true;
       },
       /** 移除已保存的密钥，回到使用登录凭据。 */
       clearKey() {
         apiKey.clear();
         apiExpired = false;
+        dropSessionCache();
       }
     };
   })();
 
   /** 凭据不可用时的统一提示，汇率与商品共用。 */
   function authHint() {
-    if (market.mode === 'api') {
-      return market.state === 'expired'
+    if (apiClient.mode === 'api') {
+      return apiClient.state === 'expired'
         ? '专用 API 密钥已失效，请到「设置」页重新生成。'
         : '专用 API 密钥暂不可用，请到「设置」页检查。';
     }
-    const state = market.state;
+    const state = apiClient.state;
     if (state === 'expired') return '登录凭据已失效，请刷新游戏页面后再试。';
     if (state === 'unsupported') return '抓到接口请求了，但凭据格式不是 Bearer，请刷新游戏页面后再试。';
     return '尚未拿到登录凭据：先在游戏里打开任意页面（触发一次接口请求），再点「刷新行情」。';
@@ -3776,6 +4240,22 @@
   function quotaHint(err) {
     if (!err || err.code !== 'HTTP' || String(err.message) !== 'HTTP_429') return '';
     return '接口返回 429（请求过多或已达当日查询上限），可到「设置」页生成专用密钥后再试。';
+  }
+
+  /**
+   * 失败原因给玩家看的一句话。
+   * COOLDOWN 不是「接口挂了」，而是「刚失败过，冷却中」，要说清还有多久能重试，
+   * 并把上一次的真实原因（例如 429）带出来，否则刷新按钮点下去只会看到无意义的英文码。
+   */
+  function fetchErrorText(err) {
+    if (!err) return '未知错误';
+    if (err.code === 'COOLDOWN') {
+      const left = Math.max(1, Math.ceil(((err.retryAt || 0) - Date.now()) / 1000));
+      const tail = String(err.reason) === 'HTTP_429' ? '（上次返回 429，可能已达当日查询上限）' : '';
+      return '上次请求失败，冷却中，约 ' + left + ' 秒后可重试' + tail;
+    }
+    if (err.code === 'NO_LOADER') return '缓存条目缺少加载器，请刷新游戏页面';
+    return err.message || '未知错误';
   }
 
   /** countries/summary → 只保留有独立法币的国家，跳过 Gold 与海盗/世界实体。 */
@@ -3794,34 +4274,6 @@
       });
     });
     return [...seen.values()];
-  }
-
-  /**
-   * 统一两侧挂单的口径：价格一律换成「黄金 / 1 单位法币」，数量换成可成交黄金量。
-   * SELL 单：amount 是法币数量，rate 本身就是 黄金/法币。
-   * BUY 单：amount 是黄金数量，rate 是 法币/黄金，价格要取倒数。
-   */
-  function fxBook(sellOrders, buyOrders) {
-    const read = (list) =>
-      (Array.isArray(list) ? list : [])
-        .map((order) => ({
-          rate: Number(order && order.rate),
-          amount: Number(order && order.amount)
-        }))
-        .filter(
-          (order) =>
-            Number.isFinite(order.rate) && order.rate > 0 && Number.isFinite(order.amount) && order.amount > 0
-        );
-
-    const asks = read(sellOrders)
-      .map((order) => ({ price: order.rate, qty: order.amount, gold: order.amount * order.rate }))
-      .sort((a, b) => a.price - b.price);
-
-    const bids = read(buyOrders)
-      .map((order) => ({ price: 1 / order.rate, qty: order.amount * order.rate, gold: order.amount }))
-      .sort((a, b) => b.price - a.price);
-
-    return { asks, bids };
   }
 
   /** 沿最优档位逐档吃单，凑够 goldBudget 黄金，给出成交量加权成本。 */
@@ -3983,13 +4435,362 @@
     return wrap;
   }
 
-  /* -------- 9.2 汇率数据源：两个标签共用一份缓存 -------- */
+  /* -------- 9.2 汇率数据源：挂单簿 + 国家 / 税率 -------- */
 
-  /** 汇率缓存的有效期：两个标签共用一份行情，超过这个时间才重新拉。 */
-  const FX_CACHE_MS = 10 * 60 * 1000;
+  const COIN_PATH = '/market/coin/get';
 
   /**
-   * 汇率数据源：全局只保留一份行情，供「汇率」与「市场」共用。
+   * 单侧挂单归一：价格一律换成「黄金 / 1 单位法币」，数量换成可成交黄金量。
+   * SELL 单：rate 就是 黄金/法币，amount 是法币数量；
+   * BUY 单：rate 是 法币/黄金，取倒数才是价格，amount 是黄金数量。
+   */
+  function fxLevels(orders, side) {
+    const read = (Array.isArray(orders) ? orders : [])
+      .map((order) => ({
+        rate: Number(order && order.rate),
+        amount: Number(order && order.amount)
+      }))
+      .filter(
+        (order) =>
+          Number.isFinite(order.rate) && order.rate > 0 && Number.isFinite(order.amount) && order.amount > 0
+      );
+
+    if (side === 'BUY') {
+      return read
+        .map((order) => ({ price: 1 / order.rate, qty: order.amount * order.rate, gold: order.amount }))
+        .sort((a, b) => b.price - a.price);
+    }
+    return read
+      .map((order) => ({ price: order.rate, qty: order.amount, gold: order.amount * order.rate }))
+      .sort((a, b) => a.price - b.price);
+  }
+
+  /**
+   * 单币种挂单簿：每个币种的买卖两侧各占一个 apiCache key（10 分钟、各自独立）。
+   * - `quote(id)` / `side(id, transaction)`：同步读，不触发请求；
+   * - `ensureMany(ids)`：补齐缺失的一侧（命中缓存就不发请求）；
+   * - `load(ids, hooks)`：跑一轮（默认绕过 TTL），返回**批次句柄**驱动进度 / 重试 / 失败 / 429。
+   * 批次句柄随调用栈消失，不常驻；「更新于」与「有没有挂单」都从 key 自身读。
+   */
+  const coinBook = (() => {
+    const OPTS = { ttl: 'coin', namespace: 'coin' };
+    /** 一轮里最多串行补跑几个失败项：失败面过大时是整体故障，逐个补只会拖长等待。 */
+    const RETRY_LIMIT = 8;
+    /** 最近一次**成功批**（失败项已剔除）：一条没成功就保留上一次，没成功过就是空的（只存内存）。 */
+    let lastBatch = { startedAt: 0, okKeys: [], okAt: new Map() };
+    /** 正在跑的批次句柄（同一时刻只有一轮）。 */
+    let batch = null;
+
+    const sideKey = (currencyId, side) =>
+      apiCache.key(COIN_PATH, { currency_id: String(currencyId), transaction: side });
+
+    const loaderFor = (currencyId, side) => () =>
+      apiClient
+        .call(COIN_PATH, { form: { currency_id: currencyId, transaction: side } })
+        .then((orders) => fxLevels(orders, side));
+
+    /** 单侧缓存条目 { value, at, empty, stale } 或 null。 */
+    const side = (currencyId, transaction) => apiCache.peek(sideKey(currencyId, transaction));
+
+    /** 合并两侧；两侧都还没拉过时返回 null（区分「没数据」与「没加载过」）。 */
+    function quote(currencyId) {
+      const sell = side(currencyId, 'SELL');
+      const buy = side(currencyId, 'BUY');
+      if (!sell && !buy) return null;
+      const asks = sell ? sell.value : [];
+      const bids = buy ? buy.value : [];
+      const stamps = [sell, buy].filter(Boolean).map((entry) => entry.at);
+      return {
+        id: Number(currencyId),
+        asks,
+        bids,
+        /** 两侧里较早的那份时间：这行数据最旧到此为止。 */
+        at: Math.min.apply(null, stamps),
+        empty: asks.length === 0 && bids.length === 0,
+        /** 有一侧没拉到（失败 / 还没拉过），不代表那一侧没有挂单。 */
+        partial: !sell || !buy,
+        stale: Boolean((sell && sell.stale) || (buy && buy.stale))
+      };
+    }
+
+    /** 最优买价（吃卖单）/ 最优卖价（吃买单）；没有该方向挂单时 null。 */
+    function bestPrice(currencyId, transaction) {
+      const entry = side(currencyId, transaction);
+      if (!entry || !entry.value.length) return null;
+      return entry.value[0].price;
+    }
+
+    /** 该国货币在当前买单里还能吃下多少（法币数量），用于提示换汇深度不足。 */
+    function sellCapacity(currencyId) {
+      const entry = side(currencyId, 'BUY');
+      if (!entry) return 0;
+      return entry.value.reduce((sum, level) => sum + level.qty, 0);
+    }
+
+    /**
+     * 该币种买卖两侧是否都有**未过期**缓存。
+     * 「全命中就别跑一轮」的快路径用它判断，避免每个币种仍走一遍 ensure + 60ms 间隔，
+     * 让面板显示一轮根本不发请求的假进度。
+     */
+    function ready(currencyId) {
+      return apiCache.fresh(sideKey(currencyId, 'SELL')) && apiCache.fresh(sideKey(currencyId, 'BUY'));
+    }
+
+    /** 并发跑一组任务（默认 3 并发 + 60ms 间隔，与接口的既有限速口径一致）。 */
+    async function pool(tasks, worker) {
+      let cursor = 0;
+      const lanes = Array.from({ length: Math.min(FX_CONCURRENCY, tasks.length) }, async () => {
+        while (cursor < tasks.length) {
+          const task = tasks[cursor];
+          cursor += 1;
+          await worker(task);
+          await fxSleep(FX_GAP);
+        }
+      });
+      await Promise.all(lanes);
+    }
+
+    const tasksOf = (ids) => {
+      const out = [];
+      ids.forEach((id) => {
+        out.push({ id, side: 'SELL' }, { id, side: 'BUY' });
+      });
+      return out;
+    };
+
+    /** 补齐若干货币的两侧挂单（命中 10 分钟缓存就不发请求）。返回失败集合。 */
+    async function ensureMany(ids) {
+      const list = [...new Set((Array.isArray(ids) ? ids : []).map(Number).filter(Boolean))];
+      const failed = [];
+      await pool(tasksOf(list), async (task) => {
+        try {
+          await apiCache.ensure(sideKey(task.id, task.side), loaderFor(task.id, task.side), OPTS);
+        } catch (err) {
+          if (err && err.code === 'UNAUTHORIZED') throw err;
+          failed.push(sideKey(task.id, task.side));
+        }
+      });
+      return { failedKeys: failed, limited: false };
+    }
+
+    /**
+     * 跑一轮挂单刷新，返回批次句柄：
+     * { startedAt, progress, failedIds, failedKeys, limited, cancelled, done, promise }。
+     * mode='refresh' 绕过 TTL（「刷新行情」），mode='ensure' 命中缓存（打开面板）。
+     * 失败项按旧口径串行补一轮；整批都成功才更新 lastBatch。
+     */
+    function load(ids, hooks) {
+      if (batch) return batch;
+      const options = hooks || {};
+      const mode = options.mode === 'ensure' ? 'ensure' : 'refresh';
+      const queue = [...new Set((Array.isArray(ids) ? ids : []).map(Number).filter(Boolean))];
+      const handle = {
+        startedAt: Date.now(),
+        progress: { phase: 'fetch', done: 0, total: queue.length, retryIndex: 0, retryTotal: 0 },
+        failedIds: [],
+        failedKeys: [],
+        limited: false,
+        cancelled: false,
+        done: false,
+        promise: null
+      };
+      batch = handle;
+
+      /**
+       * force=true 时绕过 TTL 也绕过失败冷却（补跑阶段用）。
+       * ensure 模式下的补跑必须走 refresh：ensure 会直接命中上一轮留下的冷却，
+       * 补跑变成一次立即失败，「串行补一次」名存实亡。
+       */
+      const pull = (task, force) => {
+        const key = sideKey(task.id, task.side);
+        const loader = loaderFor(task.id, task.side);
+        if (mode === 'ensure' && force !== true) return apiCache.ensure(key, loader, OPTS);
+        return apiCache.refresh(key, loader, OPTS);
+      };
+
+      const attempt = async (id, force) => {
+        await Promise.all(
+          ['SELL', 'BUY'].map((one) => pull({ id, side: one }, force))
+        );
+      };
+
+      const step = (id, failed) => {
+        if (typeof options.onRow === 'function') {
+          try {
+            options.onRow(id, failed);
+          } catch (err) {
+            warn('汇率行回调异常', err);
+          }
+        }
+      };
+
+      handle.promise = (async () => {
+        const failed = [];
+        /** 本轮每个失败 id 的原始错误：补跑阶段据此跳过 429（额度已满，再补只会更糟）。 */
+        const failureCodes = new Map();
+        let cursor = 0;
+        const worker = async () => {
+          while (cursor < queue.length) {
+            if (handle.cancelled) return;
+            const id = queue[cursor];
+            cursor += 1;
+            // ensure 模式下两侧都命中缓存：不发请求，也不用等 60ms 的请求间隔
+            const cached = mode === 'ensure' && ready(id);
+            let ok = true;
+            try {
+              await attempt(id);
+            } catch (err) {
+              if (err && err.code === 'UNAUTHORIZED') throw err;
+              if (err && err.code === 'HTTP' && String(err.message) === 'HTTP_429') handle.limited = true;
+              ok = false;
+              failureCodes.set(id, err);
+              failed.push(id);
+            }
+            handle.progress = Object.assign({}, handle.progress, { done: handle.progress.done + 1 });
+            step(id, !ok);
+            if (typeof options.onProgress === 'function') options.onProgress(handle);
+            if (!cached) await fxSleep(FX_GAP);
+          }
+        };
+
+        try {
+          await Promise.all(
+            Array.from({ length: Math.min(FX_CONCURRENCY, queue.length) }, () => worker())
+          );
+
+          // 失败多半是瞬时网络抖动 / 5xx：串行补一次，仍失败才计入结果。
+          // 429 不补（额度已满，再发只会更糟）；失败面过大时也不补（多半是整体故障，
+          // 逐个补会把「打开面板」拖成几分钟的等待）。
+          if (!handle.cancelled && failed.length) {
+            const skipped = failed.filter((id) => {
+              const err = failureCodes.get(id);
+              return err && err.code === 'HTTP' && String(err.message) === 'HTTP_429';
+            });
+            const retryable = failed.filter((id) => skipped.indexOf(id) === -1);
+            const untouched = retryable.slice(RETRY_LIMIT);
+            let left = retryable.slice(0, RETRY_LIMIT);
+            handle.progress = Object.assign({}, handle.progress, {
+              phase: 'retry',
+              retryIndex: 0,
+              retryTotal: left.length
+            });
+            if (typeof options.onProgress === 'function') options.onProgress(handle);
+            for (let i = 0; i < left.length; i += 1) {
+              if (handle.cancelled) break;
+              const id = left[i];
+              handle.progress = Object.assign({}, handle.progress, { retryIndex: i + 1 });
+              try {
+                await attempt(id, true);
+                left = left.filter((item) => item !== id);
+                step(id, false);
+              } catch (err) {
+                if (err && err.code === 'UNAUTHORIZED') throw err;
+                if (err && err.code === 'HTTP' && String(err.message) === 'HTTP_429') handle.limited = true;
+                step(id, true);
+              }
+              if (typeof options.onProgress === 'function') options.onProgress(handle);
+              await fxSleep(FX_GAP * 3);
+            }
+            failed.length = 0;
+            // 补成功的从失败集合里摘掉；429 跳过的、超出补跑上限的仍算失败
+            left.forEach((id) => failed.push(id));
+            untouched.forEach((id) => failed.push(id));
+            skipped.forEach((id) => failed.push(id));
+          }
+
+          handle.failedIds = handle.cancelled ? [] : failed.slice();
+          handle.failedKeys = handle.failedIds.map((id) => sideKey(id, 'SELL'));
+
+          // 「最近一次成功」按本轮真正成功的货币覆盖式更新：个别币种长期失败时，
+          // 只把它们从集合里剔除，不能让「更新于」永远冻结在上一次整轮成功的时间。
+          // batch !== handle 说明这一轮已经被 reset / 换成新批次，旧结果不许回写。
+          if (!handle.cancelled && batch === handle) {
+            const okIds = queue.filter((id) => failed.indexOf(id) === -1);
+            if (okIds.length) {
+              const okAt = new Map();
+              okIds.forEach((id) => {
+                const sell = side(id, 'SELL');
+                const buy = side(id, 'BUY');
+                const stamps = [sell, buy].filter(Boolean).map((entry) => entry.at);
+                if (stamps.length) okAt.set(String(id), Math.min.apply(null, stamps));
+              });
+              lastBatch = {
+                startedAt: handle.startedAt,
+                okKeys: okIds.map((id) => sideKey(id, 'SELL')),
+                okAt
+              };
+            }
+          }
+        } finally {
+          // 无论正常结束还是被 UNAUTHORIZED 打断，都要把批次复位，
+          // 否则 batch 永久非空，之后每次 load() 都会拿到这个已结束的旧句柄。
+          handle.progress = Object.assign({}, handle.progress, {
+            phase: 'idle',
+            retryIndex: 0,
+            retryTotal: 0
+          });
+          handle.done = true;
+          if (batch === handle) batch = null;
+        }
+        return handle;
+      })();
+
+      return handle;
+    }
+
+    return {
+      quote,
+      side,
+      bestPrice,
+      sellCapacity,
+      ensureMany,
+      ready,
+      load,
+      cancel() {
+        if (batch) batch.cancelled = true;
+      },
+      /** 凭据变化 / destroy：连「最近一次成功」的时间一起丢掉，别拿旧数据报「更新于」。 */
+      reset() {
+        // 同时标记旧批次取消：缓存已清空，继续跑只会把每一行都算成失败
+        if (batch) batch.cancelled = true;
+        batch = null;
+        lastBatch = { startedAt: 0, okKeys: [], okAt: new Map() };
+      },
+      get last() {
+        return lastBatch;
+      },
+      /**
+       * 最近一次成功批里、当前这批货币中最旧的一份数据时间；一次都没成功过返回 0。
+       * 长期失败 / 从未成功的货币不参与，免得把时间无限拉低。
+       */
+      oldestAt(ids) {
+        let oldest = 0;
+        (Array.isArray(ids) ? ids : []).forEach((id) => {
+          const at = lastBatch.okAt.get(String(id));
+          if (!at) return;
+          if (!oldest || at < oldest) oldest = at;
+        });
+        return oldest;
+      }
+    };
+  })();
+
+  /**
+   * 凭据变化（生成 / 保存 / 移除密钥、401）：丢掉会过期的接口缓存，
+   * 连同「最近一次成功」的行情时间；页面级条目（国家清单 / 税率）与凭据无关，保留。
+   * 展示快照与解析结果也要一起清：否则面板会同时挂着旧价格和「还没有行情数据」。
+   */
+  function dropSessionCache() {
+    apiCache.clear(true);
+    coinBook.reset();
+    fxFeed.reset();
+    playerFeed.reset();
+    profileFeed.reset();
+  }
+
+  /**
+   * 汇率数据源：国家清单 / 税率，以及「汇率」面板用的展示视图（quotes）。
+   * quotes 只是 coinBook 的渲染快照，不是缓存：数据一律回 coinBook 读。
    * 订阅回调签名 (kind, quote)：
    *   reset —— quotes 整体替换，订阅方需要重建列表；
    *   row   —— 单个货币的数据 / 状态变化；
@@ -3999,19 +4800,28 @@
    */
   const fxFeed = (() => {
     const listeners = new Set();
+    /** 国家清单与税率都是页面级缓存：一次页面只拉一次，底层由 apiCache 去重与冷却。 */
+    const COUNTRIES_KEY = '/countries/summary';
+    const TAXES_KEY = '/countries';
+    const PAGE_OPTS = { ttl: 'page', namespace: 'countries' };
     let countries = null;
-    let countriesPromise = null;
+    /** 解析结果用条目对象本身做「版本」：条目被 invalidate / 刷新后换成新对象，重新解析一次。 */
+    let countriesEntry = null;
     /** 国家 id → { vat, importTax }（百分数，10 表示 10%）；只在「销售」视图用得到。 */
     let taxes = null;
     /** 国家 id → { workTax, minWage }；「税费」子面板用得到，和 taxes 来自同一次 /countries 请求。 */
     let wageLaws = null;
-    let taxesPromise = null;
+    let taxesEntry = null;
+    /** 「汇率」面板的展示快照（含 pending 行）；数据本身在 coinBook 里，这里只做渲染。 */
     let quotes = [];
-    let updatedAt = 0;
+    /** 正在读行情（要发请求）：界面据此显示进度、禁用刷新按钮。 */
     let loading = false;
+    /** 已有一轮在跑（含「全部命中缓存、不发请求」的快路径），用来防重入。 */
+    let resolving = false;
     let error = null;
+    /** 本次刷新国家清单失败、退回上一份清单时置位；只影响状态栏文案。 */
+    let countriesStale = false;
     let progress = { phase: 'idle', done: 0, total: 0, retryIndex: 0, retryTotal: 0 };
-    let controller = null;
     let promise = null;
 
     const notify = (kind, quote) => {
@@ -4024,22 +4834,32 @@
       });
     };
 
-    /** 国家清单只取一次：两个标签都要用，短时间内也不会变。 */
-    function ensureCountries() {
-      if (countries) return Promise.resolve(countries);
-      if (!countriesPromise) {
-        countriesPromise = market
-          .call('/countries/summary')
-          .then((data) => {
-            countries = Array.isArray(data) ? data : [];
-            return countries;
-          })
-          .catch((err) => {
-            countriesPromise = null;
-            throw err;
-          });
+    const countriesLoader = () => apiClient.call(COUNTRIES_KEY);
+    const taxesLoader = () => apiClient.call(TAXES_KEY);
+
+    /**
+     * 国家清单解析。页面级条目永不过期，所以空清单不能就这么留着——
+     * 一次异常的空数组会让五个面板一起报「没有可用的国家清单」直到刷新整页，
+     * 这里直接把条目丢掉，下次 ensure 重新问一次。
+     */
+    function applyCountries(entry) {
+      if (!entry) return countries || [];
+      if (entry !== countriesEntry) {
+        countries = Array.isArray(entry.value) ? entry.value : [];
+        countriesEntry = entry;
+        if (!countries.length) apiCache.invalidate(COUNTRIES_KEY);
       }
-      return countriesPromise;
+      return countries;
+    }
+
+    /** 国家清单只取一次：两个标签都要用，短时间内也不会变（失效由 apiCache 负责）。 */
+    function ensureCountries() {
+      return apiCache.ensure(COUNTRIES_KEY, countriesLoader, PAGE_OPTS).then(applyCountries);
+    }
+
+    /** 「刷新」用：绕过页面级 TTL 重拉（失败保留旧值）。 */
+    function refreshCountries() {
+      return apiCache.refresh(COUNTRIES_KEY, countriesLoader, PAGE_OPTS).then(applyCountries);
     }
 
     /** 税率字段容错：正常是 10（=10%），个别实现会给 0.1 这种比例。 */
@@ -4050,83 +4870,103 @@
       return num;
     };
 
+    /** /countries → 税率与工资法两张表；与 summary 分开请求，解析结果跟着缓存条目走。 */
+    function parseTaxes(list) {
+      const map = new Map();
+      const wageMap = new Map();
+      (Array.isArray(list) ? list : []).forEach((country) => {
+        if (!country || country.id == null) return;
+        const laws = country.laws || {};
+        const rawImport =
+          laws.import_taxes != null
+            ? laws.import_taxes
+            : laws.import_tax != null
+              ? laws.import_tax
+              : laws.importTax;
+        const vat = toPercent(laws.vat);
+        const importTax = toPercent(rawImport);
+        const workTax = toPercent(laws.work_tax != null ? laws.work_tax : laws.workTax);
+        const rawWage = laws.minimum_wage != null ? laws.minimum_wage : laws.minimumWage;
+        const wage = rawWage == null || rawWage === '' ? null : Number(rawWage);
+        const minWage = Number.isFinite(wage) && wage >= 0 ? wage : null;
+
+        if (vat != null || importTax != null) {
+          map.set(String(country.id), {
+            vat: vat == null ? 0 : vat,
+            importTax: importTax == null ? 0 : importTax
+          });
+        }
+        if (workTax != null || minWage != null) {
+          wageMap.set(String(country.id), { workTax: workTax, minWage: minWage });
+        }
+      });
+      return { taxes: map, wageLaws: wageMap };
+    }
+
     /**
      * 各国税率：/countries 的 laws.vat / laws.import_taxes，顺带把工资法
      * （laws.work_tax / laws.minimum_wage）也存下来给「税费」子面板用，不多发请求。
-     * 与 summary 分开请求，只在真正需要时拉一次，结果在页面内缓存。
+     * 只在真正需要时拉一次，结果在页面内缓存，失败 60 秒内不重试（由 apiCache 冷却）。
+     * 解析结果为空时同样把页面级条目丢掉：留着一个「什么都没有」的永久条目，
+     * 销售视图会一直按 0 税率估算。
      */
-    function ensureTaxes() {
-      if (taxes) return Promise.resolve(taxes);
-      if (!taxesPromise) {
-        taxesPromise = market
-          .call('/countries')
-          .then((list) => {
-            const map = new Map();
-            const wageMap = new Map();
-            (Array.isArray(list) ? list : []).forEach((country) => {
-              if (!country || country.id == null) return;
-              const laws = country.laws || {};
-              const rawImport =
-                laws.import_taxes != null
-                  ? laws.import_taxes
-                  : laws.import_tax != null
-                    ? laws.import_tax
-                    : laws.importTax;
-              const vat = toPercent(laws.vat);
-              const importTax = toPercent(rawImport);
-              const workTax = toPercent(laws.work_tax != null ? laws.work_tax : laws.workTax);
-              const rawWage = laws.minimum_wage != null ? laws.minimum_wage : laws.minimumWage;
-              const wage = rawWage == null || rawWage === '' ? null : Number(rawWage);
-              const minWage = Number.isFinite(wage) && wage >= 0 ? wage : null;
-
-              if (vat != null || importTax != null) {
-                map.set(String(country.id), {
-                  vat: vat == null ? 0 : vat,
-                  importTax: importTax == null ? 0 : importTax
-                });
-              }
-              if (workTax != null || minWage != null) {
-                wageMap.set(String(country.id), { workTax: workTax, minWage: minWage });
-              }
-            });
-            taxes = map;
-            wageLaws = wageMap;
-            return taxes;
-          })
-          .catch((err) => {
-            taxesPromise = null;
-            throw err;
-          });
+    function applyTaxes(entry) {
+      if (!entry) return taxes;
+      if (entry !== taxesEntry) {
+        const parsed = parseTaxes(entry.value);
+        taxes = parsed.taxes;
+        wageLaws = parsed.wageLaws;
+        taxesEntry = entry;
+        if (!taxes.size) apiCache.invalidate(TAXES_KEY);
       }
-      return taxesPromise;
+      return taxes;
     }
 
-    async function load() {
-      if (loading) return promise;
-      if (market.state !== 'ok') {
+    function ensureTaxes() {
+      return apiCache.ensure(TAXES_KEY, taxesLoader, PAGE_OPTS).then(applyTaxes);
+    }
+
+    /** 「刷新」用：绕过页面级 TTL 重拉税率 / 工资法（失败保留旧值）。 */
+    function refreshTaxes() {
+      return apiCache.refresh(TAXES_KEY, taxesLoader, PAGE_OPTS).then(applyTaxes);
+    }
+
+    /**
+     * 统一的国家清单入口：mode='refresh' 绕过页面级 TTL。刷新失败但手里还有上一份清单时
+     * 退回旧清单继续跑（行情本身没坏，别让「刷新」变成整页空白），只把 states 记成 stale。
+     */
+    async function loadCountries(mode) {
+      try {
+        const list = mode === 'refresh' ? await refreshCountries() : await ensureCountries();
+        countriesStale = false;
+        return list;
+      } catch (err) {
+        if (countries && countries.length) {
+          countriesStale = true;
+          return countries;
+        }
+        throw err;
+      }
+    }
+
+    /**
+     * 跑一轮行情。mode='refresh' 绕过 TTL（点「刷新行情」），'ensure' 命中 10 分钟缓存
+     * （打开面板、别的标签要用汇率）。数据一律写进 coinBook，这里只维护 quotes 快照与状态。
+     */
+    function run(mode) {
+      if (resolving) return promise;
+      if (apiClient.state !== 'ok') {
         error = { code: 'NO_TOKEN' };
         notify('state');
         return null;
       }
 
-      loading = true;
+      resolving = true;
       error = null;
-      progress = { phase: 'fetch', done: 0, total: 0, retryIndex: 0, retryTotal: 0 };
-      const previous = quotes; // 本次失败时用来回滚，别让已有结果凭空消失
-      if (controller) {
-        try {
-          controller.abort();
-        } catch (err) {
-          /* ignore */
-        }
-      }
-      controller = new AbortController();
-      const signal = controller.signal;
-      notify('state');
 
       promise = (async () => {
         try {
-          const list = fxCurrencies(await ensureCountries()).map((entry) =>
+          const list = fxCurrencies(await loadCountries(mode)).map((entry) =>
             Object.assign({}, entry, { asks: null, bids: null, status: 'pending' })
           );
           if (!list.length) {
@@ -4135,112 +4975,69 @@
             throw empty;
           }
 
-          quotes = list;
+          // 全部命中 10 分钟缓存：直接从挂单簿拼快照。
+          // 否则仍会逐币种走 ensure + 60ms 间隔，面板上显示一轮根本不发请求的假进度。
+          if (mode === 'ensure' && list.every((item) => coinBook.ready(item.id))) {
+            const filled = [];
+            list.forEach((item) => {
+              const book = coinBook.quote(item.id);
+              if (!book || book.empty) return;
+              filled.push(
+                Object.assign({}, item, { asks: book.asks, bids: book.bids, status: 'ok' })
+              );
+            });
+            // 行集合没变就只刷新状态，别整表重建（切回本页时几乎零动作）
+            const same =
+              quotes.length === filled.length &&
+              filled.every((item, index) => quotes[index] && quotes[index].id === item.id);
+            if (!same) {
+              quotes = filled;
+              notify('reset');
+            }
+            progress = {
+              phase: 'idle',
+              done: filled.length,
+              total: filled.length,
+              retryIndex: 0,
+              retryTotal: 0
+            };
+            return;
+          }
+
+          loading = true;
           progress = { phase: 'fetch', done: 0, total: list.length, retryIndex: 0, retryTotal: 0 };
+          notify('state');
+
+          quotes = list;
           notify('reset');
 
-          // 遍历用副本：无挂单的货币会从 quotes（就是 list）里 splice 掉，
-          // 直接用 list 当队列会让 length 变短、把后面的货币整段跳过。
-          const total = list.length;
-          const work = list.slice();
-          const failures = [];
-          let limited = false;
-          let cursor = 0;
-
-          const fetchEntry = async (quote) => {
-            const [sell, buy] = await Promise.all([
-              market.call('/market/coin/get', {
-                form: { currency_id: quote.id, transaction: 'SELL' },
-                signal
-              }),
-              market.call('/market/coin/get', {
-                form: { currency_id: quote.id, transaction: 'BUY' },
-                signal
-              })
-            ]);
-            const book = fxBook(sell, buy);
-            if (!book.asks.length && !book.bids.length) {
-              // 两侧都没有挂单：直接把这行拿掉，与「只显示有挂单的货币」一致
-              const index = quotes.indexOf(quote);
-              if (index !== -1) quotes.splice(index, 1);
-              notify('drop', quote);
-              return;
-            }
-            quote.asks = book.asks;
-            quote.bids = book.bids;
-            quote.status = 'ok';
-            notify('row', quote);
-          };
-
-          const worker = async () => {
-            while (cursor < work.length) {
-              if (signal.aborted) return;
-              const quote = work[cursor];
-              cursor += 1;
-
-              try {
-                await fetchEntry(quote);
-              } catch (err) {
-                if (err && err.name === 'AbortError') return;
-                if (err && err.code === 'UNAUTHORIZED') throw err;
-                if (err && err.code === 'HTTP' && String(err.message) === 'HTTP_429') limited = true;
-                quote.status = 'error';
-                notify('row', quote);
-                failures.push(quote);
-              }
-
-              progress = Object.assign({}, progress, { done: progress.done + 1 });
+          const handle = coinBook.load(list.map((item) => item.id), {
+            mode,
+            onRow: (id, failed) => applyBook(id, failed),
+            onProgress: (current) => {
+              progress = Object.assign({}, current.progress);
               notify('state');
-              await fxSleep(FX_GAP);
             }
-          };
-
-          await Promise.all(Array.from({ length: Math.min(FX_CONCURRENCY, total) }, () => worker()));
-          if (signal.aborted) return;
-
-          // 失败多半是瞬时 429 / 5xx：串行补一次，行内转圈重新转起来，仍失败才计入结果
-          const retry = failures.splice(0);
-          progress = Object.assign({}, progress, {
-            phase: 'retry',
-            retryIndex: 0,
-            retryTotal: retry.length
           });
-          for (let i = 0; i < retry.length; i += 1) {
-            if (signal.aborted) return;
-            const quote = retry[i];
-            progress = Object.assign({}, progress, { retryIndex: i + 1 });
-            quote.status = 'pending';
-            notify('row', quote);
-            try {
-              await fetchEntry(quote);
-            } catch (err) {
-              if (err && err.name === 'AbortError') return;
-              if (err && err.code === 'UNAUTHORIZED') throw err;
-              if (err && err.code === 'HTTP' && String(err.message) === 'HTTP_429') limited = true;
-              quote.status = 'error';
-              notify('row', quote);
-              failures.push(quote);
-            }
-            notify('state');
-            await fxSleep(FX_GAP * 3);
+          await handle.promise;
+          progress = Object.assign({}, handle.progress, { phase: 'idle' });
+          // 失败时旧值仍在 coinBook 里，面板继续显示上一次成功的数据，只报失败数量
+          if (handle.failedIds.length) {
+            error = { code: 'PARTIAL', count: handle.failedIds.length, limited: handle.limited };
+          } else if (countriesStale) {
+            // 行情本身没问题，只是国家清单这次没刷新成功（用了上一份）
+            error = { code: 'STALE_COUNTRIES' };
           }
-
-          updatedAt = Date.now();
-          progress = Object.assign({}, progress, { phase: 'idle', retryIndex: 0, retryTotal: 0 });
-          if (failures.length) error = { code: 'PARTIAL', count: failures.length, limited };
         } catch (err) {
-          if (err && err.name === 'AbortError') return;
-          quotes = previous;
-          if (err && err.code === 'UNAUTHORIZED') {
-            try {
-              controller.abort();
-            } catch (ignore) {
-              /* ignore */
-            }
-          }
-          error = { code: (err && err.code) || 'ERROR', message: err && err.message };
+          error = {
+            code: (err && err.code) || 'ERROR',
+            message: err && err.message,
+            retryAt: (err && err.retryAt) || 0,
+            reason: (err && err.reason) || ''
+          };
           notify('reset');
         } finally {
+          resolving = false;
           loading = false;
           promise = null;
           notify('done');
@@ -4249,6 +5046,33 @@
       })();
 
       return promise;
+    }
+
+    /**
+     * 单个货币的数据到位：更新快照行；两侧都没挂单就从列表里拿掉。
+     * 这次失败但手里还有上一次的数据时继续显示旧值（状态栏会报失败数量），
+     * 只有一侧都没拉到才标「拉取失败」。
+     */
+    function applyBook(currencyId, failed) {
+      const quote = quotes.find((item) => item.id === Number(currencyId));
+      if (!quote) return;
+      const book = coinBook.quote(currencyId);
+      if (!book || (failed && book.partial)) {
+        quote.status = 'error';
+        notify('row', quote);
+        return;
+      }
+      if (book.empty) {
+        // 两侧都没有挂单：直接把这行拿掉，与「只显示有挂单的货币」一致
+        const index = quotes.indexOf(quote);
+        if (index !== -1) quotes.splice(index, 1);
+        notify('drop', quote);
+        return;
+      }
+      quote.asks = book.asks;
+      quote.bids = book.bids;
+      quote.status = 'ok';
+      notify('row', quote);
     }
 
     return {
@@ -4267,11 +5091,29 @@
       get progress() {
         return progress;
       },
+      /**
+       * 这屏数据里最旧的一份有效数据时间：取最近一次整批成功中、当前列表里那些货币的最旧值。
+       * 不用「本轮结束时刻」，否则比真实数据新；长期失败的货币不参与，不拉低时间。
+       * 没有「整批成功」记录时（例如缓存是商品市场页标注单独补的）退回逐行取最旧。
+       */
       get updatedAt() {
-        return updatedAt;
+        const ids = quotes.map((item) => item.id);
+        const fromBatch = coinBook.oldestAt(ids);
+        if (fromBatch) return fromBatch;
+        let oldest = 0;
+        ids.forEach((id) => {
+          const book = coinBook.quote(id);
+          if (!book || !book.at) return;
+          if (!oldest || book.at < oldest) oldest = book.at;
+        });
+        return oldest;
       },
       get error() {
         return error;
+      },
+      /** 国家清单这次是不是退回上一份了（状态栏用）。 */
+      get countriesStale() {
+        return countriesStale;
       },
       subscribe(fn) {
         if (typeof fn !== 'function') return () => {};
@@ -4279,14 +5121,25 @@
         return () => listeners.delete(fn);
       },
       ensureCountries,
+      refreshCountries,
+      /** 统一入口：mode='refresh' 绕过页面级 TTL，刷新失败退回旧清单。 */
+      loadCountries,
       ensureTaxes,
-      load,
-      /** 缓存还在有效期内就直接用，否则拉一次；并发调用共享同一个请求。 */
-      async ensure(maxAge) {
-        if (loading) return promise;
-        const age = maxAge == null ? FX_CACHE_MS : maxAge;
-        if (updatedAt && Date.now() - updatedAt < age) return quotes;
-        return load();
+      refreshTaxes,
+      /** 点「刷新行情」：绕过 TTL 重抓一遍。 */
+      refresh: () => run('refresh'),
+      /** 打开面板 / 别的标签要用汇率：命中 10 分钟缓存就不发请求。 */
+      ensure: () => run('ensure'),
+      /**
+       * 凭据变化 / destroy：清掉展示快照与错误，别再显示「旧价格 + 没有行情数据」的混合状态。
+       * 在途那一轮会自己收尾，这里不动 loading / promise。
+       */
+      reset() {
+        quotes = [];
+        error = null;
+        countriesStale = false;
+        progress = { phase: 'idle', done: 0, total: 0, retryIndex: 0, retryTotal: 0 };
+        notify('reset');
       },
       /**
        * 国家 id → 该国法币（来自 /countries/summary）。
@@ -4307,27 +5160,15 @@
           avatar: row.avatar == null ? '' : String(row.avatar)
         };
       },
-      /** 法币 id → 最优卖单价（黄金 / 1 单位法币）；没有行情时返回 null。 */
-      rateFor(currencyId) {
-        const quote = quotes.find((item) => item.id === currencyId);
-        if (!quote || quote.status !== 'ok' || !quote.asks || !quote.asks.length) return null;
-        return quote.asks[0].price;
-      },
+      /** 法币 id → 最优卖单价（黄金 / 1 单位法币）；没有挂单返回 null。直接读挂单簿。 */
+      rateFor: (currencyId) => coinBook.bestPrice(currencyId, 'SELL'),
       /**
        * 卖法币换黄金的最优价（黄金 / 1 单位法币）：吃的是别人的买单，
        * 与「买入价」（rateFor，吃卖单）不是一个方向，销售时必须用这个。
        */
-      sellRateFor(currencyId) {
-        const quote = quotes.find((item) => item.id === currencyId);
-        if (!quote || quote.status !== 'ok' || !quote.bids || !quote.bids.length) return null;
-        return quote.bids[0].price;
-      },
+      sellRateFor: (currencyId) => coinBook.bestPrice(currencyId, 'BUY'),
       /** 该国货币在当前买单里还能吃下多少（法币数量），用于提示换汇深度不足。 */
-      sellCapacityFor(currencyId) {
-        const quote = quotes.find((item) => item.id === currencyId);
-        if (!quote || quote.status !== 'ok' || !quote.bids) return 0;
-        return quote.bids.reduce((sum, level) => sum + level.qty, 0);
-      },
+      sellCapacityFor: (currencyId) => coinBook.sellCapacity(currencyId),
       /** 国家 id → 税率（百分数）；还没拉到 / 该国没有 laws 时返回 null。 */
       taxFor(countryId) {
         if (!taxes || countryId == null) return null;
@@ -4338,13 +5179,9 @@
         if (!wageLaws || countryId == null) return null;
         return wageLaws.get(String(countryId)) || null;
       },
+      /** 面板关掉 / 插件销毁：只停止继续发起新的 key，已发出且可能被共享的请求不 abort。 */
       cancel() {
-        if (!controller) return;
-        try {
-          controller.abort();
-        } catch (err) {
-          /* ignore */
-        }
+        coinBook.cancel();
       }
     };
   })();
@@ -4362,15 +5199,16 @@
    * 结果只存内存，不展示原字段、不打印、不上报、不落盘；响应里的 bearer 等字段一律忽略。
    */
   const playerFeed = (() => {
-    /** 缓存 2 分钟：换国家后最多 2 分钟就会重新读一次；期间不重复打接口。 */
-    const TTL = 2 * 60 * 1000;
-    /** 失败冷却：接口挂了就别每条价格都试一遍。 */
-    const RETRY = 60 * 1000;
+    /**
+     * 10 秒缓存：旅行 / 换国籍后最多 10 秒就会重新读一次；期间不重复打接口。
+     * 失败冷却 60 秒由 apiCache 负责（凭据没捕获到时不冷却，登录后要能立刻再问）。
+     */
+    const KEY = '/account/getuser';
+    const OPTS = { ttl: 'account', namespace: 'player' };
 
     let info = null;
-    let at = 0;
-    let promise = null;
-    let failedAt = 0;
+    /** 解析结果用条目对象本身做「版本」，条目被清掉 / 刷新后重新解析。 */
+    let infoEntry = null;
 
     const pick = (data) => {
       const account = data && data.user && typeof data.user === 'object' ? data.user : data;
@@ -4389,34 +5227,16 @@
     };
 
     function ensure() {
-      const now = Date.now();
-      if (info && now - at < TTL) return Promise.resolve(info);
-      if (promise) return promise;
-      if (failedAt && now - failedAt < RETRY) {
-        if (info) return Promise.resolve(info);
-        return Promise.reject(Object.assign(new Error('COOLDOWN'), { code: 'COOLDOWN' }));
-      }
-
-      promise = market
-        .call('/account/getuser', { login: true, form: {}, object: true })
-        .then((data) => {
-          info = pick(data);
-          at = Date.now();
-          failedAt = 0;
+      return apiCache
+        .ensure(KEY, () => apiClient.call(KEY, { login: true, form: {}, object: true }), OPTS)
+        .then((entry) => {
+          if (!entry) return info;
+          if (entry !== infoEntry) {
+            info = pick(entry.value);
+            infoEntry = entry;
+          }
           return info;
-        })
-        .catch((err) => {
-          // 还没捕获到凭据不算「接口坏了」：登录后要能立刻再问一次
-          const code = err && err.code;
-          if (code !== 'NO_TOKEN' && code !== 'UNAUTHORIZED') failedAt = Date.now();
-          throw err;
         });
-
-      const settle = () => {
-        promise = null;
-      };
-      promise.then(settle, settle);
-      return promise;
     }
 
     return {
@@ -4432,70 +5252,70 @@
       get countryId() {
         return info ? info.countryId : 0;
       },
-      ensure
+      ensure,
+      /**
+       * 订阅账号字段变化：解析出新值或值被清空时回调（参数为 info 或 null）。
+       * 直接挂在 apiCache 的 `/account/getuser` 这个 key 上——所有写入都经过它，
+       * 通知与订阅统计因此只有一套（`cache.stats().watchers` 也看得到）。
+       * 返回退订函数，必须挂到 ctx.onDestroy / stop()，否则面板销毁后还会被叫到。
+       */
+      watch(fn) {
+        if (typeof fn !== 'function') return () => {};
+        return apiCache.watch(KEY, () => fn(info));
+      },
+      /** 凭据变化 / destroy：丢掉解析结果，免得继续用旧凭据的身份做高亮与折算。 */
+      reset() {
+        info = null;
+        infoEntry = null;
+      }
     };
   })();
 
   /**
    * profileFeed：玩家经济技能在公开资料页里，getuser 与 attributes.stats.economic_aptitude 都不是它。
-   * GET /user/profile/{account_id} 只取 economic_level，2 分钟缓存、失败冷却 60 秒。
-   * 公开资料接口支持专用密钥，所以这里沿用 market.call 的默认凭据优先级，不强制 login。
+   * GET /user/profile/{account_id} 只取 economic_level，10 秒缓存、失败冷却 60 秒。
+   * 公开资料接口支持专用密钥，所以这里沿用 apiClient.call 的默认凭据优先级，不强制 login。
    */
   const profileFeed = (() => {
-    const TTL = 2 * 60 * 1000;
-    const RETRY = 60 * 1000;
+    const PREFIX = '/user/profile/';
+    const OPTS = { ttl: 'profile', namespace: 'profile' };
 
-    let currentId = null;
+    /** 当前关心的账号：晚到的旧账号结果直接丢掉，不覆盖新账号的技能等级。 */
+    let wantedId = 0;
     let level = null;
-    let loaded = false;
-    let at = 0;
-    let promise = null;
-    let failedAt = 0;
+    let levelEntry = null;
 
     function ensure(accountId) {
       const id = Number(accountId);
       if (!Number.isFinite(id) || id <= 0) return Promise.resolve(null);
-      const now = Date.now();
-      if (currentId === id && loaded && now - at < TTL) return Promise.resolve(level);
-      if (promise && currentId === id) return promise;
-      if (currentId === id && failedAt && now - failedAt < RETRY) {
-        if (loaded) return Promise.resolve(level);
-        return Promise.reject(Object.assign(new Error('COOLDOWN'), { code: 'COOLDOWN' }));
-      }
-
-      currentId = id;
-      promise = market
-        .call('/user/profile/' + encodeURIComponent(String(id)), {
-          object: true,
-          noMethodRetry: true
-        })
-        .then((data) => {
-          const raw = data && data.economic_level;
-          const value = Number(raw);
-          level = raw != null && Number.isFinite(value) ? value : null;
-          loaded = true;
-          at = Date.now();
-          failedAt = 0;
+      const key = PREFIX + encodeURIComponent(String(id));
+      wantedId = id;
+      return apiCache
+        .ensure(key, () => apiClient.call(key, { object: true, noMethodRetry: true }), OPTS)
+        .then((entry) => {
+          if (wantedId !== id) return level;
+          if (!entry) return level;
+          if (entry !== levelEntry) {
+            const raw = entry.value && entry.value.economic_level;
+            const value = Number(raw);
+            level = raw != null && Number.isFinite(value) ? value : null;
+            levelEntry = entry;
+          }
           return level;
-        })
-        .catch((err) => {
-          const code = err && err.code;
-          if (code !== 'NO_TOKEN' && code !== 'UNAUTHORIZED') failedAt = Date.now();
-          throw err;
         });
-
-      const settle = () => {
-        promise = null;
-      };
-      promise.then(settle, settle);
-      return promise;
     }
 
     return {
       get economicLevel() {
         return level;
       },
-      ensure
+      ensure,
+      /** 凭据变化 / destroy：清掉技能等级，别把上一个账号的值当成当前玩家。 */
+      reset() {
+        wantedId = 0;
+        level = null;
+        levelEntry = null;
+      }
     };
   })();
 
@@ -4999,12 +5819,21 @@
           );
           return;
         }
+        if (err && err.code === 'STALE_COUNTRIES') {
+          // 行情本身是成功的，只是国家清单这次没刷新成功
+          const okCount = feed.quotes.filter((item) => item.status === 'ok').length;
+          setStatus(
+            `${okCount} 种货币有挂单 · 更新于 ${formatClock(feed.updatedAt)} · 国家清单本次刷新失败，用的是上次结果`,
+            'warn'
+          );
+          return;
+        }
         if (err) {
           if (err.code === 'NO_TOKEN') failStatus(tokenHint(), 'warn');
           else if (err.code === 'UNAUTHORIZED') failStatus(tokenHint(), 'error');
           else if (err.code === 'TIMEOUT') failStatus('请求超时，请稍后重试。', 'error');
           else if (quotaHint(err)) failStatus(quotaHint(err), 'error');
-          else failStatus('拉取失败：' + (err.message || '未知错误'), 'error');
+          else failStatus('拉取失败：' + fetchErrorText(err), 'error');
           return;
         }
 
@@ -5091,13 +5920,19 @@
       });
 
       on(refreshBtn, 'click', () => {
-        fxFeed.load();
+        fxFeed.refresh();
         loadPins();
       });
 
       // 凭据晚到（面板先开、游戏还没发过请求）：账号能读到后补一次置顶，行情仍由玩家点刷新
-      const offAuth = market.onAuth(() => {
+      const offAuth = apiClient.onAuth(() => {
         if (alive && !pinEntries.length) loadPins();
+      });
+
+      // 账号字段（国籍 / 所在国）变了就重建置顶行：别的页面刷新到的位置，这里立刻跟上，
+      // 不再靠「本条页自己再 ensure 一次」这种各写一套的时机
+      const offPlayer = playerFeed.watch(() => {
+        if (alive) loadPins();
       });
 
       applyModeUi();
@@ -5110,14 +5945,21 @@
       });
       if (fxFeed.quotes.length || fxFeed.loading) sync('reset');
       else sync('state');
-      fxFeed.ensure(FX_CACHE_MS);
+      fxFeed.ensure();
       loadPins();
+
+      // 每次显示本标签：账号超过 10 秒就重问一次，行情超过 10 分钟才重拉
+      ctx.onShow(() => {
+        loadPins();
+        if (!fxFeed.loading) fxFeed.ensure();
+      });
 
       ctx.onDestroy(() => {
         alive = false;
         clearTimeout(targetTimer);
         off();
         offAuth();
+        offPlayer();
       });
     }
   });
@@ -5246,9 +6088,6 @@
   /** api 名 → 商品图地址：从挂单里顺手收集，同一件商品各国各品质共用一个图标。 */
   const GOODS_AVATARS = new Map();
 
-  /** 领土检查结果的缓存时长：战争不会每分钟易手，但刷新时也该能看到新结果。 */
-  const LAND_CACHE_MS = 5 * 60 * 1000;
-
   /**
    * 领土：GET /country/regions?country_id=…，返回该国目前实际占有的地区。
    * 已失去全部领土的国家不会返回空数组，而是只有 { code: 200, description: '成功' }、没有 data，
@@ -5257,68 +6096,98 @@
    * noMethodRetry 挡掉通用逻辑里「GET 404/405 就改发空表单 POST」的兜底，
    * 失败直接上报，由调用方按「领土未知」处理，不浪费额度也不制造假的 POST。
    */
-  async function goodsFetchRegions(countryId, signal) {
+  async function goodsFetchRegions(countryId) {
     const path = '/country/regions?country_id=' + encodeURIComponent(String(countryId));
-    return market.call(path, { signal, noMethodRetry: true, allowEmpty: true });
+    return apiClient.call(path, { noMethodRetry: true, allowEmpty: true });
   }
 
   /**
-   * 地区清单的共享缓存（GET /country/regions?country_id=…）。
-   * 「市场」的领土检查、市场页的地区快捷跳转、工商面板的工业列表都用这一份：
-   * 同一国家 5 分钟内只请求一次，并发调用共享同一个请求，避免三个模块各拉一遍。
+   * 地区清单的唯一数据源（GET /country/regions?country_id=…），底层走 apiCache：
+   * 「市场」的领土检查、市场页的地区快捷跳转、工商面板的工业 / 税费都用这一份，
+   * 同一国家 10 分钟内只请求一次，并发调用由 apiCache 合并成同一个请求。
+   * 失效只有两个入口：`refresh`（绕过 TTL，失败保留旧值）与 `clear`（destroy）。
    */
   const regionFeed = (() => {
-    /** 国家 id → { at, list }；list 为空数组表示该国已失去全部领土。 */
-    const cache = new Map();
-    /** 国家 id → Promise：同一国家并发只发一次请求。 */
-    const pending = new Map();
+    const PREFIX = '/country/regions';
+    /**
+     * 领土 10 分钟：战争不会每分钟易手，但面板上的「刷新」能立刻看到新结果。
+     * 空结果谓词要单独给：失土国家的载荷是「没有 data」，默认规则（空数组）认不出来，
+     * 那条 entry 会被标成「非空」，将来按 empty 判流亡就会判错。
+     */
+    const OPTS = {
+      ttl: 'regions',
+      namespace: 'regions',
+      empty: (value) => !Array.isArray(value) || value.length === 0
+    };
+
+    const cacheKey = (countryId) => apiCache.key(PREFIX, { country_id: String(countryId) });
+    const loaderFor = (countryId) => () => goodsFetchRegions(countryId);
+
+    /**
+     * 载荷归一：没有 data（已失去全部领土）与空数组都算空清单。
+     * 拿到 null 说明缓存被整体清空（换凭据 / destroy），本轮结果作废、按失败上报，
+     * 不能当成「没有领土」，否则会把国家误判成流亡政府。
+     */
+    const toList = (entry) => {
+      if (!entry) {
+        const error = new Error('DROPPED');
+        error.code = 'DROPPED';
+        throw error;
+      }
+      return Array.isArray(entry.value) ? entry.value : [];
+    };
 
     /** 已缓存且未过期时返回清单，否则 null（同步读取，界面可以先用旧数据顶上）。 */
     function get(countryId) {
-      const entry = cache.get(String(countryId));
-      if (!entry) return null;
-      return Date.now() - entry.at < LAND_CACHE_MS ? entry.list : null;
+      const key = cacheKey(countryId);
+      if (!apiCache.fresh(key)) return null;
+      const entry = apiCache.peek(key);
+      return entry && Array.isArray(entry.value) ? entry.value : [];
     }
 
     /**
-     * 拉一个国家的地区清单；同一国家并发只发一次请求。
-     * 已失去全部领土的国家接口不带 data，这里统一成空数组；失败不缓存，下次还能重试。
-     * force 忽略有效期（玩家主动点「刷新」时用）。
+     * 该国家地区清单的缓存时间；没拉过 / 已被清掉返回 0。
+     * 「更新于」按这屏里最旧的一份数据算，不能拿「本轮结束时刻」冒充新鲜度。
      */
-    function ensure(countryId, options) {
-      const key = String(countryId);
-      const force = Boolean(options && options.force);
-      if (!force) {
-        const cached = get(key);
-        if (cached) return Promise.resolve(cached);
-      }
-      const running = pending.get(key);
-      if (running) return running;
+    function atOf(countryId) {
+      const entry = apiCache.peek(cacheKey(countryId));
+      return entry ? entry.at : 0;
+    }
 
-      const promise = goodsFetchRegions(key)
-        .then((data) => {
-          const list = Array.isArray(data) ? data : [];
-          cache.set(key, { at: Date.now(), list });
-          return list;
-        })
-        .finally(() => {
-          if (pending.get(key) === promise) pending.delete(key);
-        });
-      pending.set(key, promise);
-      return promise;
+    /** 拉一个国家的地区清单：10 分钟内命中缓存，并发共享同一请求，失败 60 秒内不重试。 */
+    function ensure(countryId) {
+      return apiCache.ensure(cacheKey(countryId), loaderFor(countryId), OPTS).then(toList);
+    }
+
+    /**
+     * 忽略 TTL 重抓一个国家（面板上的「刷新」）。已有在途请求时先等它结束，
+     * 再补一次真正的刷新，不会因为 in-flight 而把这次刷新静默吞掉。
+     */
+    async function refresh(countryId) {
+      const key = cacheKey(countryId);
+      const loader = loaderFor(countryId);
+      if (apiCache.busy(key)) {
+        try {
+          await apiCache.ensure(key, loader, OPTS);
+        } catch (err) {
+          /* 在途那轮失败也要补一次刷新 */
+        }
+      }
+      return toList(await apiCache.refresh(key, loader, OPTS));
     }
 
     return {
       get,
+      atOf,
       ensure,
+      refresh,
       /** 领土已知且为空 = 流亡政府；还没查过时返回 null，由调用方决定怎么处理。 */
       exiled(countryId) {
         const list = get(countryId);
         return list ? list.length === 0 : null;
       },
       clear() {
-        cache.clear();
-        pending.clear();
+        apiCache.invalidate(PREFIX);
       }
     };
   })();
@@ -5354,6 +6223,13 @@
 
   /** 行情快照的有效期：与汇率一致（10 分钟）；自动模式据此决定什么时候重拉。 */
   const GOODS_CACHE_MS = 10 * 60 * 1000;
+  const GOODS_PATH = '/market/get';
+  /** 单国市场挂单：10 分钟；没有挂单的国家也记成空结果，别反复问。 */
+  const GOODS_OPTS = {
+    ttl: 'goods',
+    namespace: 'goods',
+    empty: (value) => value instanceof Map && value.size === 0
+  };
 
   /**
    * 全球商品行情快照：面板「市场」页与「商品市场自动加载比价数据」共用同一份。
@@ -5372,7 +6248,10 @@
     const listeners = new Set();
     /** 抓取中：全部国家（含 pending / error）；结束后只保留成功的市场。 */
     let entries = [];
+    /** 这屏数据里最旧的一份：命中缓存时要如实报旧，不能拿「本轮结束时刻」冒充。 */
     let updatedAt = 0;
+    /** 最近一次整轮检查结束的时刻：只用于「多久之后再自动拉一轮」的调度。 */
+    let checkedAt = 0;
     let loading = false;
     let error = null;
     /** 上一次失败的时间：面板反复切标签时不要每次都重打一轮。 */
@@ -5381,7 +6260,7 @@
     let failures = 0;
     let landFailures = 0;
     let limited = false;
-    let controller = null;
+    let cancelled = false;
     let promise = null;
 
     const notify = (kind, payload) => {
@@ -5397,7 +6276,7 @@
     /**
      * 领土检查：地区清单为空即流亡政府（已失去全部领土）。
      * 只查有挂单的国家——没挂单的市场本来就不进列表，没必要多打请求。
-     * 走 regionFeed 缓存，与地区快捷跳转、工商面板共用，同一国家 5 分钟只请求一次；
+     * 走 regionFeed 缓存，与地区快捷跳转、工商面板共用，同一国家 10 分钟内只请求一次；
      * 请求本身失败（超时 / 4xx / 429）才按「有领土」处理，宁可留在主列表也不误判。
      */
     const checkLand = async (entry) => {
@@ -5407,23 +6286,27 @@
 
     /**
      * 凭据晚到的场景：面板可能在游戏还没发过任何接口请求时就打开了，
-     * 这时先挂一次 market.onAuth，等登录凭据被捕获后自动补一轮，
+     * 这时先挂一次 apiClient.onAuth，等登录凭据被捕获后自动补一轮，
      * 而不是让面板停在空列表上等玩家手动点「刷新行情」。
      * （与「商品市场自动加载比价数据」无关：那个开关只管游戏市场页的自动刷新。）
      */
     let offAuthRetry = null;
     const armAuthRetry = () => {
       if (offAuthRetry) return;
-      offAuthRetry = market.onAuth(() => {
+      offAuthRetry = apiClient.onAuth(() => {
         offAuthRetry = null;
         if (!loading && !updatedAt) load();
       });
     };
 
-    /** 拉一轮全球行情；并发调用共享同一个请求。 */
-    function load() {
+    /**
+     * 拉一轮全球行情。mode='ensure' 命中 10 分钟缓存（打开面板、自动比价），
+     * 'refresh' 绕过 TTL（「刷新行情」）。单国市场的解析结果存在 apiCache 里，
+     * 本轮只维护编排（entries / 进度 / 流亡标记 / publish）。
+     */
+    function run(mode) {
       if (loading) return promise;
-      if (market.state !== 'ok') {
+      if (apiClient.state !== 'ok') {
         error = { code: 'NO_TOKEN' };
         errorAt = Date.now();
         armAuthRetry();
@@ -5445,23 +6328,16 @@
       progress = { done: 0, total: 0 };
       // 本次失败时放回去，别让已有结果凭空消失
       const previous = entries.filter((entry) => entry.status === 'ok');
-      if (controller) {
-        try {
-          controller.abort();
-        } catch (err) {
-          /* ignore */
-        }
-      }
-      controller = new AbortController();
-      const signal = controller.signal;
+      cancelled = false;
       notify('state');
 
       promise = (async () => {
         try {
           // 汇率与市场并行：汇率优先吃缓存，只有缓存过期才真的去拉
-          fxFeed.ensure(FX_CACHE_MS).catch(() => null);
-          const countries = await fxFeed.ensureCountries();
-          if (signal.aborted) return;
+          fxFeed.ensure().catch(() => null);
+          // 「刷新行情」连国家清单一起绕过页面级 TTL，否则清单刚拉过的话刷新等于没刷
+          const countries = await fxFeed.loadCountries(mode === 'refresh' ? 'refresh' : 'ensure');
+          if (cancelled) return;
 
           const list = (Array.isArray(countries) ? countries : [])
             .filter((country) => {
@@ -5493,24 +6369,42 @@
           let cursor = 0;
           const worker = async () => {
             while (cursor < entries.length) {
-              if (signal.aborted) return;
+              if (cancelled) return;
               const entry = entries[cursor];
               cursor += 1;
 
+              // 不带 type/quality 时接口一次返回该国全部商品，一个市场只需一次请求
+              const key = apiCache.key(GOODS_PATH, { countryid: String(entry.id) });
+              const loader = () =>
+                apiClient
+                  .call(GOODS_PATH, { form: { countryid: entry.id }, object: true })
+                  .then((data) => goodsIndex(data && data.offers));
+
               try {
-                // 不带 type/quality 时接口一次返回该国全部商品，一个市场只需一次请求
-                const data = await market.call('/market/get', {
-                  form: { countryid: entry.id },
-                  object: true,
-                  signal
-                });
-                entry.items = goodsIndex(data && data.offers);
+                const cached =
+                  mode === 'refresh'
+                    ? await apiCache.refresh(key, loader, GOODS_OPTS)
+                    : await apiCache.ensure(key, loader, GOODS_OPTS);
+                // null 只有一种来由：请求在途期间缓存被换凭据 / destroy 清空了（结果作废）。
+                // 这时不能当成「这个国家没有挂单」，要按这一国度失败处理。
+                if (!cached) {
+                  const dropped = new Error('DROPPED');
+                  dropped.code = 'DROPPED';
+                  throw dropped;
+                }
+                entry.items = cached.value instanceof Map ? cached.value : new Map();
                 entry.status = 'ok';
               } catch (err) {
-                if (err && err.name === 'AbortError') return;
                 if (err && err.code === 'UNAUTHORIZED') throw err;
                 if (err && err.code === 'HTTP' && String(err.message) === 'HTTP_429') limited = true;
-                entry.status = 'error';
+                // 刷新失败但手里有上一次的数据：继续显示旧值，只在状态栏报失败数量
+                const stale = apiCache.peek(key);
+                if (stale && stale.value instanceof Map) {
+                  entry.items = stale.value;
+                  entry.status = 'ok';
+                } else {
+                  entry.status = 'error';
+                }
                 failures += 1;
               }
 
@@ -5519,7 +6413,7 @@
                 try {
                   await checkLand(entry);
                 } catch (err) {
-                  if (err && err.name === 'AbortError') return;
+                  if (cancelled) return;
                   if (err && err.code === 'UNAUTHORIZED') throw err;
                   if (err && err.code === 'HTTP' && String(err.message) === 'HTTP_429') limited = true;
                   landFailures += 1;
@@ -5539,37 +6433,41 @@
           await Promise.all(
             Array.from({ length: Math.min(FX_CONCURRENCY, entries.length) }, () => worker())
           );
-          if (signal.aborted) return;
+          if (cancelled) return;
 
           // 领土查不到不影响结果展示（这些国家按「有领土」留在主列表），只在调试日志里留个汇总
           if (landFailures) log('领土检查部分失败', landFailures + ' 个国家按「有领土」处理');
 
-          updatedAt = Date.now();
           errorAt = 0;
+          checkedAt = Date.now();
           entries = entries.filter((entry) => entry.status === 'ok');
+          // 「更新于」取各市场 key 里最旧的一份：这一轮大部分可能直接命中 10 分钟缓存
+          const stamps = entries
+            .map((entry) => {
+              const hit = apiCache.peek(apiCache.key(GOODS_PATH, { countryid: String(entry.id) }));
+              return hit ? hit.at : 0;
+            })
+            .filter(Boolean);
+          updatedAt = stamps.length ? Math.min.apply(null, stamps) : checkedAt;
           // 共享给游戏市场页的金价标注：它要拿这份数据算「比全球最低贵多少」
           goodsFeed.publish(entries);
         } catch (err) {
-          if (err && err.name === 'AbortError') return;
           entries = previous;
-          if (err && err.code === 'UNAUTHORIZED') {
-            try {
-              controller.abort();
-            } catch (ignore) {
-              /* ignore */
-            }
-          }
+          if (err && err.code === 'UNAUTHORIZED') cancelled = true;
           error = {
             code: (err && err.code) || 'ERROR',
             message: err && err.message,
+            // 保留冷却信息：状态栏要据此说明「还要等多久」，别只显示 COOLDOWN
+            retryAt: (err && err.retryAt) || 0,
+            reason: (err && err.reason) || '',
             limited
           };
           errorAt = Date.now();
         } finally {
           loading = false;
           promise = null;
-          // 中止（destroy / 新一轮接管）不算结束：只更新状态，不发 done
-          if (!signal.aborted) notify(error ? 'error' : 'done');
+          // 中止（destroy）不算结束：只更新状态，不发 done
+          if (!cancelled) notify(error ? 'error' : 'done');
           notify('state');
         }
       })();
@@ -5583,6 +6481,10 @@
       },
       get updatedAt() {
         return updatedAt;
+      },
+      /** 最近一次整轮检查结束的时刻（调度用，不用于展示）。 */
+      get checkedAt() {
+        return checkedAt;
       },
       get loading() {
         return loading;
@@ -5612,23 +6514,24 @@
         if (loading) return promise;
         const age = maxAge == null ? GOODS_CACHE_MS : maxAge;
         const now = Date.now();
-        if (updatedAt && now - updatedAt < age && entries.length) return Promise.resolve(entries);
-        // 刚失败过：一分钟内不自动重试（手动点「刷新行情」走 load，不受此限）
+        // 用「上次检查时刻」而不是「最旧数据时刻」判要不要再跑一轮，
+        // 否则某个国家一直失败会把时间拖旧，切一次标签就重跑一轮
+        if (checkedAt && now - checkedAt < age && entries.length) return Promise.resolve(entries);
+        // 刚失败过：一分钟内不自动重试（手动点「刷新行情」走 refresh，不受此限）
         if (error && errorAt && now - errorAt < 60 * 1000) return Promise.resolve(null);
-        return load();
+        return run('ensure');
       },
-      load,
+      /** 命中单国市场缓存（10 分钟），只补缺失的国家。 */
+      load: () => run('ensure'),
+      /** 「刷新行情」：绕过 TTL 重抓，失败保留旧值。 */
+      refresh: () => run('refresh'),
       cancel() {
         if (offAuthRetry) {
           offAuthRetry();
           offAuthRetry = null;
         }
-        if (!controller) return;
-        try {
-          controller.abort();
-        } catch (err) {
-          /* ignore */
-        }
+        // 只停止继续发起新的国家，已发出且可能被别的面板共享的请求不 abort
+        cancelled = true;
       }
     };
   })();
@@ -5671,13 +6574,13 @@
     const sync = () => {
       if (!enabled || destroyed || !booted) return;
       if (document.visibilityState === 'hidden') return;
-      // 凭据还没捕获到时先不动，由 market.onAuth 触发一次
-      if (market.state !== 'ok') return;
+      // 凭据还没捕获到时先不动，由 apiClient.onAuth 触发一次
+      if (apiClient.state !== 'ok') return;
       if (goodsSnapshot.loading) return;
 
       const now = Date.now();
       // 缓存还没过期：什么都不做（下次检查继续等）
-      if (goodsSnapshot.updatedAt && now - goodsSnapshot.updatedAt < GOODS_CACHE_MS) return;
+      if (goodsSnapshot.checkedAt && now - goodsSnapshot.checkedAt < GOODS_CACHE_MS) return;
       // 上一轮失败过：至少隔 5 分钟再试，避免烧光额度
       if (lastAttemptAt && now - lastAttemptAt < RETRY_MS) return;
       lastAttemptAt = now;
@@ -5686,7 +6589,7 @@
 
     function start(immediate) {
       if (!enabled || destroyed) return;
-      if (!offAuth) offAuth = market.onAuth(sync);
+      if (!offAuth) offAuth = apiClient.onAuth(sync);
       if (!timer) timer = window.setInterval(sync, CHECK_MS);
       clearTimeout(kick);
       kick = window.setTimeout(sync, immediate ? 0 : BOOT_DELAY_MS);
@@ -5891,15 +6794,15 @@
         sellOptsEl.hidden = mode !== 'sell' || !text;
       };
 
-      /** 税率只在进入「销售」时拉一次（/countries 的 laws），失败可重试。 */
-      const loadTaxes = () => {
-        if (!alive || fxFeed.taxesKnown || taxesLoading) return;
+      /** 税率只在进入「销售」时拉一次（/countries 的 laws），失败可重试；force 走刷新入口。 */
+      const loadTaxes = (force) => {
+        if (!alive || taxesLoading) return;
+        if (fxFeed.taxesKnown && force !== true) return;
         taxesLoading = true;
         taxesFailed = false;
         taxesError = null;
         syncTaxHint();
-        fxFeed
-          .ensureTaxes()
+        (force === true ? fxFeed.refreshTaxes() : fxFeed.ensureTaxes())
           .catch((err) => {
             if (!alive) return;
             taxesFailed = true;
@@ -5950,33 +6853,31 @@
       /**
        * 当前所在国家（playerFeed 的 countryId）：
        * 只取 id、只存内存，用来给列表里对应国家换一套配色（不置顶、不改排序）。
-       * 采购模式也要标，所以挂载就读一次；与「销售」的国籍读取共用同一份缓存（2 分钟）。
+       * 只负责「把值画出来」：数据从哪来由 playerFeed.watch 统一推送，不在这里再挑时机。
        */
+      const applyHere = (info) => {
+        if (!alive) return;
+        const next = (info && info.countryId) || 0;
+        if (next === hereCountryId) return;
+        hereCountryId = next;
+        render();
+        ctx.ui.reposition();
+      };
+
+      /** 首次读一次（挂载 / 凭据晚到）；之后一律靠 playerFeed 的通知。 */
       const loadHere = () => {
         if (!alive || hereLoading) return;
         hereLoading = true;
-        let changed = false;
         playerFeed
           .ensure()
-          .then((info) => {
-            if (!alive) return;
-            const next = (info && info.countryId) || 0;
-            if (next !== hereCountryId) {
-              hereCountryId = next;
-              changed = true;
-            }
-          })
+          .then(applyHere)
           .catch((err) => {
             if (!alive) return;
             // 读不到就静默不标，只在调试日志里留一条
             ctx.log('当前所在国家读取失败', err && err.message ? err.message : err);
           })
           .then(() => {
-            if (!alive) return;
             hereLoading = false;
-            if (!changed) return;
-            render();
-            ctx.ui.reposition();
           });
       };
 
@@ -6152,7 +7053,7 @@
           return;
         }
 
-        if (market.state !== 'ok') {
+        if (apiClient.state !== 'ok') {
           setStatus(tokenHint(), 'warn');
           return;
         }
@@ -6166,7 +7067,7 @@
           } else if (quotaHint(err) || err.limited) {
             setStatus(quotaHint(err) || '接口返回 429（请求过多或已达当日查询上限），请稍后再试。', 'error');
           } else {
-            setStatus('拉取失败：' + (err.message || '未知错误'), 'error');
+            setStatus('拉取失败：' + fetchErrorText(err), 'error');
           }
           return;
         }
@@ -6432,13 +7333,14 @@
        */
       const load = () => {
         if (!alive) return;
-        // 人可能已经换了国家：刷新时顺手重读一次（playerFeed 自带 2 分钟缓存）
+        // 人可能已经换了国家：刷新时顺手重读一次（playerFeed 自带 10 秒缓存）
         loadHere();
         if (mode === 'sell') {
           loadPlayer();
-          loadTaxes();
+          loadTaxes(true);
         }
-        goodsSnapshot.load();
+        // 面板上的按钮：绕过 TTL 重抓（失败保留旧值），不是「清缓存」
+        goodsSnapshot.refresh();
       };
 
       on(refreshBtn, 'click', () => load());
@@ -6487,9 +7389,11 @@
       // 当前所在国家：挂载就读一次，读到后给对应行换配色（采购 / 销售都标）
       loadHere();
       // 凭据晚到（面板先开、游戏还没发过请求）：读到账号后再补一次高亮
-      const offAuth = market.onAuth(() => {
+      const offAuth = apiClient.onAuth(() => {
         if (alive && !hereCountryId) loadHere();
       });
+      // 位置变化由 playerFeed 统一推送：别的页面读到新位置时，这里立刻换配色
+      const offPlayer = playerFeed.watch(applyHere);
       // 面板自己做主：有新鲜快照就直接复用，否则拉一轮。与「商品市场自动加载比价数据」无关
       goodsSnapshot.ensure(GOODS_CACHE_MS);
 
@@ -6500,11 +7404,18 @@
       });
       watchPane.observe(pane, { attributes: true, attributeFilter: ['hidden'] });
 
+      // 每次显示本标签：重读一次所在国（10 秒过期才真请求），快照过期则补一轮
+      ctx.onShow(() => {
+        loadHere();
+        goodsSnapshot.ensure(GOODS_CACHE_MS);
+      });
+
       ctx.onDestroy(() => {
         alive = false;
         off();
         offSnap();
         offAuth();
+        offPlayer();
         watchPane.disconnect();
       });
     }
@@ -6527,16 +7438,11 @@
    * 按「当前所在国家市场的本币」处理（playerFeed 的 region.country.id → currency.id），
    * 实收金额是卖币所得，所以用「卖币换金」的买单方向报价（fxFeed.sellRateFor）。
    *
-   * 汇率优先复用「汇率」标签那份缓存（fxFeed），缺少时才按单个货币查一次挂单，
-   * 结果缓存 5 分钟；一次页面访问最多按币种数个请求，不轮询。
+   * 汇率直接读挂单簿 coinBook（与「汇率」面板共用同一套 key，10 分钟）：
+   * 缺哪一侧才补一次请求，之后不会再问；不轮询、不自建缓存。
    */
   const marketBadge = (() => {
     const ATTR = 'data-eh-gold';
-    const RATE_TTL = 5 * 60 * 1000;
-    const RATE_RETRY = 60 * 1000;
-    /** 国家清单拉失败后 30 秒内不再重试；单次请求超过 10 秒视为卡住，允许重来。 */
-    const MAP_RETRY = 30 * 1000;
-    const MAP_TIMEOUT = 10 * 1000;
     const SCAN_DELAY = 150;
     const WARMUP_GAP = 2000;
     const WARMUP_TRIES = 15;
@@ -6552,28 +7458,29 @@
     let observer = null;
     let timer = 0;
     let retryTimer = 0;
+    /**
+     * 页面静止时的低频重扫（只重算本地 DOM，不直接发请求）：
+     * 没有它，标注的「10 分钟过期才重拉」就永远等不到触发——扫描平时只由页面的 DOM 变化驱动。
+     */
+    const IDLE_SCAN_MS = 60 * 1000;
+    let idleTimer = 0;
     let credentialTries = 0;
     let currencyMap = null;
     let currencyByCountry = null;
-    let currencyPromise = null;
-    let currencyStartedAt = 0;
-    let currencyFailedAt = 0;
     /** 当前认定的商品列表容器；离开页面或它被移除后重新找。 */
     let scope = null;
     /** 上架面板容器（含「上架身份」与「实收金额」的那一栏）；同样会失效重找。 */
     let listingRoot = null;
     /** 已为「当前所在国家」发过请求，避免每轮扫描都问一次。 */
     let playerAsked = false;
+    /** playerFeed 的订阅：只在本页标注运行期间持有，stop() 里退订。 */
+    let offPlayer = null;
+    /** 换汇挂单的订阅：别的页面刷新了汇率，这边立刻重画，不用等下一次时间复核。 */
+    let offRates = null;
     /** 两类标注各自是否画成功过：决定热身重试何时收工。 */
     let rowPainted = false;
     let grossPainted = false;
 
-    /** 货币 id → { at, rate, failed }：rate 为 null 表示该币种确实没有挂单。 */
-    const rates = new Map();
-    const pending = new Set();
-    /** 同上，但记的是「卖币换金」方向（吃买单），给上架实收金额用。 */
-    const sellRates = new Map();
-    const sellPending = new Set();
     /** 已在调试日志里报过「未识别」的货币代码，避免同一批行反复刷屏。 */
     const unknownCodes = new Set();
 
@@ -6672,22 +7579,14 @@
 
     /**
      * 货币代码 → 货币 id：只有 /countries/summary 里有这份映射，拉一次就够。
-     * 自己发这一次请求、不借用 fxFeed 的缓存 promise：那份是给汇率 / 市场用的，
-     * 它失败或挂住时不该连带市场页标注一起失效。
+     * 走 fxFeed.ensureCountries（底层 apiCache 页面级条目）：并发合并、失败冷却都在那边，
+     * 这里不再自建 promise 与重试计时。
      */
     function ensureCurrencyMap() {
-      const now = Date.now();
       if (currencyMap) return;
-      if (currencyPromise) {
-        // 请求卡住超过 10 秒就不再等它，允许下一轮重来
-        if (now - currencyStartedAt < MAP_TIMEOUT) return;
-        currencyPromise = null;
-      }
-      if (market.state !== 'ok') return;
-      if (currencyFailedAt && now - currencyFailedAt < MAP_RETRY) return;
+      if (apiClient.state !== 'ok') return;
 
-      currencyStartedAt = now;
-      currencyPromise = fxFeed
+      fxFeed
         .ensureCountries()
         .then((list) => {
           const map = new Map();
@@ -6712,57 +7611,40 @@
           schedule();
         })
         .catch((err) => {
-          currencyFailedAt = Date.now();
           log('市场金价：国家清单读取失败', err && (err.message || err.code));
-        })
-        .then(() => {
-          currencyPromise = null;
         });
     }
 
     /**
-     * 没有对应方向挂单的币种只查一次并记住；失败则冷却 1 分钟，避免反复打接口。
-     * selling=true 查买单（卖币换金），false 查卖单（买币花金）。
-     */
-    function fetchRate(id, selling) {
-      if (market.state !== 'ok') return;
-      const bucket = selling ? sellRates : rates;
-      const waiting = selling ? sellPending : pending;
-      waiting.add(id);
-      market
-        .call('/market/coin/get', { form: { currency_id: id, transaction: selling ? 'BUY' : 'SELL' } })
-        .then((orders) => {
-          const book = selling ? fxBook(null, orders) : fxBook(orders, null);
-          const levels = selling ? book.bids : book.asks;
-          bucket.set(id, { at: Date.now(), rate: levels.length ? levels[0].price : null });
-        })
-        .catch((err) => {
-          bucket.set(id, { at: Date.now(), rate: null, failed: true });
-          log('市场金价：换汇挂单读取失败', err && (err.message || err.code));
-        })
-        .then(() => {
-          waiting.delete(id);
-          schedule();
-        });
-    }
-
-    /**
-     * 黄金/单位货币；null = 没有这个方向的挂单；undefined = 正在取或刚失败，先不画。
+     * 黄金/单位货币；null = 没有这个方向的挂单；undefined = 还没拉到（含刚失败进冷却），先不画。
      * selling=true 走买单（你把手里的法币卖成黄金），false 走卖单（你花黄金买法币）。
+     * 数据直接读 coinBook（与「汇率」面板共用同一套 key）：
+     *  - 命中 10 分钟缓存：直接用；
+     *  - 已过期：先拿旧值顶上，同时补一次请求（按币种节流，买卖两个方向共用一次 ensureMany）；
+     *  - 完全没有：补一次请求，这一轮先不画。
      */
+    const RATE_KICK_MS = 60 * 1000;
+    /** 补拉失败后退避：页面上的重扫是每分钟一次，别让它变成对故障接口的持续轮询。 */
+    const RATE_RETRY_MS = 5 * 60 * 1000;
+    /** 币种 id → 下次允许补拉的时间。 */
+    const rateKick = new Map();
     function goldRateOf(id, selling) {
-      const direct = selling ? fxFeed.sellRateFor(id) : fxFeed.rateFor(id);
-      if (direct) return direct;
+      const transaction = selling ? 'BUY' : 'SELL';
+      const entry = coinBook.side(id, transaction);
+      const priceOf = (hit) => (hit.value.length ? hit.value[0].price : null);
+      const expired = Boolean(entry) && Date.now() - entry.at >= API_TTL.coin;
+      if (entry && !expired) return priceOf(entry);
+      if (apiClient.state !== 'ok') return entry ? priceOf(entry) : undefined;
 
-      const cached = (selling ? sellRates : rates).get(id);
       const now = Date.now();
-      if (cached) {
-        if (cached.failed && now - cached.at < RATE_RETRY) return undefined;
-        if (!cached.failed && now - cached.at < RATE_TTL) return cached.rate;
-      }
-      if ((selling ? sellPending : pending).has(id)) return undefined;
-      fetchRate(id, selling);
-      return undefined;
+      if (now < (rateKick.get(id) || 0)) return entry ? priceOf(entry) : undefined;
+      rateKick.set(id, now + RATE_KICK_MS);
+      coinBook.ensureMany([id]).then(schedule, (err) => {
+        rateKick.set(id, Date.now() + RATE_RETRY_MS);
+        log('市场金价：换汇挂单补拉失败', (err && err.code) || (err && err.message) || err);
+        schedule();
+      });
+      return entry ? priceOf(entry) : undefined;
     }
 
     /** 返回售价（黄金/单位货币）；null = 没有挂单；undefined = 正在取或刚失败，先不画。 */
@@ -6921,6 +7803,8 @@
       }
 
       const countryId = playerFeed.countryId;
+      // 所在国只在「还没有值」时读一次：玩家在商品市场页内不会换国家（旅行会离开这页，
+      // 回来时 start() 会重读），所以不做周期性复核，免得每分钟打一次账号接口
       if (!countryId) {
         if (!playerAsked) {
           playerAsked = true;
@@ -7190,6 +8074,27 @@
       grossPainted = false;
       listingRoot = findListingRoot();
       ensureCurrencyMap();
+      // 页面静止时也要让「过期才重拉」有机会发生：每分钟本地重扫一次，是否发请求由 TTL 决定
+      if (!idleTimer) {
+        idleTimer = setInterval(() => {
+          if (!running || document.visibilityState !== 'visible') return;
+          schedule();
+        }, IDLE_SCAN_MS);
+      }
+      // 账号字段被别的页面刷新（旅行 / 换国籍）时立刻重画实收金额那条
+      if (!offPlayer) {
+        offPlayer = playerFeed.watch(() => {
+          if (!running) return;
+          playerAsked = false;
+          schedule();
+        });
+      }
+      // 换汇挂单被任何一处刷新（汇率面板 / 别的标注）后，这里的两条标注重新折算
+      if (!offRates) {
+        offRates = apiCache.watch('/market/coin/get', () => {
+          if (running) schedule();
+        });
+      }
       // 「商品市场自动加载比价数据」开启时，市场页自己也要保证行情新鲜：过期就补一轮
       goodsAuto.sync();
       // 上架面板按「所在国家」的本币计价：进页面时确保拿到（有缓存就不再请求）
@@ -7210,22 +8115,30 @@
 
     function stop() {
       running = false;
+      if (offPlayer) {
+        offPlayer();
+        offPlayer = null;
+      }
+      if (offRates) {
+        offRates();
+        offRates = null;
+      }
       if (observer) {
         observer.disconnect();
         observer = null;
       }
       clearTimeout(timer);
       clearInterval(retryTimer);
+      clearInterval(idleTimer);
       timer = 0;
       retryTimer = 0;
+      idleTimer = 0;
       credentialTries = 0;
       scope = null;
       listingRoot = null;
       playerAsked = false;
       rowPainted = false;
       grossPainted = false;
-      pending.clear();
-      sellPending.clear();
       unknownCodes.clear();
       // 只删自己加的徽标，游戏原有节点一个不动
       document.querySelectorAll('[' + ATTR + ']').forEach((node) => node.remove());
@@ -7253,7 +8166,7 @@
     fxFeed.subscribe((kind) => {
       if (running && kind === 'done') schedule();
     });
-    market.onAuth(() => {
+    apiClient.onAuth(() => {
       if (running) schedule();
     });
     // 面板「市场」页抓到新行情后，市场页上的「比全球最低贵多少」跟着刷新
@@ -7551,7 +8464,7 @@
     function ensureData() {
       if (!running || !countryId) return;
       const id = countryId;
-      // 与商品比价的领土检查、工商面板共用一份地区缓存：同一国家 5 分钟只请求一次
+      // 与商品比价的领土检查、工商面板共用一份地区缓存：同一国家 10 分钟内只请求一次
       const cached = regionFeed.get(id);
       if (cached) {
         if (list !== cached) {
@@ -7562,7 +8475,7 @@
       }
       if (pending) return;
       if (failedAt && Date.now() - failedAt < RETRY) return;
-      if (market.state !== 'ok') return;
+      if (apiClient.state !== 'ok') return;
 
       pending = regionFeed
         .ensure(id)
@@ -7589,7 +8502,7 @@
     function paint() {
       if (!running || !enabled) return;
       // 还没有凭据、也没有缓存数据：静默不画，等凭据到位或下一轮扫描，别在页面上留半条空栏
-      if (!list && market.state !== 'ok') {
+      if (!list && apiClient.state !== 'ok') {
         if (host && host.isConnected) host.remove();
         anchor = null;
         warningNode = null;
@@ -7711,7 +8624,7 @@
     }
 
     // 凭据晚到（面板先开、游戏还没发过请求）时补一轮，不用玩家手动刷新
-    market.onAuth(() => {
+    apiClient.onAuth(() => {
       if (!running) return;
       failedAt = 0;
       schedule();
@@ -8365,7 +9278,7 @@
         // 凭据还没到手时状态栏已经说明原因，别在下面再写一句「点刷新抓取」
         const blocked =
           (error && (error.code === 'NO_TOKEN' || error.code === 'UNAUTHORIZED')) ||
-          (market.state !== 'ok' && !updatedAt);
+          (apiClient.state !== 'ok' && !updatedAt);
         emptyEl.hidden = Boolean(loading) || Boolean(blocked);
         emptyEl.textContent = keyword
           ? '没有匹配「' + query.trim() + '」的地区。'
@@ -8391,7 +9304,7 @@
           return;
         }
 
-        if (market.state !== 'ok' && !updatedAt) {
+        if (apiClient.state !== 'ok' && !updatedAt) {
           statusEl.textContent = tokenHint();
           statusEl.dataset.tone = 'warn';
           return;
@@ -8410,7 +9323,7 @@
               quotaHint(error) || '接口返回 429（请求过多或已达当日查询上限），请稍后再试。';
             statusEl.dataset.tone = 'error';
           } else {
-            statusEl.textContent = '读取失败：' + (error.message || '未知错误');
+            statusEl.textContent = '读取失败：' + fetchErrorText(error);
             statusEl.dataset.tone = 'error';
           }
           return;
@@ -8440,21 +9353,23 @@
       /** 凭据晚到（面板先开、游戏还没发过请求）时补一轮，不用玩家手动刷新。 */
       const armAuthRetry = () => {
         if (offAuth) return;
-        offAuth = market.onAuth(() => {
+        offAuth = apiClient.onAuth(() => {
           offAuth = null;
-          if (!loading && !updatedAt) load(false);
+          if (!loading && !updatedAt) load();
         });
       };
 
       /**
        * 拉一遍所有国家的地区。
-       * force 只影响「有没有过期」，实际的请求次数由 regionFeed 的缓存兜着：
-       * 刚拉过的国家直接命中缓存，不会因为重新打开面板就再打一遍接口。
+       * pull 决定「命中缓存还是绕过 TTL」，由下面的 load / refresh 两个入口选：
+       * 打开面板走 regionFeed.ensure（刚拉过的国家直接命中 10 分钟缓存），
+       * 点「刷新数据」走 regionFeed.refresh（重抓，失败保留旧值）。
+       * countriesMode 同理决定国家清单是否绕过页面级 TTL。
        */
-      function load(force) {
+      function run(pull, countriesMode) {
         if (!alive || loading) return;
-        if (market.state !== 'ok') {
-          error = { code: market.state === 'expired' ? 'UNAUTHORIZED' : 'NO_TOKEN' };
+        if (apiClient.state !== 'ok') {
+          error = { code: apiClient.state === 'expired' ? 'UNAUTHORIZED' : 'NO_TOKEN' };
           paint();
           armAuthRetry();
           return;
@@ -8469,7 +9384,7 @@
 
         (async () => {
           try {
-            const countries = await fxFeed.ensureCountries();
+            const countries = await fxFeed.loadCountries(countriesMode);
             if (!alive) return;
 
             const targets = (Array.isArray(countries) ? countries : [])
@@ -8499,7 +9414,7 @@
                 const country = targets[cursor];
                 cursor += 1;
                 try {
-                  const regions = await regionFeed.ensure(country.id, { force });
+                  const regions = await pull(country.id);
                   regions.forEach((region) => {
                     const row = buildDataRow(country, region);
                     if (row) next.push(row);
@@ -8522,7 +9437,9 @@
             if (!alive) return;
 
             rows = next;
-            updatedAt = Date.now();
+            // 「更新于」= 这屏里最旧的一份地区数据（命中 10 分钟缓存时不要谎报成「刚刚」）
+            const stamps = targets.map((country) => regionFeed.atOf(country.id)).filter(Boolean);
+            updatedAt = stamps.length ? Math.min.apply(null, stamps) : Date.now();
           } catch (err) {
             if (err && err.name === 'AbortError') return;
             error = {
@@ -8543,7 +9460,12 @@
         })();
       }
 
-      on(refreshBtn, 'click', () => load(true));
+      /** 打开面板 / 凭据晚到时走缓存。 */
+      const load = () => run((countryId) => regionFeed.ensure(countryId), 'ensure');
+      /** 「刷新数据」：绕过 TTL 重抓，失败保留上一轮的结果。 */
+      const refresh = () => run((countryId) => regionFeed.refresh(countryId), 'refresh');
+
+      on(refreshBtn, 'click', () => refresh());
 
       on(queryEl, 'input', () => {
         query = queryEl.value || '';
@@ -8568,7 +9490,7 @@
       paintSort();
       paint();
       // 打开「工业」就先抓一轮：已拉过的国家命中 regionFeed 缓存，不会重复打接口
-      load(false);
+      load();
     }
   });
 
@@ -8579,7 +9501,7 @@
    *  - 增值税 / 进口税 / 工资税 / 最低工资取自 /countries/summary 的 laws
    *    （个别环境 summary 不带 laws，这时才补一次 /countries，与「销售」共用同一份缓存）；
    *  - 「折金」用 fxFeed 的卖法币换黄金最优价，与「市场」的销售口径一致；
-   *  - 领土检查复用 regionFeed（与「工业」、商品比价的领土检查共用 5 分钟缓存），
+   *  - 领土检查复用 regionFeed（与「工业」、商品比价的领土检查共用 10 分钟缓存），
    *    已失去全部领土的流亡政府单独放到最底下。
    *
    * 只做展示与排序：不发交易请求、不写游戏数据。
@@ -8652,7 +9574,7 @@
       let updatedAt = 0;
       let rows = [];
       let query = '';
-      /** 账号的国籍国 / 当前所在国（只存 id，来自 playerFeed，2 分钟缓存，两个模块共用）。 */
+      /** 账号的国籍国 / 当前所在国（只存 id，来自 playerFeed，10 秒缓存，两个模块共用）。 */
       let myHomeId = null;
       let myHereId = null;
 
@@ -9033,7 +9955,7 @@
         // 凭据还没到手时状态栏已经说明原因，别在下面再写一句「点刷新抓取」
         const blocked =
           (error && (error.code === 'NO_TOKEN' || error.code === 'UNAUTHORIZED')) ||
-          (market.state !== 'ok' && !updatedAt);
+          (apiClient.state !== 'ok' && !updatedAt);
         const none = reachable.length === 0 && exiled.length === 0;
         emptyEl.hidden = Boolean(loading) || Boolean(blocked) || !none;
         if (!none) return;
@@ -9065,7 +9987,7 @@
           return;
         }
 
-        if (market.state !== 'ok' && !updatedAt) {
+        if (apiClient.state !== 'ok' && !updatedAt) {
           statusEl.textContent = tokenHint();
           statusEl.dataset.tone = 'warn';
           return;
@@ -9084,7 +10006,7 @@
               quotaHint(error) || '接口返回 429（请求过多或已达当日查询上限），请稍后再试。';
             statusEl.dataset.tone = 'error';
           } else {
-            statusEl.textContent = '读取失败：' + (error.message || '未知错误');
+            statusEl.textContent = '读取失败：' + fetchErrorText(error);
             statusEl.dataset.tone = 'error';
           }
           return;
@@ -9121,15 +10043,27 @@
       /** 凭据晚到（面板先开、游戏还没发过请求）时补一轮，不用玩家手动刷新。 */
       const armAuthRetry = () => {
         if (offAuth) return;
-        offAuth = market.onAuth(() => {
+        offAuth = apiClient.onAuth(() => {
           offAuth = null;
-          if (!loading && !updatedAt) load(false);
+          if (!loading && !updatedAt) load();
         });
       };
 
+      /** 把账号字段落到本地并重绘：值没变就什么都不做（通知可能来自别的页面）。 */
+      function applyPlayer(info) {
+        if (!alive) return;
+        const home = info && info.nationalityId ? String(info.nationalityId) : null;
+        const here = info && info.countryId ? String(info.countryId) : null;
+        if (home === myHomeId && here === myHereId) return;
+        myHomeId = home;
+        myHereId = here;
+        paint();
+      }
+
       /**
        * 读一次账号的国籍国 / 当前所在国（只存 id，不存原始字段）。
-       * 走 playerFeed 的 2 分钟缓存，与「汇率」的置顶、「市场」的本国判断共用同一次请求。
+       * 走 playerFeed 的 10 秒缓存，与「汇率」的置顶、「市场」的本国判断共用同一次请求；
+       * 之后的更新由 playerFeed.watch 推过来，不再各自挑时机。
        */
       async function readPlayer() {
         let info = null;
@@ -9139,16 +10073,19 @@
           info = playerFeed.info || null;
           ctx.log('账号读取失败（国籍 / 当前位置无法置顶）', (err && err.code) || (err && err.message) || err);
         }
-        if (!alive) return;
-        myHomeId = info && info.nationalityId ? String(info.nationalityId) : null;
-        myHereId = info && info.countryId ? String(info.countryId) : null;
+        applyPlayer(info);
       }
 
+      /** 命中缓存的一轮：regionFeed.ensure（10 分钟内不重复请求）。 */
+      const pullCached = (countryId) => regionFeed.ensure(countryId);
+      /** 绕过 TTL 的一轮：regionFeed.refresh，失败保留上一轮结果。 */
+      const pullFresh = (countryId) => regionFeed.refresh(countryId);
+
       /**
-       * 领土（流亡政府判断）：逐个国家查 regionFeed。
+       * 领土（流亡政府判断）：逐个国家查 regionFeed，pull 决定命中缓存还是绕过 TTL。
        * 缓存里已有时直接跳过（不计等待），所以先打开「工业」再切过来几乎立刻出结果。
        */
-      async function loadLand(force) {
+      async function loadLand(pull) {
         let cursor = 0;
         const worker = async () => {
           while (cursor < rows.length) {
@@ -9156,7 +10093,7 @@
             const row = rows[cursor];
             cursor += 1;
 
-            const cached = force ? null : regionFeed.get(row.id);
+            const cached = pull === pullCached ? regionFeed.get(row.id) : null;
             if (cached) {
               row.exiled = cached.length === 0;
               progress = { done: progress.done + 1, total: progress.total };
@@ -9165,7 +10102,7 @@
             }
 
             try {
-              const list = await regionFeed.ensure(row.id, { force });
+              const list = await pull(row.id);
               row.exiled = list.length === 0;
             } catch (err) {
               if (err && err.code === 'UNAUTHORIZED') throw err;
@@ -9185,13 +10122,14 @@
 
       /**
        * 拉一遍税费表。汇率与领土各自走共享缓存：
-       * 刚拉过的国家命中 regionFeed 的 5 分钟缓存，行情命中 fxFeed 的 10 分钟缓存，
-       * 重新打开面板不会把上百个请求再打一遍。
+       * 领土由 pull 决定命中 regionFeed 的 10 分钟缓存还是绕过 TTL，
+       * 行情命中 fxFeed 的 10 分钟缓存，重新打开面板不会把上百个请求再打一遍。
+       * countriesMode / taxes 的刷新口径同理：点「刷新数据」时连页面级条目一起绕过。
        */
-      function load(force) {
+      function run(pull, countriesMode) {
         if (!alive || loading) return;
-        if (market.state !== 'ok') {
-          error = { code: market.state === 'expired' ? 'UNAUTHORIZED' : 'NO_TOKEN' };
+        if (apiClient.state !== 'ok') {
+          error = { code: apiClient.state === 'expired' ? 'UNAUTHORIZED' : 'NO_TOKEN' };
           paint();
           armAuthRetry();
           return;
@@ -9207,7 +10145,7 @@
 
         (async () => {
           try {
-            const countries = await fxFeed.ensureCountries();
+            const countries = await fxFeed.loadCountries(countriesMode);
             if (!alive) return;
 
             const next = (Array.isArray(countries) ? countries : []).map(buildDataRow).filter(Boolean);
@@ -9238,8 +10176,7 @@
 
             // summary 没带 laws：补一次 /countries（和「销售」共用缓存）
             const lawsJob = needsLaws()
-              ? fxFeed
-                  .ensureTaxes()
+              ? (countriesMode === 'refresh' ? fxFeed.refreshTaxes() : fxFeed.ensureTaxes())
                   .catch((err) => {
                     ctx.log('税率读取失败', (err && err.message) || err);
                   })
@@ -9250,15 +10187,17 @@
                   })
               : Promise.resolve();
 
-            // 账号（国籍 / 当前位置）只认登录凭据，单独一次 POST /account/getuser（2 分钟缓存）
+            // 账号（国籍 / 当前位置）只认登录凭据，单独一次 POST /account/getuser（10 秒缓存）
             const playerJob = readPlayer();
 
             // 汇率与领土串着跑：两边都冷时各有一串请求，同时开会把并发推到 6，容易被 429
             await Promise.all([lawsJob, rateJob, playerJob]);
             if (!alive) return;
-            await loadLand(force);
+            await loadLand(pull);
             if (!alive) return;
-            updatedAt = Date.now();
+            // 「更新于」= 这屏里最旧的一份地区数据（命中缓存时不要谎报成「刚刚」）
+            const stamps = rows.map((row) => regionFeed.atOf(row.id)).filter(Boolean);
+            updatedAt = stamps.length ? Math.min.apply(null, stamps) : Date.now();
           } catch (err) {
             if (err && err.name === 'AbortError') return;
             error = {
@@ -9281,7 +10220,12 @@
         })();
       }
 
-      on(refreshBtn, 'click', () => load(true));
+      /** 打开面板 / 凭据晚到：领土走缓存，行情走各行自己的有效期。 */
+      const load = () => run(pullCached, 'ensure');
+      /** 「刷新数据」：领土与国家清单绕过 TTL 重抓，行情仍按有效期（与「市场」「汇率」共用）。 */
+      const refresh = () => run(pullFresh, 'refresh');
+
+      on(refreshBtn, 'click', () => refresh());
 
       on(queryEl, 'input', () => {
         query = queryEl.value || '';
@@ -9305,9 +10249,19 @@
         ctx.ui.reposition();
       });
 
+      // 国籍 / 位置变了就重画高亮：别的页面读到新值时不等着本页再刷新一次
+      const offPlayer = playerFeed.watch(applyPlayer);
+
+      // 每次显示本标签：只补读账号（10 秒过期才真请求）；
+      // 领土是 10 分钟级数据，切标签重跑整轮没有意义，交给「刷新数据」
+      ctx.onShow(() => {
+        readPlayer();
+      });
+
       ctx.onDestroy(() => {
         alive = false;
         offFx();
+        offPlayer();
         if (offAuth) {
           offAuth();
           offAuth = null;
@@ -9317,7 +10271,7 @@
       paintSort();
       paint();
       // 打开「税费」就先抓一轮：汇率与领土都命中共享缓存时几乎不花请求
-      load(false);
+      load();
     }
   });
 
@@ -9346,8 +10300,8 @@
         'Titanium Mine': '钛矿',
         'Weapons Factory': '武器工厂'
       };
-      /** 整轮结果只在内存里缓存 2 分钟，不落盘。 */
-      const CACHE_MS = 2 * 60 * 1000;
+      /** 岗位按「国家 + 页」缓存 2 分钟（apiCache），门槛只决定读到第几页。 */
+      const JOB_PATH = '/market/jobs/get';
 
       pane.classList.add('eh-pane--stick');
       pane.innerHTML = `
@@ -9396,7 +10350,6 @@
       let updatedAt = 0;
       let capped = false;
       let progress = { done: 0, total: 0, count: 0 };
-      const cache = new Map();
 
       const tokenHint = () => authHint().replace('刷新行情', '刷新岗位');
 
@@ -9547,28 +10500,37 @@
         headline.appendChild(nameEl);
         title.appendChild(headline);
 
-        // 副标题：产业类型（中文）+ 职位数 + 技能要求
+        // 副标题：产业类型（中文，仅此项高亮）· 职位数 · 技能要求
         const subtitle = document.createElement('div');
         subtitle.className = 'eh-job-subtitle';
+        const appendSub = (node) => {
+          if (subtitle.childNodes.length) {
+            const dot = document.createElement('span');
+            dot.className = 'eh-job-dot';
+            dot.textContent = '·';
+            subtitle.appendChild(dot);
+          }
+          subtitle.appendChild(node);
+        };
         if (row.type) {
           const typeEl = document.createElement('span');
           typeEl.className = 'eh-job-type';
           typeEl.textContent = JOB_TYPE_ZH[row.type] || row.type;
           typeEl.title = row.type;
-          subtitle.appendChild(typeEl);
+          appendSub(typeEl);
         }
         const amountEl = document.createElement('span');
         amountEl.textContent = row.amount + ' 个职位';
-        subtitle.appendChild(amountEl);
+        appendSub(amountEl);
         const skillEl = document.createElement('span');
         skillEl.textContent = '技能 ≥ ' + row.skill;
         skillEl.title = '最低技能要求';
-        subtitle.appendChild(skillEl);
+        appendSub(skillEl);
         if (isHere) {
           const markEl = document.createElement('span');
           markEl.className = 'eh-tax-mark';
           markEl.textContent = '当前位置';
-          subtitle.appendChild(markEl);
+          appendSub(markEl);
         }
         title.appendChild(subtitle);
         main.appendChild(title);
@@ -9687,6 +10649,9 @@
       }
 
       function paintStatus() {
+        // 抓取期间禁用：一轮上百次请求，重复点击既不会重抓也容易撞 429
+        refreshBtn.disabled = loading;
+
         if (error) {
           const code = error && error.code;
           if (code === 'NO_TOKEN' || code === 'UNAUTHORIZED') {
@@ -9699,7 +10664,7 @@
             statusEl.textContent = quotaHint(error) || '接口返回 429（请求过多或已达当日查询上限），请稍后再试。';
             statusEl.dataset.tone = 'error';
           } else {
-            statusEl.textContent = '读取失败：' + (error.message || '未知错误');
+            statusEl.textContent = '读取失败：' + fetchErrorText(error);
             statusEl.dataset.tone = 'error';
           }
           return;
@@ -9742,13 +10707,23 @@
       /** 凭据晚到（面板先开、游戏还没发过请求）时补一轮，不用玩家手动刷新。 */
       const armAuthRetry = () => {
         if (offAuth) return;
-        offAuth = market.onAuth(() => {
+        offAuth = apiClient.onAuth(() => {
           offAuth = null;
-          if (!loading && !updatedAt) load(false);
+          if (!loading && !updatedAt) load();
         });
       };
 
-      /** 账号字段只认登录凭据，走 playerFeed 的 2 分钟缓存；读不到时技能过滤与高亮自动降级。 */
+      /** 账号字段落到本地：值没变就返回 false（通知可能来自别的页面，别白重绘）。 */
+      function applyFields(info) {
+        const home = info && info.nationalityId ? String(info.nationalityId) : null;
+        const here = info && info.countryId ? String(info.countryId) : null;
+        if (home === myHomeId && here === myHereId) return false;
+        myHomeId = home;
+        myHereId = here;
+        return true;
+      }
+
+      /** 账号字段只认登录凭据，走 playerFeed 的 10 秒缓存；读不到时技能过滤与高亮自动降级。 */
       async function readPlayer() {
         let info = null;
         try {
@@ -9758,8 +10733,7 @@
           ctx.log('账号读取失败（技能过滤 / 位置高亮不可用）', (err && err.code) || (err && err.message) || err);
         }
         if (!alive) return;
-        myHomeId = info && info.nationalityId ? String(info.nationalityId) : null;
-        myHereId = info && info.countryId ? String(info.countryId) : null;
+        applyFields(info);
         // getuser 没有技能等级：按账号 id 再读一次公开资料，只取 economic_level
         const accountId = info && info.accountId ? info.accountId : 0;
         if (accountId) {
@@ -9782,40 +10756,59 @@
        * 遍历全部国家抓岗位，回来后在列表里统一按税后金价排序。
        * 分页在响应根上，所以要给 call 传 full；无岗位的国家可能不带 data，allowEmpty 放行，
        * total_records 为 0 同样当作空结果；单国失败只跳过那一国，已有岗位照常展示。
-       * 接口按薪资从高到低返回：设了门槛时逐页读，某页最低已低于门槛即停；
-       * 全局请求有硬上限，缓存键带上门槛，半截结果不会被当成完整列表复用。
+       * 接口按薪资从高到低返回：设了门槛时逐页读，某页最低已低于门槛即停。
+       * 缓存按「国家 + 页」走 apiCache（2 分钟）：门槛只决定读到第几页，
+       * 换门槛复用已读页、不整轮重抓；「刷新岗位」用 refresh 绕过 TTL，旧值不会被删。
+       * 全局请求有硬上限（只数真正要发的请求，命中缓存的页不计入）。
        */
       async function fetchJobs(force, threshold, targets) {
-        const key = threshold == null ? 'all' : String(threshold);
-        const cached = cache.get(key);
-        if (!force && cached && Date.now() - cached.at < CACHE_MS) return cached;
-
         const data = [];
         let requests = 0;
         let stopped = false;
         let capped = false;
         let cursor = 0;
         // 没有岗位的国家可能整个不带 data，allowEmpty 放行；total_records 为 0 也直接当作空结果
-        const opts = { object: true, full: true, noMethodRetry: true, allowEmpty: true };
+        const callOpts = { object: true, full: true, noMethodRetry: true, allowEmpty: true };
+        // 空岗位页也是有效结果（empty 标记），2 分钟内不再问同一个国家
+        const pageOpts = {
+          ttl: 'jobPage',
+          namespace: 'jobs',
+          empty: (payload) => !(payload && Array.isArray(payload.data) && payload.data.length)
+        };
+
+        /** 读一页：force=true 绕过 TTL，其余命中 2 分钟缓存。 */
+        const readPage = (countryId, page) => {
+          const key = apiCache.key(JOB_PATH, { country_id: String(countryId), page: page });
+          const loader = () =>
+            apiClient.call(
+              JOB_PATH + '?country_id=' + encodeURIComponent(countryId) + '&page=' + page,
+              callOpts
+            );
+          return force ? apiCache.refresh(key, loader, pageOpts) : apiCache.ensure(key, loader, pageOpts);
+        };
 
         const worker = async () => {
           while (cursor < targets.length) {
             if (!alive || capped) return;
             const countryId = targets[cursor];
             cursor += 1;
-            const url = (page) =>
-              '/market/jobs/get?country_id=' + encodeURIComponent(countryId) + '&page=' + page;
             let page = 1;
             let wanted = 1;
             try {
               while (page <= wanted) {
                 if (!alive || capped) return;
-                if (requests >= MAX_REQUESTS) {
-                  capped = true;
-                  return;
+                const pageKey = apiCache.key(JOB_PATH, { country_id: String(countryId), page: page });
+                // 只有真会发请求的页才计入硬上限：命中「未过期」缓存的页不算，
+                // 过期条目照样会重新请求，必须用 fresh 而不是 peek
+                if (force || !apiCache.fresh(pageKey)) {
+                  if (requests >= MAX_REQUESTS) {
+                    capped = true;
+                    return;
+                  }
+                  requests += 1;
                 }
-                requests += 1;
-                const payload = await market.call(url(page), opts);
+                const entry = await readPage(countryId, page);
+                const payload = entry && entry.value ? entry.value : null;
                 const pg =
                   payload && payload.pagination && typeof payload.pagination === 'object'
                     ? payload.pagination
@@ -9863,15 +10856,23 @@
           seen.add(rowKey);
           return true;
         });
-        const result = { at: Date.now(), rows, stopped, capped };
-        cache.set(key, result);
-        return result;
+        return { rows, stopped, capped };
       }
 
-      function load(force) {
+      /** 打开面板 / 凭据晚到：命中已有页缓存。 */
+      function load() {
+        return run(false);
+      }
+
+      /** 「刷新岗位」：绕过 2 分钟 TTL 重抓（失败保留旧值，不清缓存）。 */
+      function refresh() {
+        return run(true);
+      }
+
+      function run(force) {
         if (!alive || loading) return;
-        if (market.state !== 'ok') {
-          error = { code: market.state === 'expired' ? 'UNAUTHORIZED' : 'NO_TOKEN' };
+        if (apiClient.state !== 'ok') {
+          error = { code: apiClient.state === 'expired' ? 'UNAUTHORIZED' : 'NO_TOKEN' };
           paint();
           armAuthRetry();
           return;
@@ -9886,7 +10887,8 @@
         (async () => {
           try {
             const [list, rateResult] = await Promise.all([
-              fxFeed.ensureCountries().catch((err) => {
+              // 「刷新岗位」连国家清单一起绕过页面级 TTL，否则清单刚拉过的话刷新等于没刷
+              fxFeed.loadCountries(force ? 'refresh' : 'ensure').catch((err) => {
                 ctx.log('国家清单读取失败', (err && err.code) || (err && err.message) || err);
                 return [];
               }),
@@ -9920,7 +10922,12 @@
             updatedAt = Date.now();
           } catch (err) {
             if (err && err.name === 'AbortError') return;
-            error = { code: (err && err.code) || 'ERROR', message: err && err.message };
+            error = {
+              code: (err && err.code) || 'ERROR',
+              message: err && err.message,
+              retryAt: (err && err.retryAt) || 0,
+              reason: (err && err.reason) || ''
+            };
             if (error.code === 'UNAUTHORIZED' || error.code === 'NO_TOKEN') armAuthRetry();
           } finally {
             loading = false;
@@ -9934,7 +10941,7 @@
         })();
       }
 
-      on(refreshBtn, 'click', () => load(true));
+      on(refreshBtn, 'click', () => refresh());
 
       on(skillEl, 'change', () => {
         skillOnly = skillEl.checked;
@@ -9972,9 +10979,21 @@
         ctx.ui.reposition();
       });
 
+      // 国籍 / 位置变了就重画高亮与「当前位置」标签（跨页面共享同一份账号数据）
+      const offPlayer = playerFeed.watch((info) => {
+        if (!alive) return;
+        if (applyFields(info)) paint();
+      });
+
+      // 每次显示本标签：补读账号（10 秒过期才真请求）；岗位页缓存 2 分钟，切标签不整轮重抓
+      ctx.onShow(() => {
+        readPlayer();
+      });
+
       ctx.onDestroy(() => {
         alive = false;
         offFx();
+        offPlayer();
         if (offAuth) {
           offAuth();
           offAuth = null;
@@ -9991,7 +11010,7 @@
       skillEl.checked = skillOnly;
       paint();
       // 打开「工作」就抓一轮：国家清单、汇率与账号都命中共享缓存时只发岗位请求
-      load(false);
+      load();
     }
   });
 
@@ -10022,6 +11041,8 @@
 
       const buttons = new Map();
       const holders = new Map();
+      /** 子面板各自的「显示」回调：切到这个子标签时触发。 */
+      const subShows = new Map();
 
       /**
        * 子面板拿到的 ctx：storage 再按子面板 id 分一层，别的子面板不会和它抢同一个键；
@@ -10039,6 +11060,11 @@
           remove: (key) => ctx.storage.remove(paneId + ':' + key)
         },
         onDestroy: (fn) => ctx.onDestroy(fn),
+        onShow(fn) {
+          if (typeof fn !== 'function') return;
+          if (!subShows.has(paneId)) subShows.set(paneId, []);
+          subShows.get(paneId).push(fn);
+        },
         log: (...args) => ctx.log('[' + paneId + ']', ...args)
       });
 
@@ -10058,6 +11084,7 @@
         });
 
         let holder = holders.get(target.id);
+        const fresh = !holder;
         if (!holder) {
           holder = document.createElement('div');
           holder.className = 'eh-biz-pane';
@@ -10079,6 +11106,18 @@
         }
         holder.hidden = false;
         ctx.ui.reposition();
+
+        // 首次由 mount 自己读一轮，切回来时才需要「显示」通知去补读
+        if (!fresh && state.open) {
+          const shows = subShows.get(target.id) || [];
+          shows.forEach((fn) => {
+            try {
+              fn();
+            } catch (err) {
+              warn('子面板「' + target.title + '」显示回调异常', err);
+            }
+          });
+        }
       };
 
       items.forEach((item) => {
@@ -10400,8 +11439,8 @@
 
       /** 把「当前用哪套凭据」同步到界面上。 */
       const syncApi = () => {
-        const mode = market.mode;
-        const expired = market.state === 'expired';
+        const mode = apiClient.mode;
+        const expired = apiClient.state === 'expired';
         const usingApi = mode === 'api';
         const healthy = usingApi && !expired;
 
@@ -10447,6 +11486,9 @@
         apiSaveBtn.disabled = generating;
       };
 
+      /** 专用密钥的当日用量：60 秒内复用同一份结果。 */
+      const USAGE_KEY = '/account/apikey/usage';
+
       const countLabel = (value) => {
         const n = Number(value);
         if (!Number.isFinite(n)) return '—';
@@ -10463,15 +11505,21 @@
       /**
        * 进入设置页时读一次当日用量；只有专用密钥可用时才请求。
        * 用量接口只认游戏登录凭据，用专用密钥反而会被拒，所以这里显式指定 login。
+       * 结果走 apiCache（60 秒）：来回切标签不会每次都打一遍这个接口。
        */
       const loadUsage = async () => {
         if (!alive || usageLoading) return;
-        if (market.mode !== 'api' || market.state !== 'ok') return;
+        if (apiClient.mode !== 'api' || apiClient.state !== 'ok') return;
 
         usageLoading = true;
         syncApi();
         try {
-          const usage = await market.call('/account/apikey/usage', { login: true, object: true });
+          const entry = await apiCache.ensure(
+            USAGE_KEY,
+            () => apiClient.call(USAGE_KEY, { login: true, object: true }),
+            { ttl: 'usage', namespace: 'usage' }
+          );
+          const usage = entry && entry.value;
           if (!alive) return;
           const used = Number(usage && usage.used);
           const limit = Number(usage && usage.limit);
@@ -10532,7 +11580,7 @@
         syncApi();
         ctx.ui.reposition();
         try {
-          await market.generateKey();
+          await apiClient.generateKey();
           if (!alive) return;
           apiInputEl.value = '';
           sayApi('已保存密钥 ' + apiKey.masked);
@@ -10557,7 +11605,7 @@
           sayApi('请先粘贴密钥。', 'warn');
           return;
         }
-        if (!market.setKey(raw)) {
+        if (!apiClient.setKey(raw)) {
           sayApi('密钥格式不对：应以 eclesiar_ 开头，检查是否多了空格或漏了字符。', 'warn');
           return;
         }
@@ -10570,7 +11618,7 @@
       };
 
       const clearApiKey = () => {
-        market.clearKey();
+        apiClient.clearKey();
         resetUsage();
         syncApi();
         ctx.ui.reposition();
@@ -10725,7 +11773,10 @@
   }
 
   function formatClock(timestamp) {
-    const now = Number.isFinite(timestamp) ? new Date(timestamp) : new Date();
+    const value = Number(timestamp);
+    // 0 / 非数字表示「没有可用的时间」（例如一次都没成功过），别把它显示成 1970 年
+    if (!Number.isFinite(value) || value <= 0) return '—';
+    const now = new Date(value);
     const pad = (n) => String(n).padStart(2, '0');
     return pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds());
   }
@@ -10841,7 +11892,7 @@
 
     try {
       loadState();
-      market.install();
+      apiClient.install();
       createShell();
       bindBall();
       bindPanel();
@@ -10890,7 +11941,10 @@
     fxFeed.cancel();
     // 地区缓存只存内存，销毁时一并丢掉；在途请求会自己结束，不会留下轮询
     regionFeed.clear();
-    market.uninstall();
+    // 请求层缓存同理：清空后旧请求的结果不会回写（失效代数校验）
+    apiCache.clear();
+    coinBook.reset();
+    apiClient.uninstall();
 
     features.forEach((feature) => {
       if (feature.__cleanups) {
@@ -10903,6 +11957,7 @@
         });
         feature.__cleanups = [];
       }
+      feature.__showHooks = [];
       if (feature.__pane && typeof feature.unmount === 'function') {
         try {
           feature.unmount();
@@ -10963,6 +12018,14 @@
       get: (key, fallback) => storage.read(key, fallback),
       set: (key, value) => storage.write(key, value),
       remove: (key) => storage.remove(key)
+    },
+    /** 调试用：请求层缓存的统计与条目查询（只在控制台手动调用，插件自己不轮询）。 */
+    cache: {
+      stats: () => apiCache.stats(),
+      report: (label) => apiCache.report(label),
+      peek: (key) => apiCache.peek(key),
+      invalidate: (prefix) => apiCache.invalidate(prefix),
+      clear: () => apiCache.clear()
     },
     destroy
   };

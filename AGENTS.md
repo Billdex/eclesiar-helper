@@ -33,14 +33,17 @@
 
 | 数据源 | 内容 | 缓存 | 使用方 |
 | --- | --- | --- | --- |
-| `fxFeed` | 全球法币挂单；国家清单、税率与工资法 | 行情 10 分钟；国家清单一次；税率页面内缓存 | 汇率、商品销售、税费、`marketBadge` |
-| `goodsSnapshot` → `goodsFeed` | 各国市场行情，抓完 `publish` 给 `goodsFeed` | 10 分钟（`GOODS_CACHE_MS`） | 市场页、`goodsAuto`、`marketBadge` |
-| `regionFeed` | 国家 → 地区清单，并发共享同一请求 | 5 分钟 | 市场页领土检查、`regionJump`、工业 |
-| `playerFeed` | 账号 id、国籍 id、所在国 id（只这三个字段） | 2 分钟，失败冷却 60 秒 | 汇率置顶、商品销售、税费高亮、`marketBadge`、工作技能过滤取 id |
-| `profileFeed` | `GET /user/profile/{account_id}` 的 `economic_level`（公开资料，只取这一个字段） | 2 分钟，失败冷却 60 秒 | 工商「工作」技能过滤 |
-| 工作（子面板内存缓存） | 遍历全部国家的 `GET /market/jobs/get?country_id=…&page=…` 岗位，按金价门槛存整轮结果 | 2 分钟，`destroy()` 后失效；不落盘 | 工商「工作」子面板 |
+| `apiCache`（请求层） | 接口级缓存与请求去重：key = 接口 + 规范化参数，负责 TTL、失败冷却、in-flight 合并、空结果标记、按前缀失效与「在途结果不落回旧缓存」 | 见 §5 `9.0`（行情 10 分钟、账号 / 公开资料 10 秒、岗位 2 分钟、用量 60 秒、国家清单与税率页面级） | 全部数据源 |
+| `coinBook` | 单币种挂单簿（`/market/coin/get`，买卖各一个 key）：`quote` / `ensureMany` / `load` 批次句柄 | 10 分钟（`API_TTL.coin`），失败冷却 60 秒 | 汇率、商品销售、税费折金、`marketBadge` |
+| `fxFeed` | 国家清单、税率与工资法；「汇率」面板的展示快照（`quotes` 只是 coinBook 的渲染视图） | 国家清单与税率页面级（`apiCache`），失败冷却 60 秒 | 汇率、商品销售、税费、`marketBadge`（国家清单） |
+| `goodsSnapshot` → `goodsFeed` | 各国市场行情，抓完 `publish` 给 `goodsFeed`；单国 `/market/get` 的解析结果存在 `apiCache` | 10 分钟（`GOODS_CACHE_MS` / `API_TTL.goods`），空市场也记 | 市场页、`goodsAuto`、`marketBadge` |
+| `regionFeed` | 国家 → 地区清单（底层 `apiCache`，`ensure` / `refresh` 两个入口） | 10 分钟 | 市场页领土检查、`regionJump`、工业、税费 |
+| `playerFeed` | 账号 id、国籍 id、所在国 id（只这三个字段） | 10 秒，失败冷却 60 秒（`apiCache`） | 汇率置顶、商品销售、税费高亮、`marketBadge`、工作技能过滤取 id |
+| `profileFeed` | `GET /user/profile/{account_id}` 的 `economic_level`（公开资料，只取这一个字段） | 10 秒，失败冷却 60 秒（`apiCache`，key 含 id） | 工商「工作」技能过滤 |
+| 工作（页级缓存） | 遍历全部国家的 `GET /market/jobs/get?country_id=…&page=…` 岗位；缓存 key = 国家 + 页，门槛只决定读到第几页 | `apiCache` 2 分钟（空页也记），`destroy()` 后失效；不落盘 | 工商「工作」子面板 |
 
-- 行情请求统一走 `market.call`（负责并发、凭据与错误分类），不要自己 `fetch`。
+- 所有数据请求统一走 `apiClient.call`（负责并发、凭据与错误分类），不要自己 `fetch`；该出口服务全插件，不只是行情。请求的缓存与去重统一交给 `apiCache`，不要在各数据源里再写一套。
+- 凭据变化（生成 / 保存 / 移除密钥、401）统一走 `dropSessionCache()`：清掉会过期的条目与 `coinBook.last`，保留页面级的国家清单与税率。
 - 分页接口的 `pagination` 在响应根上，`call` 传 `{ object: true, full: true }` 才能拿到；`/market/jobs/get` 无岗位时可能不带 `data`，还要传 `allowEmpty`，并把 `total_records` 为 0 当作空结果，不要报「读取失败」；单页失败只跳过该页，不打断整轮。
 - 账号信息固定 `POST /account/getuser`（`{ login: true }`，见 §3 第 5 条）。
 - 领土接口 `GET /country/regions?country_id=…` 只发 GET（同地址 POST 会 404），`call` 要传 `noMethodRetry`；返回无 `data` 或空数组都表示已失去全部领土，需传 `allowEmpty` 才不当成坏载荷。
@@ -57,7 +60,7 @@
 - **工作翻页提前停止**：接口按薪资降序返回；设了「最低税后工资」门槛时逐页抓，某页最低折金薪资已低于门槛就不再请求该国后续页（汇率缺失的页不据此判断）；没设门槛照常抓到上限。缓存键带上门槛，半截结果不会被当成完整列表复用；改门槛立即过滤已加载数据，提前停止在下一轮「刷新岗位」生效。
 - **工作搜索 / 过滤 / 高亮**：公司类型按内置对照显示中文（空战武器工厂 / 航空公司 / 农场 / 食品工厂 / 铁矿 / 油井 / 钛矿 / 武器工厂），未知类型显示原文；顶部单框按公司类型（中英均可）、公司名、国家名、法币（代码或 id）、所有者做子串匹配，不重新请求；「仅看符合技能要求」默认勾选（玩家取消后记住），按 `economic_skill ≤ profileFeed.economicLevel`（取自 `GET /user/profile/{account_id}` 的 `economic_level`）过滤，读不到技能等级时不过滤并在状态栏提示；带金币图标的「最低税后工资」默认填 1（空值 / 非法值也回退到 1），按折金薪资 ≥ 门槛过滤，折金读不到时不算满足；当前位置的国家只就地高亮，不置顶、不参与排序；行尾箭头 `route.goto('/business/{business_id}')` 只跳转，不替玩家申请。
 - **流亡政府**：`GET /country/regions` 无 `data` 或空数组 = 已失去全部领土；商品与税费把它从主列表剔除、单列到最底部，名次显示 `—`、不抢「最优」高亮。查不到领土时按「有领土」处理。
-- **市场页标注**：列表行 = 起价 × `rateFor`；上架表单 = 实收金额 × `sellRateFor`，币种取 `playerFeed.countryId`；「比全球最低贵多少」取 `goodsFeed.bestGold()`（跳过流亡政府与缺汇率的国家），差额不足 0.5% 显示「最低」。
+- **市场页标注**：列表行 = 起价 × `rateFor`；上架表单 = 实收金额 × `sellRateFor`，币种取 `playerFeed.countryId`；「比全球最低贵多少」取 `goodsFeed.bestGold()`（跳过流亡政府与缺汇率的国家），差额不足 0.5% 显示「最低」。汇率按 `API_TTL.coin`（10 分钟）过期重拉，页面静止时由 60 秒本地重扫发现过期（只重算 DOM，不发请求），补拉失败退避 5 分钟。
 - **置顶 / 高亮**：「汇率」置顶国籍与所在国两行（同币合并，不在全局列表重复）；「市场」与「税费」只在列表内高亮（本国 / 当前位置），不置顶、不参与排序。
 
 ## 3. 硬约束
@@ -77,7 +80,7 @@
 
 5. **数据与隐私**：不读取 Cookie 值，不上报任何数据，日志不打印玩家数据。允许读取的范围只有：
    - 登录 JWT：只从游戏发往 `api.eclesiar.com` 的请求头里捕获，仅存内存，不落盘、不打印、不上报；
-   - 账号字段：只读账号 id（`getuser` 的 `id`，仅用于拼公开资料地址）、国籍 id（`nationality.id` / `nationality_id`）与当前所在国 id（`region.country.id`），统一走 `playerFeed`（2 分钟缓存）；经济技能单独走 `GET /user/profile/{account_id}` 的 `economic_level`（`profileFeed`，2 分钟缓存），只存内存、不展示原值、不落盘、不打日志；
+   - 账号字段：只读账号 id（`getuser` 的 `id`，仅用于拼公开资料地址）、国籍 id（`nationality.id` / `nationality_id`）与当前所在国 id（`region.country.id`），统一走 `playerFeed`（10 秒缓存）；经济技能单独走 `GET /user/profile/{account_id}` 的 `economic_level`（`profileFeed`，10 秒缓存），只存内存、不展示原值、不落盘、不打日志；
    - 账号接口固定 `POST /account/getuser`（当前登录账号），必须传 `{ login: true }`：只认游戏登录凭据，带专用密钥会 401；`/account` 是按 `account_id` 查别人，不要用；响应里的 `bearer` 必须忽略。
    唯一允许落盘的凭据是玩家在「设置」页主动生成 / 粘贴的**专用 API 密钥**（`eclesiar_prod_…`，`localStorage` 键 `api-key`），插件请求优先用它；不得打印完整密钥，不得发给任何第三方。
    `sessionStorage` 只允许 `eh:market-intent`（跳转意图，10 分钟过期，消费后立即删除）与 `eh:debug`（地址上出现过 `eh-debug=1` 后置位，供 SPA 跳转丢 query 后继续打印调试日志）。其它持久化一律不允许。
@@ -86,7 +89,11 @@
    允许的自动行为只有下面两个，且必须同时满足「玩家显式触发或确认、只读公开接口、有硬上限、可随时关闭、`destroy()` 清理」：
    - `goodsAuto`（`localStorage` 键 `autoCompare`，**默认关闭**）：必须在设置页「功能开关」勾选并在提示「一轮上百次请求、可能拖慢启动并消耗额度」后点「仍然开启」才生效；按 `GOODS_CACHE_MS`（10 分钟）过期才重拉，只在前台标签页跑，失败退避 5 分钟。
    - `marketJump`：只在玩家从面板点「去市场」后运行，落地时读 `sessionStorage` 意图并点一次游戏自己的筛选按钮；只认文本或图标 `alt` 完全相等的可点控件（`button` / `role=button|tab|option` / `cursor:pointer`，不认 `div` / `span`——顶栏资源位也有同名文字；带 `href` 的链接一律不点），最多重试 10 秒，点不到就放弃并清掉意图。
-   新增周期性请求或自动点击前，先改本节。
+   另有第三种、**不属于「自动行为」**的读取入口：`ctx.onShow`（面板每次打开 / 切到某标签时补读一次，命中 TTL 就不发请求）。它由玩家操作触发、与点一次「刷新」等价，没有定时器，也不在后台跑；不要拿它当「定期刷新」用，更不要在它之外再加轮询。面板静止时的数据更新由玩家切标签 / 点刷新驱动。
+
+  `marketBadge` 另有一个 **60 秒本地重扫**（仅商品市场页、仅前台标签页）：它只重算本地 DOM，**自身不发请求**，是否补拉由 10 分钟 TTL 与失败退避决定（补拉失败退避 5 分钟）。没有它，页面静止时「缓存过期后重拉」永远等不到触发，因为平时的扫描只由页面 DOM 变化驱动。
+
+  新增周期性请求或自动点击前，先改本节。
 
 7. **扩展只走功能注册表**：新模块用 `features.register()`（工商子面板用 `registerBusinessPane()`），不要改面板外壳或硬编码标签页。
 
@@ -131,6 +138,7 @@ scripts/release.sh                     # 合并推送后刷新 jsDelivr 缓存�
 7. 路由钩子（`route`：包装 `pushState` / `replaceState`，订阅变化，`goto(path)` 跳转）
 8. 对外 UI 控制（`publicUi`）
 9. 内置功能（`fx` / `goods`（含 `goodsSnapshot`、`regionFeed`、`goodsAuto`）/ `marketBadge` / `regionJump` / `marketJump` / `business` / `about`，版本检查在 `about`）
+   - `9.0 数据访问层`：`apiCache`（请求层）与 `API_TTL` / `API_COOLDOWN` / `API_COOLDOWN_429` 常量；`9.1` 起才是请求出口 `apiClient` 与各功能
 10. 启动与销毁
 11. 公开 API
 
@@ -158,6 +166,28 @@ scripts/release.sh                     # 合并推送后刷新 jsDelivr 缓存�
 - 工商子面板的 pane 本身没有 padding，固定头与滚动区直接挂在 pane 下；不要在外面再包一层 `.eh-section`，否则滚动区会失去 flex 容器、内容被裁而不是滚动。
 - 税费页把滚动交给内部列表：`.eh-tax-pane` + `.eh-tax-scroll`，并用 `.eh-biz-body > .eh-tax-pane { flex: 1 1 auto; min-height: 0 }` 顶掉 `.eh-biz-body > .eh-biz-pane { flex: none }`。不要在工商页多出色带。
 
+### 5.4 数据访问层
+
+- 请求层缓存只有 `apiCache` 一层：key 由 `apiCache.key(path, params)` 生成（接口 + 排序后的参数），数据层只保存由载荷派生的结构，功能层不再自己写接口缓存。
+- 两个动作不能混用：按钮 / 手动刷新一律 `refresh`（绕过 TTL，失败保留旧值并标 `stale`），批量的进度与失败计数由功能层自己按并发跑（`apiCache` 不提供批量入口）；只有凭据变化（生成 / 移除密钥、401）、`destroy()` 与「明确丢弃旧数据」才 `invalidate(prefix)` / `clear()`。
+- 判「要不要发请求」一律用 `apiCache.fresh(key)`：`peek` 只看「有没有这条」，过期条目会被它当成命中，硬上限计数、要不要重拉的判断都会失真。
+- 不加 `force` 布尔：功能层直接调用 `refresh`，不要把「要不要绕过 TTL」包装成参数往数据层透传。页面级 key（国家清单 / 税率）由 `fxFeed.loadCountries(mode)` / `ensureTaxes` / `refreshTaxes` 两个入口分派。
+- `refresh` 不传 `opts` 时沿用该 key 上次登记的 `ttl` / `empty` 谓词 / `namespace`；新增 key 时仍然要显式传 `opts`。
+- 「更新于」一律取**这屏里最旧的一份数据时间**（`coinBook.oldestAt` / `regionFeed.atOf` / `goodsSnapshot.updatedAt`），不要用「本轮结束时刻」冒充新鲜度；`goodsSnapshot.checkedAt` 只用于「多久后再自动拉一轮」的调度。
+- 数据源在「这一批 key 全部命中、且都没过期」时要走快路径：直接从缓存条目拼装展示结构，**不要再逐个 key 走一遍 `ensure` 与并发间隔**。否则界面会出现一轮根本不发请求的假进度（汇率面板曾每次进页都显示「正在拉取挂单」，45 个币种白等近 1 秒）。判断用 `coinBook.ready(id)` 这类「两层侧是否 fresh」，不要用 `peek`。
+- 共享请求不透传调用方 `signal`：取消只表示「不再发起新 key」，已发出的请求不 abort（超时由 `apiClient.call` 的 10 秒负责）。
+- 空结果（无挂单 / 无地区 / 空岗位页）是有效缓存，用 `opts.empty` 标记；错误不写入缓存，只记失败时间用于冷却（`NO_TOKEN` / `UNAUTHORIZED` 不冷却，429 冷却 5 分钟，其余 60 秒）。
+- `apiCache` 不轮询、不起定时器，只被动响应 `ensure` / `refresh`；调试统计用 `?eh-debug=1` 或控制台 `EclesiarHelper.cache.stats()`。
+- **数据变更通知**：`apiCache.watch(test, fn)` 是 key 级订阅（`test` 为前缀字符串或谓词），写入 / `invalidate` / `clear` 后按帧合并派发；数据源各自暴露值级订阅（`playerFeed.watch(fn)` 给解析后的结构）。约定：
+  - 界面只订阅 + 重绘，不再自己在多个时机 `ensure()`（那正是「各页刷新时机不一致」的来源）；
+  - 回调里**只读数据**，不要再发起请求，否则容易自己触发自己（`render` 只读）；
+  - 高频写入（如一轮 45 国 × 2 侧）靠 `emitKey` 的 rAF 合并，不要绕过它直接调 `fn`；
+  - 订阅一律挂到 `ctx.onDestroy`（页面级注入挂到 `stop()`），`destroy()` 后 `stats().watchers` 必须为 0。
+  - 通知解决「数据变了告诉谁」，不解决「什么时候去问」。**「什么时候问」只允许三个入口**：`ctx.onShow`（标签被显示，命中 TTL 就不发请求）、面板上的刷新按钮、`marketBadge` 的 60 秒本地重扫（只重算、不发请求）；不要在 mount 之外再零散 `ensure()`。
+  - `ctx.onShow` 会在面板每次打开与每次切标签时触发，回调里靠 TTL / `fresh()` 兜住，不要每次调用都真的发请求。
+- 每个数据源只保存「由载荷派生的结构」（如 `coinBook` 的挂单档位、`goodsSnapshot` 的 `items` Map、税率的 `Map`），并用**缓存条目对象本身**做版本：条目换了就重新解析，不要用 `at` / 时间戳比较（同毫秒内会漏判）。
+- `destroy()` 要同时 `apiCache.clear()` 与 `coinBook.reset()`；`apiCache` 用「失效代数」丢弃失效期间回来的在途结果，避免换凭据后旧数据写回缓存。
+
 ## 6. 新增功能
 
 ```js
@@ -183,13 +213,14 @@ EclesiarHelper.features.register({
 | `ctx.ui` | `open / close / toggle / isOpen / resetBall / resetPanel / reposition` |
 | `ctx.storage` | 按功能 id 自动加前缀的 `get / set / remove` |
 | `ctx.route` | `current` 与 `onChange(fn)`，返回取消订阅函数 |
+| `ctx.onShow(fn)` | 这个标签每次被显示（面板打开 / 切到它）时调用一次，用来补读数据 |
 | `ctx.onDestroy(fn)` | 注册清理回调，`destroy()` 时执行 |
 | `ctx.log(...)` | 带功能前缀的调试日志 |
 
 - 可复用样式类：`eh-section`、`eh-h3`、`eh-kv`、`eh-note`、`eh-callout`、`eh-row`、`eh-btn`、`eh-btn--ghost`、`eh-links`、`eh-mono`、`eh-empty`。
 - 工商子面板用 `registerBusinessPane({ id, title, order, mount })` 注册，加子面板只往 `businessPanes` 里加一项，不动一级标签。
 - 注释与用户可见文案用中文。
-- 控制台可用：`EclesiarHelper.ui.toggle()`、`EclesiarHelper.ui.open()`、`EclesiarHelper.features.list()`、`EclesiarHelper.route.current`、`EclesiarHelper.destroy()`。
+- 控制台可用：`EclesiarHelper.ui.toggle()`、`EclesiarHelper.ui.open()`、`EclesiarHelper.features.list()`、`EclesiarHelper.route.current`、`EclesiarHelper.cache.stats()`、`EclesiarHelper.destroy()`。
 
 ## 7. Git 与发布
 
@@ -223,13 +254,14 @@ EclesiarHelper.features.register({
 2. 外壳：悬浮球可拖、点击开合、`Alt+E`、`Esc`（焦点在面板内）、方向键切标签；视口缩到 360 宽时球与面板都不出屏。
 3. 生命周期：控制台执行 `EclesiarHelper.destroy()`，宿主、API、监听器、定时器与页面注入都消失；无残留请求。
 4. 汇率：展示与排序符合 §2.3（最优价徽标、目标额度结果、深度不足时的均价、加载中不排序、结束后按买入均价升序）；国籍 / 所在国置顶两行不重复、同币合并、读不到账号时有提示且凭据晚到后自动补上；目标口径切换不发请求、清空输入不立刻回填；`destroy()` 后无残留订阅。
-5. 市场：采购口径 = 挂单价 × 买币最优价（不加进口税）；销售 = 挂单价 ×（1 − 增值税 − 进口税）× 卖币最优价，本国免进口税、读不到国籍两项都扣；缺税率 / 缺买单 / 换汇深度不足都有标注；切商品或切采购销售不重新请求；流亡政府单列且名次 `—`、不抢最优；领土只对有挂单的国家查、5 分钟缓存，查不到按「有领土」处理。
+5. 市场：采购口径 = 挂单价 × 买币最优价（不加进口税）；销售 = 挂单价 ×（1 − 增值税 − 进口税）× 卖币最优价，本国免进口税、读不到国籍两项都扣；缺税率 / 缺买单 / 换汇深度不足都有标注；切商品或切采购销售不重新请求；流亡政府单列且名次 `—`、不抢最优；领土只对有挂单的国家查、10 分钟缓存，查不到按「有领土」处理。
 6. 设置与更新：同版本「已是最新」，更高版本出现「安装更新」且指向 jsDelivr；四个源全失败时保留三个手动安装链接；`meta.js` 与主脚本 `@version` 一致。
-7. API 密钥：无密钥时可生成并显示掩码；有密钥时「汇率 / 市场」请求头用 `Bearer eclesiar_prod_…`（`/account/getuser` 与 `/account/apikey/usage` 例外，必须用登录凭据）；密钥 401 时只提示失效、不丢登录凭据；「移除密钥」回到登录凭据；「清除本地设置」不删密钥；用量只在进入设置页时请求一次。
+7. API 密钥：无密钥时可生成并显示掩码；有密钥时「汇率 / 市场」请求头用 `Bearer eclesiar_prod_…`（`/account/getuser` 与 `/account/apikey/usage` 例外，必须用登录凭据）；密钥 401 时只提示失效、不丢登录凭据；「移除密钥」回到登录凭据；「清除本地设置」不删密钥；用量 60 秒内复用同一份结果，来回切标签不重复请求。
 8. `marketBadge`：市场页每行起价下有「≈ + 金币 + 金额」，与采购同口径；抓过行情后补「比全球最低贵多少」（`+0.0078` / `最低`）；切品类 / 品质 / 国家后每行仍只有一个标注（单行、单品质时也要有）；上架表单「实收金额」旁金价用所在国币种与卖币方向，实时更新，且**不打开面板也能出现**；离开市场页后 `[data-eh-gold]` 归零；设置页「功能开关」即时生效；没凭据时静默不标。
 9. `goodsAuto`：开关在设置页「功能开关」；默认关闭；点「取消」不落盘不发请求，点「仍然开启」才写入并立刻抓一轮；开启后启动约 3 秒开始抓，市场页不打开面板也显示对比；10 分钟内不重复拉，后台标签页不刷新，失败退避 5 分钟；与面板共用同一份 `goodsSnapshot`；关掉后不再自动刷新但已抓到的标注保留；`destroy()` 后无定时器与请求残留。
 10. 跳转：点箭头能到 `/monetary-market/{currency_id}` 与 `/market/{country_id}`；落地后按意图点中分类与 Q1–Q5（要先展开「筛选」），点完清掉 `sessionStorage` 意图；同类页面只换 id 时走 detour（不刷新、历史不多一条 dashboard、后退回原页），失败才整页跳；找不到控件 10 秒后放弃，不弹错。
-11. `regionJump`：只在「你当前不在该国家」时出现，按钮数与该国地区数一致；离开市场页后 `[data-eh-regions]` 归零；同一国家 5 分钟内不重复请求；流亡政府显示「该国已失去全部领土」；无凭据时静默、`onAuth` 后自动补；设置页「功能开关」即时生效。
+11. `regionJump`：只在「你当前不在该国家」时出现，按钮数与该国地区数一致；离开市场页后 `[data-eh-regions]` 归零；同一国家 10 分钟内不重复请求；流亡政府显示「该国已失去全部领土」；无凭据时静默、`onAuth` 后自动补；设置页「功能开关」即时生效。
 12. 工业：打开即自动抓一轮并列出全服地区（3 并发 + 60ms 间隔），状态栏显示地区数 / 国家数 / 更新时间；默认综合排序符合 §2.3；排序标签只有综合 / 物产 / 污染 / NPC，方向记在本地；搜索按地区名 / 中英文国名 / 法币过滤且不触发游戏快捷键；子标签栏与排序 / 状态不随列表滚、不多出色带；与市场页领土检查、`regionJump` 共用 `regionFeed`；无凭据时不发请求。
 13. 税费：先汇率后领土（复用缓存），状态栏分阶段提示；行内两行分组不被拆开；排序标签顺序与行内一致且无悬浮说明；默认综合先比增值税 + 进口税、同值比最低工资税金、再比进口税、最后国名；缺汇率行永远最后；顶部固定、只有列表滚；搜索按中英文国名 / 法币过滤且不触发游戏快捷键；国籍 / 所在国就地高亮不置顶；流亡政府单列；切子标签再回来不重新请求。
-14. 工作：进入即抓全部国家（无国家选择框，3 并发 + 60ms 间隔，每国最多 10 页、整轮 300 次请求硬上限），去重后固定按税后 `net_value` 折金降序，缺汇率沉底；金价口径同税费（买盘优先、缺买单退回卖单）；左半边标题区公司图标放大占满两行，第一行为公司名（可截断），第二行中文产业类型 + 职位数 + 技能要求；下面两行依次是小人图标 + 雇主头像 + 名字（可截断）、地图标记 + 小国旗 + 国家（中英空格分隔）+ 地区；右列撑满整行高度，自上而下税后法币 / 折算金币 / 跳转按钮（按钮贴底）；单框搜索五类字段不重新请求；「仅看符合技能要求」默认勾选，按公开资料的 `economic_level` 过滤，读不到时不过滤并提示；带金币图标的「最低税后工资」默认填 1、过滤折金薪资 ≥ 门槛的岗位，空值 / 非法值也回退到 1，改动立即生效；设门槛后逐页抓、页内最低低于门槛就停（状态栏不提示提前停止），页内有汇率缺失时不停；无岗位国家返回缺 `data` 或 `total_records` 为 0 时按空结果处理、不报「读取失败」；门槛切换后缓存互不污染；状态栏只显示符合条件数量，不显示页数，超过 50 条只渲染前 50 条；当前位置行就地高亮不置顶；行尾箭头到 `/business/{business_id}`；抓取期间状态栏显示国家进度与已抓数量，完成后改为符合条件数量；经济技能只认公开资料的 `economic_level`，不拿 `attributes.stats.economic_aptitude` 冒充；2 分钟内存缓存、刷新按钮与状态栏同一行并强制重抓；`destroy()` 后无残留订阅或请求。
+14. 工作：进入即抓全部国家（无国家选择框，3 并发 + 60ms 间隔，每国最多 10 页、整轮 300 次请求硬上限），去重后固定按税后 `net_value` 折金降序，缺汇率沉底；金价口径同税费（买盘优先、缺买单退回卖单）；左半边标题区公司图标放大占满两行，第一行为公司名（可截断），第二行中文产业类型 + 职位数 + 技能要求；下面两行依次是小人图标 + 雇主头像 + 名字（可截断）、地图标记 + 小国旗 + 国家（中英空格分隔）+ 地区；右列撑满整行高度，自上而下税后法币 / 折算金币 / 跳转按钮（按钮贴底）；单框搜索五类字段不重新请求；「仅看符合技能要求」默认勾选，按公开资料的 `economic_level` 过滤，读不到时不过滤并提示；带金币图标的「最低税后工资」默认填 1、过滤折金薪资 ≥ 门槛的岗位，空值 / 非法值也回退到 1，改动立即生效；设门槛后逐页抓、页内最低低于门槛就停（状态栏不提示提前停止），页内有汇率缺失时不停；无岗位国家返回缺 `data` 或 `total_records` 为 0 时按空结果处理、不报「读取失败」；门槛切换后缓存互不污染；状态栏只显示符合条件数量，不显示页数，超过 50 条只渲染前 50 条；当前位置行就地高亮不置顶；行尾箭头到 `/business/{business_id}`；抓取期间状态栏显示国家进度与已抓数量，完成后改为符合条件数量；经济技能只认公开资料的 `economic_level`，不拿 `attributes.stats.economic_aptitude` 冒充；岗位按「国家 + 页」缓存 2 分钟，换门槛只补缺失页、不整轮重抓；「刷新岗位」绕过 TTL 重抓但不清缓存；刷新按钮与状态栏同一行；`destroy()` 后无残留订阅或请求。
+15. 请求层（`apiCache` / `coinBook`）：同一 key 并发 10 次只发 1 个请求；缓存有效期内的切标签 / 页面往返 0 请求（`EclesiarHelper.cache.stats()` 的 `request` 不涨）；失败后 60 秒内不重试，`NO_TOKEN` / `UNAUTHORIZED` 不冷却，429 冷却 5 分钟；五个「刷新」按钮只重抓自己域内的 key（市场不碰币种挂单、工作不碰地区清单）；刷新失败时旧值仍在且状态栏说清「本次没刷成」；生成 / 保存 / 移除密钥或 401 后不返回旧凭据的数据，国家清单与税率保留；`destroy()` 后 `EclesiarHelper.cache.stats()` 归零、无 pending；`?eh-debug=1` 能对比迁移前后的请求数与 `hit / join / miss / cooldown / refresh`。
